@@ -59,7 +59,7 @@ Single Go binary with three internal subsystems, backed by Postgres.
 | USAspending.gov | Federal contract awards | REST API | Daily | JSON | B (1-2 day lag) |
 | OFAC SDN | Sanctions designations | REST API + XML feed | Every 30 min | XML/JSON | A (~30 min) |
 | Federal Register | Tariffs, executive orders, rules | REST API | Hourly | JSON | A (~1 hour) |
-| WARN Act | Layoff notices (per state) | Scrape state DOL sites | Daily | HTML/CSV/PDF | B (1 day) |
+| WARN Act | Layoff notices (per state) | Scrape state DOL sites | Daily | HTML/CSV/PDF | B-C (1 day to weeks, varies by state) |
 | FEC | Campaign donations | REST API | Daily | JSON/CSV | B (1-7 day lag) |
 | LDA (Senate) | Lobbying registrations + spending | Bulk XML downloads | Daily | XML | D (weeks to quarterly) |
 | PACER/RECAP | Federal court dockets | CourtListener RECAP API | Hourly | JSON | B+ (hours) |
@@ -93,6 +93,7 @@ companies (
   name TEXT NOT NULL,
   sector TEXT,
   subsector TEXT,
+  naics_code TEXT,              -- NAICS industry code for sector grouping
   market_cap_bucket TEXT
 )
 
@@ -104,18 +105,19 @@ events (
   event_type TEXT NOT NULL,
   event_data JSONB NOT NULL,             -- full raw payload
   occurred_at TIMESTAMPTZ NOT NULL,
-  ingested_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  ingested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (source, source_id)            -- dedup: same source event ingested once
 )
 
 persons (
   id SERIAL PRIMARY KEY,
+  slug TEXT UNIQUE NOT NULL,   -- URL-safe identifier, e.g. "tommy-tuberville" or "janet-yellen"
   name TEXT NOT NULL,
   role TEXT NOT NULL,  -- lawmaker/cabinet/agency_head/fed_governor/judge/senior_official/military/spouse/child
   tier INT NOT NULL,   -- 1-6
   branch TEXT,         -- legislative/executive/judicial/military
   linked_person_id INT REFERENCES persons,
   linked_relationship TEXT,  -- spouse/dependent_child
-  positions JSONB,           -- [{title, body, committee, start, end}]
   disclosure_source TEXT     -- efds/oge278/fed/judiciary
 )
 
@@ -123,6 +125,7 @@ congressional_trades (
   id SERIAL PRIMARY KEY,
   event_id INT REFERENCES events,
   person_id INT REFERENCES persons,
+  company_id INT REFERENCES companies,  -- nullable, resolved async via ticker
   owner_type TEXT,  -- self/SP/DC/JT
   ticker TEXT,
   trade_type TEXT,  -- buy/sell
@@ -146,6 +149,7 @@ contracts (
 sanctions (
   id SERIAL PRIMARY KEY,
   event_id INT REFERENCES events,
+  company_id INT REFERENCES companies,  -- nullable, resolved async
   entity_name TEXT,
   entity_type TEXT,  -- person/company/vessel
   program TEXT,
@@ -176,9 +180,12 @@ warn_filings (
 donations (
   id SERIAL PRIMARY KEY,
   event_id INT REFERENCES events,
+  company_id INT REFERENCES companies,  -- nullable, resolved from donor employer
   donor_name TEXT,
   donor_type TEXT,  -- individual/pac/corp
+  donor_employer TEXT,
   recipient TEXT,
+  recipient_person_id INT REFERENCES persons,  -- nullable, resolved async
   recipient_type TEXT,  -- candidate/committee
   amount_cents BIGINT,
   donated_at TIMESTAMPTZ
@@ -187,16 +194,20 @@ donations (
 lobbying (
   id SERIAL PRIMARY KEY,
   event_id INT REFERENCES events,
+  client_company_id INT REFERENCES companies,  -- nullable, resolved from client name
   registrant TEXT,
   client TEXT,
   specific_issues TEXT,
   amount_cents BIGINT,
+  period_start DATE,           -- LDA reporting period start
+  period_end DATE,             -- LDA reporting period end
   filed_at TIMESTAMPTZ
 )
 
 court_filings (
   id SERIAL PRIMARY KEY,
   event_id INT REFERENCES events,
+  company_id INT REFERENCES companies,  -- nullable, resolved from parties
   case_number TEXT,
   court TEXT,
   parties TEXT[],
@@ -207,6 +218,8 @@ court_filings (
 market_data (
   id SERIAL PRIMARY KEY,
   company_id INT REFERENCES companies NOT NULL,
+  source TEXT NOT NULL,        -- finnhub/polygon
+  data_type TEXT NOT NULL,     -- realtime/daily_ohlcv
   price_cents BIGINT,
   volume BIGINT,
   change_pct NUMERIC(8,4),
@@ -227,6 +240,46 @@ insider_trades (
 )
 ```
 
+### Supporting Tables
+
+```sql
+person_committees (
+  id SERIAL PRIMARY KEY,
+  person_id INT REFERENCES persons NOT NULL,
+  committee_name TEXT NOT NULL,
+  committee_code TEXT,
+  start_date DATE,
+  end_date DATE
+)
+
+company_hs_codes (
+  id SERIAL PRIMARY KEY,
+  company_id INT REFERENCES companies NOT NULL,
+  hs_code TEXT NOT NULL,
+  source TEXT,
+  confidence NUMERIC(3,2)
+)
+
+score_weights (
+  id SERIAL PRIMARY KEY,
+  version INT UNIQUE NOT NULL,
+  weights JSONB NOT NULL,       -- {"market": 0.35, "policy": 0.40, "insider": 0.25, ...}
+  active BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+)
+
+bills (
+  id SERIAL PRIMARY KEY,
+  bill_number TEXT UNIQUE NOT NULL,  -- e.g. "H.R.4521"
+  title TEXT,
+  status TEXT,
+  congress INT,
+  introduced_at DATE,
+  last_action_at DATE,
+  source TEXT                   -- congress.gov
+)
+```
+
 ### Entity Resolution
 
 ```sql
@@ -236,7 +289,8 @@ entity_aliases (
   entity_type TEXT NOT NULL,  -- company/person/agency
   alias TEXT NOT NULL,
   source TEXT,
-  confidence NUMERIC(3,2)
+  confidence NUMERIC(3,2),
+  auto_applied BOOLEAN DEFAULT false  -- false = flagged for review if below threshold
 )
 
 entity_links (
@@ -269,7 +323,7 @@ source_meta (
   last_successful_poll TIMESTAMPTZ,
   last_new_data_at TIMESTAMPTZ,
   poll_interval_seconds INT,
-  status TEXT DEFAULT 'healthy'  -- healthy/degraded/stale/down
+  status TEXT DEFAULT 'healthy' CHECK (status IN ('healthy', 'degraded', 'stale', 'down'))
 )
 ```
 
@@ -297,6 +351,7 @@ scores (
   policy_score NUMERIC(5,2),
   insider_score NUMERIC(5,2),
   composite_score NUMERIC(5,2),
+  weight_version INT REFERENCES score_weights(version),
   computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 )
 ```
@@ -327,7 +382,7 @@ Three sub-scores per company, each 0-100.
 | Signal | Weight | Calculation |
 |--------|--------|-------------|
 | Congressional/official trades | 40% | Trades by officials on relevant committees, recency-weighted. Includes spouse/dependent trades. |
-| Lobbying spend changes | 30% | Quarter-over-quarter change in spend targeting relevant bills |
+| Lobbying spend changes | 30% | Period-over-period change in spend targeting relevant issues (LDA reports semi-annually) |
 | FEC donation spikes | 30% | Unusual donation volume to lawmakers on relevant committees |
 
 ### Composite
@@ -386,11 +441,18 @@ GET /sources                       -- all sources + freshness status
 GET /sources/:name                 -- single source detail + health
 ```
 
+### Persons
+```
+GET /persons                       -- list, filter by tier/branch/role
+GET /persons/:slug                 -- detail: trades, committees, donations
+```
+
 ### Connections
 ```
 GET /connections/:ticker           -- chain: trades, lobbying, contracts, tariffs
-GET /connections/:person           -- person view: trades, committees, donations
+GET /connections/:slug             -- person view: trades, committees, donations
 GET /connections/graph             -- network graph: companies, persons, agencies, bills + edges
+                                   -- supports ?depth=N (default 2, max 4) and ?limit=N (default 200 nodes)
 ```
 
 ### Stream (SSE)
@@ -414,6 +476,37 @@ mrdn link --alias "NVDA Corp" --entity NVDA
 ```
 
 All list endpoints support pagination, date range filtering, and JSON response. All responses include freshness metadata.
+
+### Score Response Shape
+
+All score endpoints return the full breakdown:
+```json
+{
+  "ticker": "NVDA",
+  "scores": {
+    "market": 72.5,
+    "policy": 91.0,
+    "insider": 45.3,
+    "composite": 73.8
+  },
+  "weight_version": 1,
+  "computed_at": "2026-04-01T15:00:00Z"
+}
+```
+
+### API Access
+
+Public, no auth required for read access. Optional API key for higher rate limits. Anonymous: 60 req/min. Keyed: 600 req/min.
+
+```sql
+api_keys (
+  id SERIAL PRIMARY KEY,
+  key_hash TEXT UNIQUE NOT NULL,
+  label TEXT,
+  rate_limit INT DEFAULT 600,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+)
+```
 
 ## Frontend Visualization
 
@@ -455,6 +548,29 @@ The API returns semantic labels (`"type": "money"`), never colors. Color is pure
 - Data points shown on timelines; users see proximity and draw their own conclusions
 - Dry, factual. Like a well-designed government filing.
 - Footer: "Source: public records. Not investment advice."
+
+## Critical Indexes
+
+```sql
+CREATE INDEX idx_events_company_occurred ON events(company_id, occurred_at);
+CREATE INDEX idx_market_data_company_recorded ON market_data(company_id, recorded_at);
+CREATE INDEX idx_entity_links_from ON entity_links(from_entity, from_type);
+CREATE INDEX idx_entity_links_to ON entity_links(to_entity, to_type);
+CREATE INDEX idx_scores_company_computed ON scores(company_id, computed_at);
+CREATE INDEX idx_congressional_trades_company ON congressional_trades(company_id);
+CREATE INDEX idx_person_committees_person ON person_committees(person_id);
+```
+
+## Storage Budget
+
+Supabase free tier: 500MB. Constraints at launch:
+
+- **Company list:** cap at ~100 tech companies initially
+- **Market data:** at 100 companies, ~1 tick/min during market hours (6.5h), ~39K rows/day, ~1.5MB/day. 90-day retention before downsampling = ~135MB.
+- **Events:** low volume relative to market data. ~1-5K events/day across all sources.
+- **Headroom:** ~300MB for all other tables, indexes, and growth.
+
+If approaching 500MB: aggressive downsampling, drop to daily-only market data, or upgrade Supabase.
 
 ## Deployment
 
