@@ -1,0 +1,5 @@
+.env
+/mrdn
+/mrdn.exe
+*.test
+coverage.out
