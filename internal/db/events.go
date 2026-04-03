@@ -1,10 +1,17 @@
 package db
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"time"
+)
+
+const (
+	maxEventDataSize  = 65536 // 64 KB
+	maxEventDataDepth = 10
 )
 
 type Event struct {
@@ -32,6 +39,18 @@ type EventFilter struct {
 }
 
 func (s *Store) InsertEvent(ctx context.Context, e Event) (int, error) {
+	if len(e.EventData) > maxEventDataSize {
+		return 0, fmt.Errorf("event_data exceeds %d bytes", maxEventDataSize)
+	}
+	if !json.Valid(e.EventData) {
+		return 0, fmt.Errorf("event_data is not valid JSON")
+	}
+	if depth, err := jsonDepth(e.EventData); err != nil {
+		return 0, fmt.Errorf("checking event_data depth: %w", err)
+	} else if depth > maxEventDataDepth {
+		return 0, fmt.Errorf("event_data nesting exceeds %d levels", maxEventDataDepth)
+	}
+
 	var id int
 	err := s.db.QueryRow(ctx, `
 		INSERT INTO events (source, source_id, company_id, event_type, event_data, occurred_at)
@@ -154,4 +173,31 @@ func (s *Store) CountEvents(ctx context.Context, f EventFilter) (int, error) {
 		return 0, fmt.Errorf("counting events: %w", err)
 	}
 	return count, nil
+}
+
+// jsonDepth returns the maximum nesting depth of the JSON value in raw.
+// An empty object or array at the top level has depth 1; a scalar has depth 0.
+func jsonDepth(raw json.RawMessage) (int, error) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	maxDepth := 0
+	currentDepth := 0
+	for {
+		t, err := dec.Token()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return 0, err
+		}
+		switch t {
+		case json.Delim('{'), json.Delim('['):
+			currentDepth++
+			if currentDepth > maxDepth {
+				maxDepth = currentDepth
+			}
+		case json.Delim('}'), json.Delim(']'):
+			currentDepth--
+		}
+	}
+	return maxDepth, nil
 }
