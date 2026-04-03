@@ -5,6 +5,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/arclighteng/mrdn/internal/api"
 	"github.com/arclighteng/mrdn/internal/config"
@@ -21,7 +25,10 @@ var serveCmd = &cobra.Command{
 			return fmt.Errorf("loading config: %w", err)
 		}
 
-		ctx := context.Background()
+		// Trap SIGINT / SIGTERM for graceful shutdown.
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+
 		pool, err := db.Connect(ctx, cfg.DatabaseURL)
 		if err != nil {
 			return fmt.Errorf("connecting to database: %w", err)
@@ -35,8 +42,35 @@ var serveCmd = &cobra.Command{
 		srv := api.NewServer(store)
 
 		addr := fmt.Sprintf(":%d", cfg.Port)
+		httpServer := &http.Server{
+			Addr:              addr,
+			Handler:           srv.Handler(),
+			ReadTimeout:       10 * time.Second,
+			ReadHeaderTimeout: 5 * time.Second,
+			WriteTimeout:      30 * time.Second,
+			IdleTimeout:       120 * time.Second,
+			MaxHeaderBytes:    1 << 20,
+		}
+
+		go func() {
+			if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Fatalf("listen: %v", err)
+			}
+		}()
+
 		log.Printf("MRDN API server listening on %s", addr)
-		return http.ListenAndServe(addr, srv.Handler())
+		<-ctx.Done()
+		log.Println("shutting down...")
+
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			log.Printf("HTTP server shutdown error: %v", err)
+		}
+		srv.Shutdown()
+		log.Println("server stopped")
+		return nil
 	},
 }
 

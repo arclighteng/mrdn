@@ -22,6 +22,8 @@ func NewServer(store *db.Store) *Server {
 
 func (s *Server) setupRoutes() {
 	r := chi.NewRouter()
+	r.Use(SecurityHeaders)
+	r.Use(CORSMiddleware)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.SetHeader("Content-Type", "application/json"))
