@@ -1,0 +1,22 @@
+{
+  "results": [
+    {
+      "internal_id": 12345,
+      "Award ID": "W911NF2410001",
+      "Recipient Name": "ACME Corp",
+      "Award Amount": 5000000.00,
+      "Award Type": "Contract",
+      "Start Date": "2024-01-15",
+      "Awarding Agency": "Department of Defense"
+    },
+    {
+      "internal_id": 67890,
+      "Award ID": "FA864224C0042",
+      "Recipient Name": "Globex Technologies LLC",
+      "Award Amount": 1200000.00,
+      "Award Type": "Contract",
+      "Start Date": "2024-03-01",
+      "Awarding Agency": "Department of the Air Force"
+    }
+  ]
+}

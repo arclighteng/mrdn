@@ -1,0 +1,20 @@
+{
+  "results": [
+    {
+      "document_number": "2024-00123",
+      "title": "Tariff Adjustment on Steel Imports",
+      "type": "Rule",
+      "abstract": "This rule adjusts tariff rates on certain steel imports from non-market economy countries.",
+      "publication_date": "2024-01-15",
+      "agencies": [{"name": "Department of Commerce"}]
+    },
+    {
+      "document_number": "2024-00456",
+      "title": "Environmental Standards for Industrial Facilities",
+      "type": "Proposed Rule",
+      "abstract": "Proposed updates to emission standards for large industrial facilities.",
+      "publication_date": "2024-02-10",
+      "agencies": [{"name": "Environmental Protection Agency"}]
+    }
+  ]
+}
