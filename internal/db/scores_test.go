@@ -63,3 +63,32 @@ func TestGetScoreRankings(t *testing.T) {
 	require.NotEqual(t, -1, rnk2Idx, "RNK2 not found in rankings")
 	assert.Less(t, rnk1Idx, rnk2Idx, "RNK1 (80) should rank higher than RNK2 (60)")
 }
+
+func TestGetScoreMovers(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	// Create a company with two scores to guarantee a mover
+	c, err := store.UpsertCompany(ctx, db.Company{Ticker: "MVR1", Name: "Mover Test", Sector: db.StrPtr("TestSector_Mover")})
+	require.NoError(t, err)
+	defer store.DeleteCompany(ctx, c.ID)
+
+	require.NoError(t, store.InsertScore(ctx, db.Score{CompanyID: c.ID, CompositeScore: 40.0, WeightVersion: 1}))
+	require.NoError(t, store.InsertScore(ctx, db.Score{CompanyID: c.ID, CompositeScore: 70.0, WeightVersion: 1}))
+
+	movers, err := store.GetScoreMovers(ctx, 24, 20)
+	require.NoError(t, err)
+	assert.NotNil(t, movers)
+
+	// Find our test mover
+	var found bool
+	for _, m := range movers {
+		if m.Ticker == "MVR1" {
+			found = true
+			assert.InDelta(t, 30.0, m.AbsChange, 0.1)
+			assert.InDelta(t, 70.0, m.CurrentScore, 0.1)
+			assert.InDelta(t, 40.0, m.PreviousScore, 0.1)
+		}
+	}
+	assert.True(t, found, "MVR1 should appear in movers")
+}

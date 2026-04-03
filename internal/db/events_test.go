@@ -51,3 +51,13 @@ func TestListEvents(t *testing.T) {
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, len(events), 1)
 }
+
+func TestCountEvents(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	// Count with no events should be 0
+	count, err := store.CountEvents(ctx, db.EventFilter{Source: "nonexistent_source_xyz"})
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
+}

@@ -3,7 +3,6 @@ package db
 import (
 	"context"
 	"fmt"
-	"sort"
 	"time"
 )
 
@@ -66,7 +65,7 @@ func (s *Store) GetScoreHistory(ctx context.Context, companyID int, limit int) (
 	}
 	defer rows.Close()
 
-	var scores []Score
+	scores := make([]Score, 0)
 	for rows.Next() {
 		var sc Score
 		if err := rows.Scan(&sc.ID, &sc.CompanyID, &sc.MarketScore, &sc.PolicyScore,
@@ -83,19 +82,26 @@ func (s *Store) GetScoreRankings(ctx context.Context, limit int) ([]ScoreRanking
 		limit = 100
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT DISTINCT ON (c.id)
-			c.ticker, c.name, s.market_score, s.policy_score, s.insider_score,
-			s.composite_score, s.weight_version, s.computed_at
-		FROM scores s
-		JOIN companies c ON c.id = s.company_id
-		ORDER BY c.id, s.computed_at DESC
-	`)
+		WITH latest AS (
+			SELECT DISTINCT ON (company_id)
+				company_id, market_score, policy_score, insider_score,
+				composite_score, weight_version, computed_at
+			FROM scores
+			ORDER BY company_id, computed_at DESC
+		)
+		SELECT c.ticker, c.name, l.market_score, l.policy_score, l.insider_score,
+			l.composite_score, l.weight_version, l.computed_at
+		FROM latest l
+		JOIN companies c ON c.id = l.company_id
+		ORDER BY l.composite_score DESC
+		LIMIT $1
+	`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("getting score rankings: %w", err)
 	}
 	defer rows.Close()
 
-	var rankings []ScoreRanking
+	rankings := make([]ScoreRanking, 0)
 	for rows.Next() {
 		var r ScoreRanking
 		if err := rows.Scan(&r.Ticker, &r.CompanyName, &r.MarketScore, &r.PolicyScore,
@@ -107,13 +113,71 @@ func (s *Store) GetScoreRankings(ctx context.Context, limit int) ([]ScoreRanking
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating rankings: %w", err)
 	}
-
-	sort.Slice(rankings, func(i, j int) bool {
-		return rankings[i].CompositeScore > rankings[j].CompositeScore
-	})
-
-	if len(rankings) > limit {
-		rankings = rankings[:limit]
-	}
 	return rankings, nil
+}
+
+// ScoreMover captures the change in composite score for a company between its
+// most recent score within the given time window and the score immediately
+// preceding that window entry.
+type ScoreMover struct {
+	Ticker        string  `json:"ticker"`
+	CompanyName   string  `json:"company_name"`
+	PreviousScore float64 `json:"previous_score"`
+	CurrentScore  float64 `json:"current_score"`
+	Change        float64 `json:"change"`
+	AbsChange     float64 `json:"abs_change"`
+}
+
+// GetScoreMovers returns up to limit companies with the largest absolute
+// composite score change over the last hours hours. Companies with no
+// preceding score are excluded. hours defaults to 24; limit defaults to 20.
+func (s *Store) GetScoreMovers(ctx context.Context, hours int, limit int) ([]ScoreMover, error) {
+	if hours <= 0 {
+		hours = 24
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := s.pool.Query(ctx, `
+		WITH recent AS (
+			SELECT DISTINCT ON (company_id)
+				company_id, composite_score, computed_at
+			FROM scores
+			WHERE computed_at >= NOW() - make_interval(hours => $1)
+			ORDER BY company_id, computed_at DESC
+		),
+		previous AS (
+			SELECT DISTINCT ON (s.company_id)
+				s.company_id, s.composite_score
+			FROM scores s
+			JOIN recent r ON r.company_id = s.company_id
+			WHERE s.computed_at < r.computed_at
+			ORDER BY s.company_id, s.computed_at DESC
+		)
+		SELECT c.ticker, c.name,
+			p.composite_score AS previous_score,
+			r.composite_score AS current_score,
+			r.composite_score - p.composite_score AS change,
+			ABS(r.composite_score - p.composite_score) AS abs_change
+		FROM recent r
+		JOIN previous p ON p.company_id = r.company_id
+		JOIN companies c ON c.id = r.company_id
+		ORDER BY abs_change DESC
+		LIMIT $2
+	`, hours, limit)
+	if err != nil {
+		return nil, fmt.Errorf("getting score movers: %w", err)
+	}
+	defer rows.Close()
+
+	movers := make([]ScoreMover, 0)
+	for rows.Next() {
+		var m ScoreMover
+		if err := rows.Scan(&m.Ticker, &m.CompanyName, &m.PreviousScore,
+			&m.CurrentScore, &m.Change, &m.AbsChange); err != nil {
+			return nil, fmt.Errorf("scanning score mover: %w", err)
+		}
+		movers = append(movers, m)
+	}
+	return movers, rows.Err()
 }

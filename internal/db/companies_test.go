@@ -95,3 +95,28 @@ func TestListCompanies(t *testing.T) {
 		}
 	}
 }
+
+func TestCountCompanies(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	// Use existing seeded companies
+	count, err := store.CountCompanies(ctx, db.CompanyFilter{Sector: "Technology"})
+	require.NoError(t, err)
+	assert.Greater(t, count, 0)
+
+	// Non-existent sector
+	count, err = store.CountCompanies(ctx, db.CompanyFilter{Sector: "NonExistent_XYZ"})
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
+}
+
+func TestListCompanies_TickerFilter(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	companies, err := store.ListCompanies(ctx, db.CompanyFilter{Ticker: "NVD", Limit: 10})
+	require.NoError(t, err)
+	assert.Greater(t, len(companies), 0)
+	assert.Equal(t, "NVDA", companies[0].Ticker)
+}

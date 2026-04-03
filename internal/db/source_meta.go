@@ -27,7 +27,7 @@ func (s *Store) ListSourceMeta(ctx context.Context) ([]SourceMeta, error) {
 	}
 	defer rows.Close()
 
-	var sources []SourceMeta
+	sources := make([]SourceMeta, 0)
 	for rows.Next() {
 		var sm SourceMeta
 		if err := rows.Scan(&sm.ID, &sm.SourceName, &sm.ExpectedLag,

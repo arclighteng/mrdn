@@ -106,7 +106,7 @@ func (s *Store) ListEvents(ctx context.Context, f EventFilter) ([]Event, error) 
 	}
 	defer rows.Close()
 
-	var events []Event
+	events := make([]Event, 0)
 	for rows.Next() {
 		var e Event
 		if err := rows.Scan(&e.ID, &e.Source, &e.SourceID, &e.CompanyID, &e.EventType,
@@ -119,4 +119,39 @@ func (s *Store) ListEvents(ctx context.Context, f EventFilter) ([]Event, error) 
 		return nil, fmt.Errorf("iterating events: %w", err)
 	}
 	return events, nil
+}
+
+// CountEvents returns the total number of events matching the filter, applying
+// the same WHERE logic as ListEvents (without LIMIT/OFFSET).
+func (s *Store) CountEvents(ctx context.Context, f EventFilter) (int, error) {
+	query := "SELECT COUNT(*) FROM events WHERE 1=1"
+	args := []any{}
+	argN := 1
+
+	if f.Source != "" {
+		query += fmt.Sprintf(" AND source = $%d", argN)
+		args = append(args, f.Source)
+		argN++
+	}
+	if f.EventType != "" {
+		query += fmt.Sprintf(" AND event_type = $%d", argN)
+		args = append(args, f.EventType)
+		argN++
+	}
+	if f.CompanyID != nil {
+		query += fmt.Sprintf(" AND company_id = $%d", argN)
+		args = append(args, *f.CompanyID)
+		argN++
+	}
+	if f.Since != nil {
+		query += fmt.Sprintf(" AND occurred_at >= $%d", argN)
+		args = append(args, *f.Since)
+		argN++
+	}
+
+	var count int
+	if err := s.pool.QueryRow(ctx, query, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("counting events: %w", err)
+	}
+	return count, nil
 }

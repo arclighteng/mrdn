@@ -26,9 +26,12 @@ type Company struct {
 }
 
 type CompanyFilter struct {
-	Sector string
-	Limit  int
-	Offset int
+	Sector       string
+	Ticker       string   // partial match (ILIKE)
+	MinComposite *float64 // latest composite score >= this
+	MaxComposite *float64 // latest composite score <= this
+	Limit        int
+	Offset       int
 }
 
 // StrPtr is a helper for creating *string values in test code and seed data.
@@ -68,18 +71,61 @@ func (s *Store) GetCompanyByTicker(ctx context.Context, ticker string) (Company,
 	return c, nil
 }
 
-func (s *Store) ListCompanies(ctx context.Context, f CompanyFilter) ([]Company, error) {
-	query := "SELECT id, ticker, name, sector, subsector, naics_code, market_cap_bucket FROM companies WHERE 1=1"
-	args := []any{}
-	argN := 1
+// buildCompanyWhere constructs the WHERE clause args and conditions for company
+// filters. It returns the WHERE fragment (starting with "WHERE 1=1"), args slice,
+// and the next arg index. When MinComposite or MaxComposite are set, useCTE must
+// be true and the caller is responsible for prefixing the appropriate CTE and
+// qualifying the composite_score column as "ls.composite_score".
+func buildCompanyWhere(f CompanyFilter) (conditions string, args []any, argN int) {
+	argN = 1
+	conditions = "WHERE 1=1"
 
 	if f.Sector != "" {
-		query += fmt.Sprintf(" AND sector = $%d", argN)
+		conditions += fmt.Sprintf(" AND c.sector = $%d", argN)
 		args = append(args, f.Sector)
 		argN++
 	}
+	if f.Ticker != "" {
+		conditions += fmt.Sprintf(" AND c.ticker ILIKE $%d", argN)
+		args = append(args, "%"+f.Ticker+"%")
+		argN++
+	}
+	if f.MinComposite != nil {
+		conditions += fmt.Sprintf(" AND ls.composite_score >= $%d", argN)
+		args = append(args, *f.MinComposite)
+		argN++
+	}
+	if f.MaxComposite != nil {
+		conditions += fmt.Sprintf(" AND ls.composite_score <= $%d", argN)
+		args = append(args, *f.MaxComposite)
+		argN++
+	}
+	return conditions, args, argN
+}
 
-	query += " ORDER BY ticker"
+func (s *Store) ListCompanies(ctx context.Context, f CompanyFilter) ([]Company, error) {
+	useCTE := f.MinComposite != nil || f.MaxComposite != nil
+
+	var query string
+	conditions, args, argN := buildCompanyWhere(f)
+
+	if useCTE {
+		query = `WITH latest_scores AS (
+			SELECT DISTINCT ON (company_id) company_id, composite_score
+			FROM scores ORDER BY company_id, computed_at DESC
+		)
+		SELECT c.id, c.ticker, c.name, c.sector, c.subsector, c.naics_code, c.market_cap_bucket
+		FROM companies c
+		JOIN latest_scores ls ON ls.company_id = c.id
+		` + conditions
+	} else {
+		// Replace "c." qualifier with bare column names for the simple query.
+		// buildCompanyWhere always uses "c." prefix; for the no-CTE path we
+		// alias the table so the same conditions work.
+		query = "SELECT c.id, c.ticker, c.name, c.sector, c.subsector, c.naics_code, c.market_cap_bucket FROM companies c " + conditions
+	}
+
+	query += " ORDER BY c.ticker"
 
 	if f.Limit > 0 {
 		query += fmt.Sprintf(" LIMIT $%d", argN)
@@ -97,7 +143,7 @@ func (s *Store) ListCompanies(ctx context.Context, f CompanyFilter) ([]Company, 
 	}
 	defer rows.Close()
 
-	var companies []Company
+	companies := make([]Company, 0)
 	for rows.Next() {
 		var c Company
 		if err := rows.Scan(&c.ID, &c.Ticker, &c.Name, &c.Sector,
@@ -110,6 +156,35 @@ func (s *Store) ListCompanies(ctx context.Context, f CompanyFilter) ([]Company, 
 		return nil, fmt.Errorf("iterating companies: %w", err)
 	}
 	return companies, nil
+}
+
+// CountCompanies returns the total number of companies matching the filter,
+// applying the same WHERE logic as ListCompanies (including the CTE join when
+// composite score bounds are specified).
+func (s *Store) CountCompanies(ctx context.Context, f CompanyFilter) (int, error) {
+	useCTE := f.MinComposite != nil || f.MaxComposite != nil
+
+	conditions, args, _ := buildCompanyWhere(f)
+
+	var query string
+	if useCTE {
+		query = `WITH latest_scores AS (
+			SELECT DISTINCT ON (company_id) company_id, composite_score
+			FROM scores ORDER BY company_id, computed_at DESC
+		)
+		SELECT COUNT(*)
+		FROM companies c
+		JOIN latest_scores ls ON ls.company_id = c.id
+		` + conditions
+	} else {
+		query = "SELECT COUNT(*) FROM companies c " + conditions
+	}
+
+	var count int
+	if err := s.pool.QueryRow(ctx, query, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("counting companies: %w", err)
+	}
+	return count, nil
 }
 
 func (s *Store) DeleteCompany(ctx context.Context, id int) error {
