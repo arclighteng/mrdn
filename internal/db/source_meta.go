@@ -17,7 +17,7 @@ type SourceMeta struct {
 }
 
 func (s *Store) ListSourceMeta(ctx context.Context) ([]SourceMeta, error) {
-	rows, err := s.pool.Query(ctx, `
+	rows, err := s.db.Query(ctx, `
 		SELECT id, source_name, expected_lag, last_successful_poll,
 			   last_new_data_at, poll_interval_seconds, status
 		FROM source_meta ORDER BY source_name
@@ -42,7 +42,7 @@ func (s *Store) ListSourceMeta(ctx context.Context) ([]SourceMeta, error) {
 
 func (s *Store) GetSourceMeta(ctx context.Context, name string) (SourceMeta, error) {
 	var sm SourceMeta
-	err := s.pool.QueryRow(ctx, `
+	err := s.db.QueryRow(ctx, `
 		SELECT id, source_name, expected_lag, last_successful_poll,
 			   last_new_data_at, poll_interval_seconds, status
 		FROM source_meta WHERE source_name = $1
@@ -59,12 +59,12 @@ func (s *Store) RecordPoll(ctx context.Context, sourceName string, hasNewData bo
 	now := time.Now().UTC()
 	var err error
 	if hasNewData {
-		_, err = s.pool.Exec(ctx, `
+		_, err = s.db.Exec(ctx, `
 			UPDATE source_meta SET last_successful_poll = $2, last_new_data_at = $2, status = 'healthy'
 			WHERE source_name = $1
 		`, sourceName, now)
 	} else {
-		_, err = s.pool.Exec(ctx, `
+		_, err = s.db.Exec(ctx, `
 			UPDATE source_meta SET last_successful_poll = $2, status = 'healthy'
 			WHERE source_name = $1
 		`, sourceName, now)
@@ -76,7 +76,7 @@ func (s *Store) RecordPoll(ctx context.Context, sourceName string, hasNewData bo
 }
 
 func (s *Store) SetSourceStatus(ctx context.Context, sourceName, status string) error {
-	_, err := s.pool.Exec(ctx,
+	_, err := s.db.Exec(ctx,
 		"UPDATE source_meta SET status = $2 WHERE source_name = $1",
 		sourceName, status)
 	return err

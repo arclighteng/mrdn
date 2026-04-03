@@ -33,7 +33,7 @@ type EventFilter struct {
 
 func (s *Store) InsertEvent(ctx context.Context, e Event) (int, error) {
 	var id int
-	err := s.pool.QueryRow(ctx, `
+	err := s.db.QueryRow(ctx, `
 		INSERT INTO events (source, source_id, company_id, event_type, event_data, occurred_at)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (source, source_id) DO UPDATE SET source = EXCLUDED.source
@@ -48,7 +48,7 @@ func (s *Store) InsertEvent(ctx context.Context, e Event) (int, error) {
 
 func (s *Store) GetEvent(ctx context.Context, id int) (Event, error) {
 	var e Event
-	err := s.pool.QueryRow(ctx, `
+	err := s.db.QueryRow(ctx, `
 		SELECT id, source, source_id, company_id, event_type, event_data, occurred_at, ingested_at
 		FROM events WHERE id = $1
 	`, id).Scan(&e.ID, &e.Source, &e.SourceID, &e.CompanyID, &e.EventType,
@@ -100,7 +100,7 @@ func (s *Store) ListEvents(ctx context.Context, f EventFilter) ([]Event, error) 
 		args = append(args, f.Offset)
 	}
 
-	rows, err := s.pool.Query(ctx, query, args...)
+	rows, err := s.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("listing events: %w", err)
 	}
@@ -150,7 +150,7 @@ func (s *Store) CountEvents(ctx context.Context, f EventFilter) (int, error) {
 	}
 
 	var count int
-	if err := s.pool.QueryRow(ctx, query, args...).Scan(&count); err != nil {
+	if err := s.db.QueryRow(ctx, query, args...).Scan(&count); err != nil {
 		return 0, fmt.Errorf("counting events: %w", err)
 	}
 	return count, nil
