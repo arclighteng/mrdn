@@ -1,0 +1,25 @@
+{
+  "sdnList": [
+    {
+      "uid": 12345,
+      "firstName": "John",
+      "lastName": "DOE",
+      "sdnType": "Individual",
+      "programs": ["SDGT", "IFSR"],
+      "dateAdded": "2024-01-15",
+      "aliases": [
+        {"firstName": "J", "lastName": "DOE"},
+        {"firstName": "Johnny", "lastName": "DOE"}
+      ]
+    },
+    {
+      "uid": 67890,
+      "firstName": "",
+      "lastName": "SHELL HOLDINGS LTD",
+      "sdnType": "Entity",
+      "programs": ["UKRAINE-EO13662"],
+      "dateAdded": "2024-03-10",
+      "aliases": []
+    }
+  ]
+}

@@ -2,14 +2,20 @@ package parser
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 )
 
 const (
 	MaxEventDataSize  = 65536 // 64 KB
 	MaxEventDataDepth = 10
+
+	// maxResponseBody caps HTTP response reads across all parsers (10 MB).
+	maxResponseBody = 10 * 1024 * 1024
 )
 
 // ValidateEventData checks that raw is well-formed JSON within size and depth limits.
@@ -30,6 +36,14 @@ func ValidateEventData(raw json.RawMessage) error {
 		return fmt.Errorf("event_data nesting exceeds %d levels (got %d)", MaxEventDataDepth, depth)
 	}
 	return nil
+}
+
+// sourceID returns a deterministic hex-encoded SHA-256 of the joined parts,
+// separated by "|". The returned pointer is never nil.
+func sourceID(parts ...string) *string {
+	h := sha256.Sum256([]byte(strings.Join(parts, "|")))
+	s := hex.EncodeToString(h[:])
+	return &s
 }
 
 // jsonDepth returns the maximum nesting depth of the JSON value in raw.
