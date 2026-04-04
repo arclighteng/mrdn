@@ -16,7 +16,7 @@ type APIKey struct {
 
 func (s *Store) GetAPIKey(ctx context.Context, keyHash string) (APIKey, error) {
 	var k APIKey
-	err := s.pool.QueryRow(ctx, `
+	err := s.db.QueryRow(ctx, `
 		SELECT id, key_hash, label, rate_limit, created_at
 		FROM api_keys WHERE key_hash = $1
 	`, keyHash).Scan(&k.ID, &k.KeyHash, &k.Label, &k.RateLimit, &k.CreatedAt)

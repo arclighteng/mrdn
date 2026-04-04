@@ -4,15 +4,23 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
-type Store struct {
-	pool *pgxpool.Pool
+// DBTX is implemented by *pgxpool.Pool, pgx.Tx, and pgx.Conn.
+type DBTX interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
-func NewStore(pool *pgxpool.Pool) *Store {
-	return &Store{pool: pool}
+type Store struct {
+	db DBTX
+}
+
+func NewStore(db DBTX) *Store {
+	return &Store{db: db}
 }
 
 type Company struct {
@@ -39,7 +47,7 @@ func StrPtr(s string) *string { return &s }
 
 func (s *Store) UpsertCompany(ctx context.Context, c Company) (Company, error) {
 	var result Company
-	err := s.pool.QueryRow(ctx, `
+	err := s.db.QueryRow(ctx, `
 		INSERT INTO companies (ticker, name, sector, subsector, naics_code, market_cap_bucket)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (ticker) DO UPDATE SET
@@ -60,7 +68,7 @@ func (s *Store) UpsertCompany(ctx context.Context, c Company) (Company, error) {
 
 func (s *Store) GetCompanyByTicker(ctx context.Context, ticker string) (Company, error) {
 	var c Company
-	err := s.pool.QueryRow(ctx, `
+	err := s.db.QueryRow(ctx, `
 		SELECT id, ticker, name, sector, subsector, naics_code, market_cap_bucket
 		FROM companies WHERE ticker = $1
 	`, ticker).Scan(&c.ID, &c.Ticker, &c.Name, &c.Sector,
@@ -137,7 +145,7 @@ func (s *Store) ListCompanies(ctx context.Context, f CompanyFilter) ([]Company, 
 		args = append(args, f.Offset)
 	}
 
-	rows, err := s.pool.Query(ctx, query, args...)
+	rows, err := s.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("listing companies: %w", err)
 	}
@@ -181,13 +189,13 @@ func (s *Store) CountCompanies(ctx context.Context, f CompanyFilter) (int, error
 	}
 
 	var count int
-	if err := s.pool.QueryRow(ctx, query, args...).Scan(&count); err != nil {
+	if err := s.db.QueryRow(ctx, query, args...).Scan(&count); err != nil {
 		return 0, fmt.Errorf("counting companies: %w", err)
 	}
 	return count, nil
 }
 
 func (s *Store) DeleteCompany(ctx context.Context, id int) error {
-	_, err := s.pool.Exec(ctx, "DELETE FROM companies WHERE id = $1", id)
+	_, err := s.db.Exec(ctx, "DELETE FROM companies WHERE id = $1", id)
 	return err
 }

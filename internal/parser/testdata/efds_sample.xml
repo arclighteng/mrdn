@@ -1,0 +1,16 @@
+<filings>
+  <filing>
+    <first_name>Jane</first_name>
+    <last_name>DOE</last_name>
+    <filing_type>Annual</filing_type>
+    <filing_date>01/15/2024</filing_date>
+    <report_id>abc-123</report_id>
+  </filing>
+  <filing>
+    <first_name>John</first_name>
+    <last_name>SMITH</last_name>
+    <filing_type>New Filer</filing_type>
+    <filing_date>03/20/2024</filing_date>
+    <report_id>def-456</report_id>
+  </filing>
+</filings>

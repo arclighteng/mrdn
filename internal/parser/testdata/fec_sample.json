@@ -1,0 +1,22 @@
+{
+  "results": [
+    {
+      "sub_id": "4012345678",
+      "contributor_name": "DOE, JOHN",
+      "contribution_receipt_amount": 2800.00,
+      "contribution_receipt_date": "2024-01-15",
+      "committee_name": "FRIENDS OF SENATOR X",
+      "contributor_employer": "ACME Corp",
+      "contributor_occupation": "CEO"
+    },
+    {
+      "sub_id": "4087654321",
+      "contributor_name": "SMITH, JANE",
+      "contribution_receipt_amount": 1500.00,
+      "contribution_receipt_date": "2024-02-20",
+      "committee_name": "COMMITTEE TO ELECT CANDIDATE Y",
+      "contributor_employer": "Globex Industries",
+      "contributor_occupation": "CFO"
+    }
+  ]
+}

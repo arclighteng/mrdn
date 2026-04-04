@@ -10,12 +10,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func setupTestDB(t *testing.T) *db.Store {
+// setupDSN returns the DATABASE_URL env var, skipping the test if it is not set.
+func setupDSN(t *testing.T) string {
 	t.Helper()
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		t.Skip("DATABASE_URL not set")
 	}
+	return dsn
+}
+
+func setupTestDB(t *testing.T) *db.Store {
+	t.Helper()
+	dsn := setupDSN(t)
 	ctx := context.Background()
 	pool, err := db.Connect(ctx, dsn)
 	require.NoError(t, err)

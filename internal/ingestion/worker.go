@@ -1,0 +1,118 @@
+package ingestion
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"time"
+
+	"github.com/arclighteng/mrdn/internal/broker"
+	"github.com/arclighteng/mrdn/internal/db"
+)
+
+// PollWorker drives a Source on a fixed interval, inserting events into the
+// store, publishing them to the broker, and updating source health metadata.
+// It applies exponential backoff on consecutive poll failures.
+type PollWorker struct {
+	source   Source
+	store    *db.Store
+	broker   *broker.Broker
+	backoff  *Backoff
+	interval time.Duration
+	clock    Clock
+}
+
+// NewPollWorker constructs a PollWorker for the given source. interval controls
+// the sleep between successful polls; clock is injectable for testing.
+func NewPollWorker(source Source, store *db.Store, b *broker.Broker, interval time.Duration, clock Clock) *PollWorker {
+	return &PollWorker{
+		source:   source,
+		store:    store,
+		broker:   b,
+		backoff:  NewBackoff(clock),
+		interval: interval,
+		clock:    clock,
+	}
+}
+
+// Run starts the polling loop. It returns when ctx is cancelled.
+func (w *PollWorker) Run(ctx context.Context) {
+	consecutiveFailures := 0
+
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+
+		events, err := w.pollWithRecovery(ctx)
+		if err != nil {
+			consecutiveFailures++
+			log.Printf("[%s] poll error (%d consecutive): %v", w.source.Name(), consecutiveFailures, err)
+
+			if w.store != nil {
+				if consecutiveFailures >= 10 {
+					if serr := w.store.SetSourceStatus(ctx, w.source.Name(), "down"); serr != nil {
+						log.Printf("[%s] set status down: %v", w.source.Name(), serr)
+					}
+				} else if consecutiveFailures >= 3 {
+					if serr := w.store.SetSourceStatus(ctx, w.source.Name(), "degraded"); serr != nil {
+						log.Printf("[%s] set status degraded: %v", w.source.Name(), serr)
+					}
+				}
+			}
+
+			if werr := w.backoff.Wait(ctx); werr != nil {
+				return // context cancelled
+			}
+			continue
+		}
+
+		// Success path.
+		consecutiveFailures = 0
+		w.backoff.Reset()
+		hasNewData := len(events) > 0
+
+		if w.store != nil {
+			for _, evt := range events {
+				id, ierr := w.store.InsertEvent(ctx, evt)
+				if ierr != nil {
+					log.Printf("[%s] insert error: %v", w.source.Name(), ierr)
+					continue // skip this event, don't fail the whole batch
+				}
+				evt.ID = id
+				w.broker.Publish(broker.Event{
+					ID:         id,
+					CompanyID:  evt.CompanyID,
+					Source:     evt.Source,
+					EventType:  evt.EventType,
+					OccurredAt: evt.OccurredAt,
+				})
+			}
+
+			if rerr := w.store.RecordPoll(ctx, w.source.Name(), hasNewData); rerr != nil {
+				log.Printf("[%s] record poll: %v", w.source.Name(), rerr)
+			}
+			if hasNewData {
+				if serr := w.store.SetSourceStatus(ctx, w.source.Name(), "healthy"); serr != nil {
+					log.Printf("[%s] set status healthy: %v", w.source.Name(), serr)
+				}
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-w.clock.After(w.interval):
+		}
+	}
+}
+
+// pollWithRecovery calls source.Poll and converts any panic into an error.
+func (w *PollWorker) pollWithRecovery(ctx context.Context) (events []db.Event, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic in source %s: %v", w.source.Name(), r)
+		}
+	}()
+	return w.source.Poll(ctx)
+}

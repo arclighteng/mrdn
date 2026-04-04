@@ -29,7 +29,7 @@ type ScoreRanking struct {
 }
 
 func (s *Store) InsertScore(ctx context.Context, sc Score) error {
-	_, err := s.pool.Exec(ctx, `
+	_, err := s.db.Exec(ctx, `
 		INSERT INTO scores (company_id, market_score, policy_score, insider_score, composite_score, weight_version)
 		VALUES ($1, $2, $3, $4, $5, $6)
 	`, sc.CompanyID, sc.MarketScore, sc.PolicyScore, sc.InsiderScore, sc.CompositeScore, sc.WeightVersion)
@@ -41,7 +41,7 @@ func (s *Store) InsertScore(ctx context.Context, sc Score) error {
 
 func (s *Store) GetLatestScore(ctx context.Context, companyID int) (Score, error) {
 	var sc Score
-	err := s.pool.QueryRow(ctx, `
+	err := s.db.QueryRow(ctx, `
 		SELECT id, company_id, market_score, policy_score, insider_score, composite_score, weight_version, computed_at
 		FROM scores WHERE company_id = $1 ORDER BY computed_at DESC LIMIT 1
 	`, companyID).Scan(&sc.ID, &sc.CompanyID, &sc.MarketScore, &sc.PolicyScore,
@@ -56,7 +56,7 @@ func (s *Store) GetScoreHistory(ctx context.Context, companyID int, limit int) (
 	if limit <= 0 {
 		limit = 50
 	}
-	rows, err := s.pool.Query(ctx, `
+	rows, err := s.db.Query(ctx, `
 		SELECT id, company_id, market_score, policy_score, insider_score, composite_score, weight_version, computed_at
 		FROM scores WHERE company_id = $1 ORDER BY computed_at DESC LIMIT $2
 	`, companyID, limit)
@@ -81,7 +81,7 @@ func (s *Store) GetScoreRankings(ctx context.Context, limit int) ([]ScoreRanking
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := s.pool.Query(ctx, `
+	rows, err := s.db.Query(ctx, `
 		WITH latest AS (
 			SELECT DISTINCT ON (company_id)
 				company_id, market_score, policy_score, insider_score,
@@ -138,7 +138,7 @@ func (s *Store) GetScoreMovers(ctx context.Context, hours int, limit int) ([]Sco
 	if limit <= 0 {
 		limit = 20
 	}
-	rows, err := s.pool.Query(ctx, `
+	rows, err := s.db.Query(ctx, `
 		WITH recent AS (
 			SELECT DISTINCT ON (company_id)
 				company_id, composite_score, computed_at
