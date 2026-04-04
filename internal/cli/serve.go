@@ -47,7 +47,7 @@ var serveCmd = &cobra.Command{
 			Handler:           srv.Handler(),
 			ReadTimeout:       10 * time.Second,
 			ReadHeaderTimeout: 5 * time.Second,
-			WriteTimeout:      30 * time.Second,
+			WriteTimeout:      0, // Disabled: SSE connections are long-lived; lifecycle managed by serveSSE (30 min max).
 			IdleTimeout:       120 * time.Second,
 			MaxHeaderBytes:    1 << 20,
 		}

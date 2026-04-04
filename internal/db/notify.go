@@ -13,9 +13,9 @@ const notifyChannel = "new_event"
 
 // NotifyNewEvent sends a Postgres NOTIFY on the new_event channel with the event ID
 // as the payload. It is called by the ingestion worker after a successful InsertEvent.
-// eventID is an int so the fmt.Sprintf is not a SQL-injection risk.
+// Uses pg_notify() with parameterized arguments to avoid any injection risk.
 func NotifyNewEvent(ctx context.Context, pool *pgxpool.Pool, eventID int) error {
-	_, err := pool.Exec(ctx, fmt.Sprintf("NOTIFY %s, '%d'", notifyChannel, eventID))
+	_, err := pool.Exec(ctx, "SELECT pg_notify($1, $2::text)", notifyChannel, eventID)
 	if err != nil {
 		return fmt.Errorf("NOTIFY new_event: %w", err)
 	}

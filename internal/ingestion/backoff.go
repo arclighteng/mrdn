@@ -38,6 +38,11 @@ func NewBackoff(clock Clock) *Backoff {
 //
 // where jitter is a random value in [0, 3s).
 func (b *Backoff) Next() time.Duration {
+	// Guard against integer overflow: 1<<62 is the last safe shift for int64.
+	if b.attempt >= 62 {
+		b.attempt++
+		return b.Max
+	}
 	exp := time.Duration(1) << b.attempt // 2^attempt
 	d := b.Base * exp
 	jitter := time.Duration(rand.Int64N(int64(maxJitter)))

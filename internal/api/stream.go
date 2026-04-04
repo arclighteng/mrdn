@@ -4,11 +4,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
+	"sync/atomic"
 	"time"
 
 	"github.com/arclighteng/mrdn/internal/broker"
 	"github.com/go-chi/chi/v5"
 )
+
+// sseSubCounter is a monotonically increasing counter for unique subscriber IDs.
+var sseSubCounter atomic.Uint64
+
+// safeEventType matches only characters safe for SSE event names.
+var safeEventType = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // handleStream streams all events to the client without filtering.
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
@@ -55,9 +63,8 @@ func (s *Server) serveSSE(w http.ResponseWriter, r *http.Request, filter func(br
 	}
 	defer release()
 
-	// Unique subscriber ID includes IP and nanosecond timestamp to avoid collisions
-	// when the same client opens multiple concurrent connections.
-	subID := fmt.Sprintf("sse-%s-%d", ip, time.Now().UnixNano())
+	// Unique subscriber ID uses an atomic counter to guarantee no collisions.
+	subID := fmt.Sprintf("sse-%s-%d", ip, sseSubCounter.Add(1))
 	ch, err := s.broker.Subscribe(subID)
 	if err != nil {
 		writeError(w, 429, "SSE_LIMIT_REACHED", err.Error())
@@ -100,8 +107,13 @@ func (s *Server) serveSSE(w http.ResponseWriter, r *http.Request, filter func(br
 			if !filter(evt) {
 				continue
 			}
+			// Sanitize event type to prevent SSE injection via newlines or control chars.
+			eventType := evt.EventType
+			if !safeEventType.MatchString(eventType) {
+				eventType = "unknown"
+			}
 			data, _ := json.Marshal(evt)
-			fmt.Fprintf(w, "event: %s\nid: %d\ndata: %s\n\n", evt.EventType, evt.ID, data)
+			fmt.Fprintf(w, "event: %s\nid: %d\ndata: %s\n\n", eventType, evt.ID, data)
 			flusher.Flush()
 		}
 	}
