@@ -3,3 +3,4 @@
 /mrdn.exe
 *.test
 coverage.out
+.worktrees/
