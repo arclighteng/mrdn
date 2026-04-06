@@ -13,6 +13,7 @@ import (
 	"github.com/arclighteng/mrdn/internal/api"
 	"github.com/arclighteng/mrdn/internal/config"
 	"github.com/arclighteng/mrdn/internal/db"
+	"github.com/arclighteng/mrdn/web"
 	"github.com/spf13/cobra"
 )
 
@@ -40,6 +41,7 @@ var serveCmd = &cobra.Command{
 
 		store := db.NewStore(pool)
 		srv := api.NewServer(store)
+		srv.SetStaticFS(web.Static)
 
 		addr := fmt.Sprintf(":%d", cfg.Port)
 		httpServer := &http.Server{

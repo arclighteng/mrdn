@@ -1,6 +1,7 @@
 package api
 
 import (
+	"io/fs"
 	"net/http"
 
 	"github.com/arclighteng/mrdn/internal/broker"
@@ -43,6 +44,16 @@ func (s *Server) SetBroker(b *broker.Broker) {
 // (e.g. the ingest CLI command) can publish events to SSE subscribers.
 func (s *Server) Broker() *broker.Broker {
 	return s.broker
+}
+
+// SetStaticFS sets the embedded filesystem for serving the frontend dashboard.
+// The fsys must contain a "static" directory with the frontend assets.
+func (s *Server) SetStaticFS(fsys fs.FS) {
+	sub, err := fs.Sub(fsys, "static")
+	if err != nil {
+		return
+	}
+	s.router.Handle("/*", http.FileServer(http.FS(sub)))
 }
 
 func (s *Server) setupRoutes() {

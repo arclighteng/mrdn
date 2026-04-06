@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MRDN — Political Risk Intelligence</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: {
+    extend: {
+      colors: {
+        surface: { DEFAULT: '#0f0f0f', 1: '#171717', 2: '#1f1f1f', 3: '#292929' },
+        accent: { DEFAULT: '#6366f1', light: '#818cf8' },
+        up: '#22c55e',
+        down: '#ef4444',
+      }
+    }
+  }
+}
+</script>
+<style>
+  [x-cloak] { display: none !important; }
+  body { background: #0f0f0f; color: #e5e5e5; font-family: system-ui, -apple-system, sans-serif; }
+  .fade-in { animation: fadeIn 0.2s ease-in; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: #171717; }
+  ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+</style>
+</head>
+<body x-data="app()" x-cloak>
+
+<!-- Nav -->
+<nav class="sticky top-0 z-50 bg-surface-1/80 backdrop-blur border-b border-white/5">
+  <div class="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
+    <div class="flex items-center gap-6">
+      <span class="text-lg font-bold tracking-tight text-white">MRDN</span>
+      <div class="flex gap-1">
+        <template x-for="tab in ['dashboard','rankings','companies','persons','sources']" :key="tab">
+          <button @click="navigate(tab)"
+            :class="view === tab ? 'bg-surface-3 text-white' : 'text-neutral-400 hover:text-white hover:bg-surface-2'"
+            class="px-3 py-1.5 rounded-md text-sm font-medium transition-colors capitalize"
+            x-text="tab"></button>
+        </template>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <input type="text" x-model="apiKey" placeholder="API Key"
+        class="bg-surface-2 border border-white/10 rounded px-3 py-1 text-sm w-48 focus:border-accent focus:outline-none text-neutral-300">
+      <div class="w-2 h-2 rounded-full" :class="connected ? 'bg-up' : 'bg-down'"></div>
+    </div>
+  </div>
+</nav>
+
+<!-- Main -->
+<main class="max-w-7xl mx-auto px-4 py-6">
+
+  <!-- Dashboard -->
+  <div x-show="view === 'dashboard'" x-transition class="space-y-6 fade-in">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Heatmap -->
+      <div class="lg:col-span-2 bg-surface-1 rounded-xl border border-white/5 p-5">
+        <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider mb-4">Sector Risk Heatmap</h2>
+        <div id="heatmap-chart" class="w-full" style="height:350px"></div>
+      </div>
+      <!-- Top Movers -->
+      <div class="bg-surface-1 rounded-xl border border-white/5 p-5">
+        <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider mb-4">Top Movers (24h)</h2>
+        <div class="space-y-2">
+          <template x-for="m in movers" :key="m.ticker">
+            <div @click="openCompany(m.ticker)" class="flex items-center justify-between p-2.5 rounded-lg bg-surface-2 hover:bg-surface-3 cursor-pointer transition-colors">
+              <div>
+                <span class="font-mono text-sm font-semibold text-white" x-text="m.ticker"></span>
+                <span class="text-xs text-neutral-500 ml-2" x-text="m.name"></span>
+              </div>
+              <div class="text-right">
+                <span class="font-mono text-sm" :class="m.delta >= 0 ? 'text-up' : 'text-down'"
+                  x-text="(m.delta >= 0 ? '+' : '') + m.delta.toFixed(1)"></span>
+                <div class="text-xs text-neutral-500" x-text="m.composite.toFixed(1)"></div>
+              </div>
+            </div>
+          </template>
+          <div x-show="movers.length === 0" class="text-neutral-500 text-sm text-center py-8">No score data yet — run ingestion first</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Latest Events + Rankings side by side -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="bg-surface-1 rounded-xl border border-white/5 p-5">
+        <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider mb-4">Latest Events</h2>
+        <div class="space-y-1.5 max-h-80 overflow-y-auto">
+          <template x-for="e in latestEvents" :key="e.id">
+            <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-surface-2 transition-colors">
+              <span class="shrink-0 w-2 h-2 rounded-full" :class="eventColor(e.event_type)"></span>
+              <div class="flex-1 min-w-0">
+                <div class="text-sm truncate">
+                  <span class="font-mono text-accent-light" x-text="e.source"></span>
+                  <span class="text-neutral-400 mx-1">&middot;</span>
+                  <span x-text="e.event_type" class="text-neutral-300"></span>
+                </div>
+                <div class="text-xs text-neutral-500" x-text="timeAgo(e.occurred_at)"></div>
+              </div>
+              <span x-show="e.ticker" @click.stop="openCompany(e.ticker)"
+                class="font-mono text-xs px-1.5 py-0.5 rounded bg-surface-3 text-neutral-300 cursor-pointer hover:text-white"
+                x-text="e.ticker"></span>
+            </div>
+          </template>
+          <div x-show="latestEvents.length === 0" class="text-neutral-500 text-sm text-center py-8">No events yet</div>
+        </div>
+      </div>
+      <div class="bg-surface-1 rounded-xl border border-white/5 p-5">
+        <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider mb-4">Score Rankings</h2>
+        <div class="space-y-1.5 max-h-80 overflow-y-auto">
+          <template x-for="(r, i) in rankings.slice(0, 15)" :key="r.ticker">
+            <div @click="openCompany(r.ticker)" class="flex items-center gap-3 p-2 rounded-lg hover:bg-surface-2 cursor-pointer transition-colors">
+              <span class="text-xs font-mono text-neutral-500 w-5 text-right" x-text="i+1"></span>
+              <div class="flex-1">
+                <span class="font-mono text-sm font-semibold text-white" x-text="r.ticker"></span>
+                <span class="text-xs text-neutral-500 ml-2" x-text="r.name"></span>
+              </div>
+              <div class="w-24 bg-surface-3 rounded-full h-1.5">
+                <div class="h-1.5 rounded-full transition-all" :style="`width:${r.composite}%;background:${scoreColor(r.composite)}`"></div>
+              </div>
+              <span class="font-mono text-sm w-10 text-right" :style="`color:${scoreColor(r.composite)}`" x-text="r.composite.toFixed(0)"></span>
+            </div>
+          </template>
+          <div x-show="rankings.length === 0" class="text-neutral-500 text-sm text-center py-8">No scores computed yet</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Data Source Status -->
+    <div class="bg-surface-1 rounded-xl border border-white/5 p-5">
+      <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider mb-4">Data Source Status</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <template x-for="s in sources" :key="s.source_name">
+          <div class="bg-surface-2 rounded-lg p-3">
+            <div class="flex items-center justify-between mb-1">
+              <span class="font-mono text-sm text-white" x-text="s.source_name"></span>
+              <span class="text-xs px-1.5 py-0.5 rounded font-semibold"
+                :class="s.status === 'healthy' ? 'bg-up/20 text-up' : s.status === 'stale' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-down/20 text-down'"
+                x-text="s.status"></span>
+            </div>
+            <div class="text-xs text-neutral-500" x-text="s.last_successful_poll ? timeAgo(s.last_successful_poll) : 'never polled'"></div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rankings View -->
+  <div x-show="view === 'rankings'" x-transition class="fade-in">
+    <div class="bg-surface-1 rounded-xl border border-white/5 p-5">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">All Company Rankings</h2>
+        <select x-model="rankSort" @change="fetchRankings()" class="bg-surface-2 border border-white/10 rounded px-2 py-1 text-sm text-neutral-300">
+          <option value="composite">Composite</option>
+          <option value="market">Market</option>
+          <option value="policy">Policy</option>
+          <option value="insider">Insider</option>
+        </select>
+      </div>
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-neutral-500 text-xs uppercase border-b border-white/5">
+            <th class="text-left py-2 px-2">#</th>
+            <th class="text-left py-2">Ticker</th>
+            <th class="text-left py-2">Name</th>
+            <th class="text-left py-2">Sector</th>
+            <th class="text-right py-2">Market</th>
+            <th class="text-right py-2">Policy</th>
+            <th class="text-right py-2">Insider</th>
+            <th class="text-right py-2 px-2">Composite</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="(r, i) in rankings" :key="r.ticker">
+            <tr @click="openCompany(r.ticker)" class="border-b border-white/5 hover:bg-surface-2 cursor-pointer transition-colors">
+              <td class="py-2 px-2 text-neutral-500 font-mono" x-text="i+1"></td>
+              <td class="py-2 font-mono font-semibold text-white" x-text="r.ticker"></td>
+              <td class="py-2 text-neutral-300" x-text="r.name"></td>
+              <td class="py-2 text-neutral-500" x-text="r.sector || '—'"></td>
+              <td class="py-2 text-right font-mono" :style="`color:${scoreColor(r.market)}`" x-text="r.market?.toFixed(1) ?? '—'"></td>
+              <td class="py-2 text-right font-mono" :style="`color:${scoreColor(r.policy)}`" x-text="r.policy?.toFixed(1) ?? '—'"></td>
+              <td class="py-2 text-right font-mono" :style="`color:${scoreColor(r.insider)}`" x-text="r.insider?.toFixed(1) ?? '—'"></td>
+              <td class="py-2 px-2 text-right font-mono font-semibold" :style="`color:${scoreColor(r.composite)}`" x-text="r.composite?.toFixed(1) ?? '—'"></td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+      <div x-show="rankings.length === 0" class="text-neutral-500 text-sm text-center py-12">No scores computed yet — run ingestion to generate data</div>
+    </div>
+  </div>
+
+  <!-- Companies List -->
+  <div x-show="view === 'companies'" x-transition class="fade-in">
+    <div class="bg-surface-1 rounded-xl border border-white/5 p-5">
+      <div class="flex items-center gap-4 mb-4">
+        <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Companies</h2>
+        <input type="text" x-model="companySearch" @input.debounce.300ms="fetchCompanies()" placeholder="Filter by sector..."
+          class="bg-surface-2 border border-white/10 rounded px-3 py-1 text-sm flex-1 max-w-xs focus:border-accent focus:outline-none text-neutral-300">
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        <template x-for="c in companies" :key="c.id">
+          <div @click="openCompany(c.ticker)" class="bg-surface-2 rounded-lg p-4 hover:bg-surface-3 cursor-pointer transition-colors border border-white/5">
+            <div class="flex items-center justify-between mb-2">
+              <span class="font-mono font-bold text-white" x-text="c.ticker"></span>
+              <span class="text-xs px-2 py-0.5 rounded-full bg-surface-3 text-neutral-400" x-text="c.sector || 'Unknown'"></span>
+            </div>
+            <div class="text-sm text-neutral-300 truncate" x-text="c.name"></div>
+            <div class="text-xs text-neutral-500 mt-1" x-text="c.subsector || ''"></div>
+          </div>
+        </template>
+      </div>
+      <div class="flex justify-center gap-2 mt-4" x-show="companyTotal > 30">
+        <button @click="companyPage > 0 && (companyPage--, fetchCompanies())"
+          :disabled="companyPage === 0"
+          class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Prev</button>
+        <span class="text-sm text-neutral-500 py-1" x-text="`${companyPage * 30 + 1}–${Math.min((companyPage+1)*30, companyTotal)} of ${companyTotal}`"></span>
+        <button @click="(companyPage+1)*30 < companyTotal && (companyPage++, fetchCompanies())"
+          :disabled="(companyPage+1)*30 >= companyTotal"
+          class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Next</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Company Detail -->
+  <div x-show="view === 'company'" x-transition class="space-y-6 fade-in">
+    <div class="flex items-center gap-3 mb-2">
+      <button @click="navigate('dashboard')" class="text-neutral-500 hover:text-white text-sm">&larr; Back</button>
+      <h1 class="text-2xl font-bold text-white">
+        <span x-text="detail.ticker"></span>
+        <span class="text-lg text-neutral-400 font-normal ml-2" x-text="detail.name"></span>
+      </h1>
+    </div>
+
+    <!-- Score Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <template x-for="[label, val] in [['Composite', detail.scores?.composite], ['Market', detail.scores?.market], ['Policy', detail.scores?.policy], ['Insider', detail.scores?.insider]]" :key="label">
+        <div class="bg-surface-1 rounded-xl border border-white/5 p-4 text-center">
+          <div class="text-xs text-neutral-500 uppercase tracking-wider mb-1" x-text="label"></div>
+          <div class="text-3xl font-bold font-mono" :style="`color:${scoreColor(val)}`" x-text="val != null ? val.toFixed(1) : '—'"></div>
+        </div>
+      </template>
+    </div>
+
+    <!-- Score History Chart + Timeline -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="bg-surface-1 rounded-xl border border-white/5 p-5">
+        <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider mb-4">Score History</h2>
+        <div id="score-history-chart" class="w-full" style="height:300px"></div>
+      </div>
+      <div class="bg-surface-1 rounded-xl border border-white/5 p-5">
+        <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider mb-4">Timeline</h2>
+        <div class="space-y-2 max-h-72 overflow-y-auto">
+          <template x-for="t in timeline" :key="t.event_id || t.score_id">
+            <div class="flex items-start gap-3 p-2 rounded-lg hover:bg-surface-2 transition-colors">
+              <span class="shrink-0 mt-1 w-2 h-2 rounded-full" :class="t.type === 'score' ? 'bg-accent' : 'bg-neutral-500'"></span>
+              <div>
+                <div class="text-sm">
+                  <span x-show="t.type === 'event'" class="text-neutral-300" x-text="(t.source || '') + ' — ' + (t.event_type || '')"></span>
+                  <span x-show="t.type === 'score'" class="text-accent-light">Score update: <span class="font-mono" x-text="t.composite_score?.toFixed(1)"></span></span>
+                </div>
+                <div class="text-xs text-neutral-500" x-text="timeAgo(t.timestamp)"></div>
+              </div>
+            </div>
+          </template>
+          <div x-show="timeline.length === 0" class="text-neutral-500 text-sm text-center py-8">No activity yet</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Connections Graph -->
+    <div class="bg-surface-1 rounded-xl border border-white/5 p-5">
+      <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider mb-4">Entity Connections</h2>
+      <div id="connections-chart" class="w-full" style="height:400px"></div>
+    </div>
+  </div>
+
+  <!-- Persons -->
+  <div x-show="view === 'persons'" x-transition class="fade-in">
+    <div class="bg-surface-1 rounded-xl border border-white/5 p-5">
+      <div class="flex items-center gap-4 mb-4">
+        <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Political Figures</h2>
+        <select x-model="personBranch" @change="fetchPersons()" class="bg-surface-2 border border-white/10 rounded px-2 py-1 text-sm text-neutral-300">
+          <option value="">All branches</option>
+          <option value="legislative">Legislative</option>
+          <option value="executive">Executive</option>
+          <option value="judicial">Judicial</option>
+        </select>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        <template x-for="p in persons" :key="p.id">
+          <div class="bg-surface-2 rounded-lg p-4 border border-white/5">
+            <div class="font-semibold text-white" x-text="p.name"></div>
+            <div class="text-sm text-neutral-400 mt-1" x-text="p.role"></div>
+            <div class="flex gap-2 mt-2">
+              <span class="text-xs px-2 py-0.5 rounded-full bg-surface-3 text-neutral-400" x-text="p.branch || '—'"></span>
+              <span class="text-xs px-2 py-0.5 rounded-full bg-accent/20 text-accent-light" x-text="'Tier ' + p.tier"></span>
+            </div>
+          </div>
+        </template>
+      </div>
+      <div x-show="persons.length === 0" class="text-neutral-500 text-sm text-center py-12">No persons data — run EFDS ingestion</div>
+    </div>
+  </div>
+
+  <!-- Sources -->
+  <div x-show="view === 'sources'" x-transition class="fade-in">
+    <div class="bg-surface-1 rounded-xl border border-white/5 p-5">
+      <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider mb-4">Data Sources</h2>
+      <div class="space-y-3">
+        <template x-for="s in sources" :key="s.source_name">
+          <div class="bg-surface-2 rounded-lg p-4 border border-white/5">
+            <div class="flex items-center justify-between mb-2">
+              <span class="font-mono font-bold text-white" x-text="s.source_name"></span>
+              <span class="text-xs px-2 py-0.5 rounded font-semibold"
+                :class="s.status === 'healthy' ? 'bg-up/20 text-up' : 'bg-yellow-500/20 text-yellow-400'"
+                x-text="s.status"></span>
+            </div>
+            <div class="grid grid-cols-3 gap-4 text-sm">
+              <div>
+                <div class="text-xs text-neutral-500">Expected Lag</div>
+                <div class="text-neutral-300" x-text="s.expected_lag"></div>
+              </div>
+              <div>
+                <div class="text-xs text-neutral-500">Last Poll</div>
+                <div class="text-neutral-300" x-text="s.last_successful_poll ? new Date(s.last_successful_poll).toLocaleString() : 'Never'"></div>
+              </div>
+              <div>
+                <div class="text-xs text-neutral-500">Poll Interval</div>
+                <div class="text-neutral-300" x-text="formatDuration(s.poll_interval_seconds)"></div>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+function app() {
+  return {
+    view: 'dashboard',
+    apiKey: localStorage.getItem('mrdn_api_key') || '',
+    connected: false,
+
+    // Dashboard data
+    movers: [],
+    rankings: [],
+    latestEvents: [],
+    sources: [],
+    heatmapData: [],
+
+    // Companies list
+    companies: [],
+    companySearch: '',
+    companyPage: 0,
+    companyTotal: 0,
+
+    // Company detail
+    detail: {},
+    timeline: [],
+    scoreHistory: [],
+
+    // Persons
+    persons: [],
+    personBranch: '',
+
+    // Rankings
+    rankSort: 'composite',
+
+    init() {
+      this.$watch('apiKey', (val) => {
+        localStorage.setItem('mrdn_api_key', val);
+      });
+      this.loadDashboard();
+    },
+
+    async api(path) {
+      try {
+        const resp = await fetch('/api/v1' + path, {
+          headers: { 'X-API-Key': this.apiKey }
+        });
+        if (!resp.ok) return null;
+        this.connected = true;
+        return await resp.json();
+      } catch (e) {
+        this.connected = false;
+        return null;
+      }
+    },
+
+    async loadDashboard() {
+      const [moversRes, rankRes, eventsRes, sourcesRes, heatmapRes] = await Promise.all([
+        this.api('/scores/movers?hours=24&limit=10'),
+        this.api('/scores/rankings?limit=50'),
+        this.api('/events/latest?limit=20'),
+        this.api('/sources'),
+        this.api('/scores/heatmap'),
+      ]);
+
+      this.movers = moversRes?.data || [];
+      this.rankings = rankRes?.data || [];
+      this.latestEvents = eventsRes?.data || [];
+      this.sources = sourcesRes?.data || [];
+      this.heatmapData = heatmapRes?.data || [];
+
+      this.$nextTick(() => this.renderHeatmap());
+    },
+
+    async fetchRankings() {
+      const res = await this.api(`/scores/rankings?limit=100&sort=${this.rankSort}`);
+      this.rankings = res?.data || [];
+    },
+
+    async fetchCompanies() {
+      const sector = this.companySearch ? `&sector=${encodeURIComponent(this.companySearch)}` : '';
+      const res = await this.api(`/companies?limit=30&offset=${this.companyPage * 30}${sector}`);
+      this.companies = res?.data || [];
+      this.companyTotal = res?.pagination?.total || 0;
+    },
+
+    async fetchPersons() {
+      const branch = this.personBranch ? `&branch=${this.personBranch}` : '';
+      const res = await this.api(`/persons?limit=50${branch}`);
+      this.persons = res?.data || [];
+    },
+
+    async openCompany(ticker) {
+      this.view = 'company';
+      this.detail = {};
+      this.timeline = [];
+      this.scoreHistory = [];
+
+      const [detailRes, timelineRes, scoresRes, connRes] = await Promise.all([
+        this.api(`/companies/${ticker}`),
+        this.api(`/companies/${ticker}/timeline?limit=50`),
+        this.api(`/companies/${ticker}/scores?limit=50`),
+        this.api(`/connections/${ticker}?depth=2`),
+      ]);
+
+      this.detail = detailRes?.data || {};
+      this.timeline = timelineRes?.data || [];
+      this.scoreHistory = scoresRes?.data || [];
+
+      this.$nextTick(() => {
+        this.renderScoreHistory();
+        if (connRes?.data) this.renderConnections(connRes.data);
+      });
+    },
+
+    navigate(to) {
+      this.view = to;
+      if (to === 'dashboard') this.loadDashboard();
+      if (to === 'companies') this.fetchCompanies();
+      if (to === 'persons') this.fetchPersons();
+      if (to === 'rankings') this.fetchRankings();
+      if (to === 'sources') { /* already loaded */ }
+    },
+
+    // --- Charts ---
+    renderHeatmap() {
+      const el = document.getElementById('heatmap-chart');
+      if (!el || this.heatmapData.length === 0) {
+        if (el) {
+          const chart = echarts.init(el, 'dark');
+          chart.setOption({ graphic: { type: 'text', left: 'center', top: 'middle', style: { text: 'No heatmap data — run ingestion to generate scores', fill: '#525252', fontSize: 14 }}});
+        }
+        return;
+      }
+      const chart = echarts.init(el, 'dark');
+      const sectors = [...new Set(this.heatmapData.map(d => d.sector))];
+      const metrics = ['market', 'policy', 'insider', 'composite'];
+      const data = [];
+      sectors.forEach((s, si) => {
+        metrics.forEach((m, mi) => {
+          const row = this.heatmapData.find(d => d.sector === s);
+          if (row) data.push([mi, si, row[`avg_${m}`] || row[m] || 0]);
+        });
+      });
+      chart.setOption({
+        backgroundColor: 'transparent',
+        tooltip: { formatter: p => `${sectors[p.value[1]]}<br>${metrics[p.value[0]]}: ${p.value[2].toFixed(1)}` },
+        grid: { top: 10, right: 10, bottom: 30, left: 120 },
+        xAxis: { type: 'category', data: metrics, axisLabel: { color: '#737373' }, splitArea: { show: true, areaStyle: { color: ['transparent'] }}},
+        yAxis: { type: 'category', data: sectors, axisLabel: { color: '#a3a3a3', fontSize: 11 }},
+        visualMap: { min: 0, max: 100, show: false, inRange: { color: ['#1e3a5f', '#3b82f6', '#f59e0b', '#ef4444'] }},
+        series: [{ type: 'heatmap', data: data, itemStyle: { borderRadius: 3 }, emphasis: { itemStyle: { borderColor: '#fff', borderWidth: 1 }}}]
+      });
+      window.addEventListener('resize', () => chart.resize());
+    },
+
+    renderScoreHistory() {
+      const el = document.getElementById('score-history-chart');
+      if (!el) return;
+      const chart = echarts.init(el, 'dark');
+      if (this.scoreHistory.length === 0) {
+        chart.setOption({ graphic: { type: 'text', left: 'center', top: 'middle', style: { text: 'No score history yet', fill: '#525252', fontSize: 14 }}});
+        return;
+      }
+      const sorted = [...this.scoreHistory].reverse();
+      const dates = sorted.map(s => new Date(s.computed_at).toLocaleDateString());
+      chart.setOption({
+        backgroundColor: 'transparent',
+        tooltip: { trigger: 'axis' },
+        legend: { data: ['Composite', 'Market', 'Policy', 'Insider'], textStyle: { color: '#737373' }, top: 0 },
+        grid: { top: 35, right: 15, bottom: 25, left: 40 },
+        xAxis: { type: 'category', data: dates, axisLabel: { color: '#525252', fontSize: 10 }},
+        yAxis: { type: 'value', min: 0, max: 100, axisLabel: { color: '#525252' }},
+        series: [
+          { name: 'Composite', type: 'line', data: sorted.map(s => s.composite_score), smooth: true, lineStyle: { width: 2.5, color: '#6366f1' }, itemStyle: { color: '#6366f1' }},
+          { name: 'Market', type: 'line', data: sorted.map(s => s.market_score), smooth: true, lineStyle: { width: 1, color: '#3b82f6', type: 'dashed' }, itemStyle: { color: '#3b82f6' }, symbol: 'none' },
+          { name: 'Policy', type: 'line', data: sorted.map(s => s.policy_score), smooth: true, lineStyle: { width: 1, color: '#f59e0b', type: 'dashed' }, itemStyle: { color: '#f59e0b' }, symbol: 'none' },
+          { name: 'Insider', type: 'line', data: sorted.map(s => s.insider_score), smooth: true, lineStyle: { width: 1, color: '#22c55e', type: 'dashed' }, itemStyle: { color: '#22c55e' }, symbol: 'none' },
+        ]
+      });
+      window.addEventListener('resize', () => chart.resize());
+    },
+
+    renderConnections(graph) {
+      const el = document.getElementById('connections-chart');
+      if (!el) return;
+      const chart = echarts.init(el, 'dark');
+      if (!graph.nodes || graph.nodes.length === 0) {
+        chart.setOption({ graphic: { type: 'text', left: 'center', top: 'middle', style: { text: 'No connections found', fill: '#525252', fontSize: 14 }}});
+        return;
+      }
+      const nodes = graph.nodes.map((n, i) => ({
+        id: `${n.type}_${n.id}`,
+        name: n.label || `${n.type}:${n.id}`,
+        symbolSize: i === 0 ? 40 : 25,
+        category: n.type === 'company' ? 0 : 1,
+        itemStyle: { color: n.type === 'company' ? '#6366f1' : '#f59e0b' }
+      }));
+      const edges = graph.edges.map(e => ({
+        source: `${e.from_type}_${e.from}`,
+        target: `${e.to_type}_${e.to}`,
+        label: { show: false },
+        lineStyle: { color: '#333', curveness: 0.1 }
+      }));
+      chart.setOption({
+        backgroundColor: 'transparent',
+        tooltip: {},
+        series: [{
+          type: 'graph', layout: 'force', roam: true, draggable: true,
+          data: nodes, links: edges,
+          categories: [{ name: 'Company' }, { name: 'Person' }],
+          force: { repulsion: 200, edgeLength: 120 },
+          label: { show: true, color: '#d4d4d4', fontSize: 10 },
+          emphasis: { focus: 'adjacency', lineStyle: { width: 3 }},
+        }]
+      });
+      window.addEventListener('resize', () => chart.resize());
+    },
+
+    // --- Helpers ---
+    scoreColor(v) {
+      if (v == null) return '#525252';
+      if (v >= 70) return '#ef4444';
+      if (v >= 40) return '#f59e0b';
+      return '#22c55e';
+    },
+
+    eventColor(type) {
+      const map = {
+        congressional_trade: 'bg-blue-500', insider_trade: 'bg-purple-500',
+        contract_award: 'bg-yellow-500', sanction: 'bg-red-500',
+        market_data: 'bg-green-500', donation: 'bg-pink-500',
+        score_change: 'bg-accent', regulation: 'bg-orange-500',
+      };
+      return map[type] || 'bg-neutral-500';
+    },
+
+    timeAgo(dateStr) {
+      if (!dateStr) return '';
+      const secs = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+      if (secs < 60) return 'just now';
+      if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
+      if (secs < 86400) return Math.floor(secs / 3600) + 'h ago';
+      return Math.floor(secs / 86400) + 'd ago';
+    },
+
+    formatDuration(secs) {
+      if (!secs) return 'realtime';
+      if (secs < 3600) return Math.floor(secs / 60) + ' min';
+      if (secs < 86400) return Math.floor(secs / 3600) + ' hr';
+      return Math.floor(secs / 86400) + ' day';
+    },
+  }
+}
+</script>
+</body>
+</html>
