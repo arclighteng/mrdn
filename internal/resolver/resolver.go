@@ -14,11 +14,26 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// ResolverStore is the subset of db.Store methods that the Resolver needs.
+// Defined as an interface so tests can supply a mock without a real database.
+type ResolverStore interface {
+	ListAllCompanyLookups(ctx context.Context) ([]db.CompanyLookup, error)
+	UpsertCompany(ctx context.Context, c db.Company) (db.Company, error)
+	UpdateEventCompanyID(ctx context.Context, eventID int, companyID int) error
+	SearchCompanyByName(ctx context.Context, name string) (*db.CompanyLookup, error)
+	InsertMarketData(ctx context.Context, m db.MarketDataRow) error
+	InsertInsiderTrade(ctx context.Context, t db.InsiderTrade) error
+	InsertDonation(ctx context.Context, d db.Donation) error
+	InsertContract(ctx context.Context, c db.Contract) error
+	InsertSanction(ctx context.Context, sn db.Sanction) error
+	ListUnresolvedEventsAfter(ctx context.Context, source string, afterID, batchSize int) ([]db.Event, error)
+}
+
 // Resolver matches events to companies and extracts typed records into domain
 // tables. It maintains an in-memory ticker→companyID cache that is refreshed
 // periodically.
 type Resolver struct {
-	store *db.Store
+	store ResolverStore
 
 	mu          sync.RWMutex
 	byTicker    map[string]int // ticker → company ID
@@ -26,7 +41,7 @@ type Resolver struct {
 }
 
 // New creates a Resolver and loads the initial company cache.
-func New(ctx context.Context, store *db.Store) (*Resolver, error) {
+func New(ctx context.Context, store ResolverStore) (*Resolver, error) {
 	r := &Resolver{store: store}
 	if err := r.RefreshCache(ctx); err != nil {
 		return nil, fmt.Errorf("resolver: initial cache load: %w", err)

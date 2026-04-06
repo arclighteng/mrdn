@@ -107,14 +107,24 @@ func (s *Store) SearchCompanyByName(ctx context.Context, name string) (*CompanyL
 
 	// Try prefix match: "Micron Technology" matches "MICRON TECHNOLOGY INC".
 	// Use the shorter of the two as the prefix — query both directions.
+	// Escape LIKE metacharacters so user input cannot alter the match pattern.
+	escapedName := escapeLike(name)
 	err = s.db.QueryRow(ctx,
 		`SELECT id, ticker, name FROM companies
-		WHERE LOWER(name) LIKE LOWER($1) || '%'
-		   OR LOWER($1) LIKE LOWER(name) || '%'
+		WHERE LOWER(name) LIKE LOWER($1) || '%' ESCAPE '\'
+		   OR LOWER($1) LIKE LOWER(name) || '%' ESCAPE '\'
 		ORDER BY LENGTH(name) LIMIT 1`,
-		name).Scan(&c.ID, &c.Ticker, &c.Name)
+		escapedName).Scan(&c.ID, &c.Ticker, &c.Name)
 	if err != nil {
 		return nil, err
 	}
 	return &c, nil
+}
+
+// escapeLike escapes LIKE metacharacters in a string.
+func escapeLike(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	s = strings.ReplaceAll(s, `_`, `\_`)
+	return s
 }

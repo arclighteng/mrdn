@@ -2,6 +2,7 @@
 .env.local
 /mrdn
 /mrdn.exe
+*.exe~
 *.test
 coverage.out
 .worktrees/

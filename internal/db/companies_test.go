@@ -127,3 +127,19 @@ func TestListCompanies_TickerFilter(t *testing.T) {
 	assert.Greater(t, len(companies), 0)
 	assert.Equal(t, "NVDA", companies[0].Ticker)
 }
+
+func TestUpsertCompany_TxRollback(t *testing.T) {
+	store := setupTestTx(t)
+	ctx := context.Background()
+
+	c, err := store.UpsertCompany(ctx, db.Company{
+		Ticker: "TXTEST",
+		Name:   "TX Test Corp",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "TXTEST", c.Ticker)
+	assert.Greater(t, c.ID, 0)
+
+	// The tx rollback in t.Cleanup will undo this insert,
+	// so no manual cleanup is needed.
+}
