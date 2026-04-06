@@ -92,6 +92,15 @@ func (s *Server) setupRoutes() {
 
 		r.Get("/scores/rankings", s.handleScoreRankings)
 		r.Get("/scores/movers", s.handleScoreMovers)
+		r.Get("/scores/heatmap", s.handleScoreHeatmap)
+
+		r.Get("/persons", s.handleListPersons)
+		r.Get("/persons/{slug}", s.handleGetPerson)
+
+		r.Get("/connections/company/{ticker}", s.handleConnectionsByCompany)
+		r.Get("/connections/person/{slug}", s.handleConnectionsByPerson)
+
+		r.Get("/companies/{ticker}/timeline", s.handleCompanyTimeline)
 
 		r.Get("/sources", s.handleListSources)
 		r.Get("/sources/{name}", s.handleGetSource)

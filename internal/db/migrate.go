@@ -11,11 +11,15 @@ import (
 //go:embed migrations/001_initial.sql
 var migration001 string
 
+//go:embed migrations/002_persons_graph.sql
+var migration002 string
+
 var migrations = []struct {
 	version int
 	sql     string
 }{
 	{1, migration001},
+	{2, migration002},
 }
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
