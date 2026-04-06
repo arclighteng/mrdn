@@ -11,6 +11,7 @@ import (
 	"github.com/arclighteng/mrdn/internal/config"
 	"github.com/arclighteng/mrdn/internal/db"
 	"github.com/arclighteng/mrdn/internal/parser"
+	"github.com/arclighteng/mrdn/internal/score"
 )
 
 const (
@@ -117,6 +118,26 @@ func (s *Supervisor) Start() {
 			log.Printf("[supervisor] starting rebalancer")
 			rebalancer.Run(s.ctx)
 			log.Printf("[supervisor] rebalancer stopped")
+		}()
+	}
+
+	// Launch score worker (skip when sources are overridden in tests).
+	if !s.sourcesSet {
+		sw := NewScoreWorker(s.store, s.broker, s.clock)
+		engine := score.NewEngine(
+			s.store,
+			score.NewMarketScorer(s.store),
+			score.NewPolicyScorer(s.store),
+			score.NewInsiderScorer(s.store),
+			score.DefaultWeights(),
+		)
+		sw.SetComputer(engine)
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			log.Printf("[supervisor] starting score worker")
+			sw.Run(s.ctx)
+			log.Printf("[supervisor] score worker stopped")
 		}()
 	}
 

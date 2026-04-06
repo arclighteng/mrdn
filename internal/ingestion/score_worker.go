@@ -14,23 +14,50 @@ const (
 	scoreWorkerSubID   = "score-worker"
 )
 
+// ScoreComputer computes and persists a score for a company.
+type ScoreComputer interface {
+	ComputeAndStore(ctx context.Context, companyID int, now time.Time) error
+}
+
 // ScoreWorker subscribes to the broker and triggers score recomputation for
 // companies whenever new events arrive, using a debounce map to coalesce
 // multiple events for the same company within a flush window.
 type ScoreWorker struct {
-	store  *db.Store
-	broker *broker.Broker
-	clock  Clock
+	computer ScoreComputer // may be nil (tests, or engine not ready)
+	store    *db.Store     // kept for backward compat with nil-computer path
+	broker   *broker.Broker
+	clock    Clock
+
+	// Per-company cooldown: skip recompute if last compute was < cooldown ago.
+	cooldown    time.Duration
+	lastCompute map[int]time.Time // companyID → last compute time
+
+	// Global budget: max recomputes per window.
+	budgetLimit  int
+	budgetCount  int
+	budgetReset  time.Time
+	budgetWindow time.Duration
 }
 
 // NewScoreWorker constructs a ScoreWorker. store may be nil for tests; when nil
-// the DB insert step is skipped but broker publication still occurs.
+// and no ScoreComputer is set, the DB insert step is skipped but broker
+// publication still occurs.
 func NewScoreWorker(store *db.Store, b *broker.Broker, clock Clock) *ScoreWorker {
 	return &ScoreWorker{
-		store:  store,
-		broker: b,
-		clock:  clock,
+		store:        store,
+		broker:       b,
+		clock:        clock,
+		cooldown:     5 * time.Minute,
+		lastCompute:  make(map[int]time.Time),
+		budgetLimit:  100,
+		budgetWindow: time.Minute,
 	}
+}
+
+// SetComputer attaches a ScoreComputer to the worker. When set, recomputeScore
+// delegates to it instead of inserting a zero-value placeholder score.
+func (w *ScoreWorker) SetComputer(c ScoreComputer) {
+	w.computer = c
 }
 
 // Run subscribes to the broker and processes events until ctx is cancelled.
@@ -71,20 +98,46 @@ func (w *ScoreWorker) Run(ctx context.Context) {
 	}
 }
 
-// recomputeScore is a Phase 3 placeholder. It inserts a zero-value score row
-// (skipped when store is nil) and publishes a score_change event to the broker.
+// recomputeScore applies per-company cooldown and global budget guards before
+// delegating to the ScoreComputer (if set) or falling back to a zero-value
+// placeholder insert for backward compatibility. It always publishes a
+// score_change event to the broker on success.
 func (w *ScoreWorker) recomputeScore(ctx context.Context, companyID int) {
-	if w.store != nil {
+	now := w.clock.Now()
+
+	// Per-company cooldown: skip if computed too recently.
+	if last, ok := w.lastCompute[companyID]; ok && now.Sub(last) < w.cooldown {
+		return
+	}
+
+	// Global budget: reset counter when the window has elapsed.
+	if now.After(w.budgetReset) {
+		w.budgetCount = 0
+		w.budgetReset = now.Add(w.budgetWindow)
+	}
+	if w.budgetCount >= w.budgetLimit {
+		log.Printf("[score-worker] budget exhausted, skipping company %d", companyID)
+		return
+	}
+
+	w.budgetCount++
+	w.lastCompute[companyID] = now
+
+	if w.computer != nil {
+		if err := w.computer.ComputeAndStore(ctx, companyID, now); err != nil {
+			log.Printf("[score-worker] compute score for company %d: %v", companyID, err)
+			return
+		}
+	} else if w.store != nil {
+		// Legacy placeholder path: insert a zero-value score row.
 		sc := db.Score{
 			CompanyID:      companyID,
-			MarketScore:    0,
-			PolicyScore:    0,
-			InsiderScore:   0,
 			CompositeScore: 0,
 			WeightVersion:  0,
 		}
 		if err := w.store.InsertScore(ctx, sc); err != nil {
 			log.Printf("[score-worker] insert score for company %d: %v", companyID, err)
+			return
 		}
 	}
 
