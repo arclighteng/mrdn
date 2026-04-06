@@ -1,8 +1,10 @@
 package parser
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,8 +16,12 @@ import (
 
 const (
 	ofacSourceName = "ofac_sdn"
-	// ofacBaseURL is the OFAC SDN JSON API endpoint. Hardcoded to prevent SSRF.
-	ofacBaseURL = "https://api.ofac-api.com/v4/sdn"
+	// ofacBaseURL is the official US Treasury OFAC SDN XML feed.
+	// Hardcoded to prevent SSRF; no API key required (public data).
+	ofacBaseURL = "https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/SDN.XML"
+	// ofacMaxResponseBody is higher than the default because the full SDN list
+	// is ~28 MB XML with ~18,000 entries.
+	ofacMaxResponseBody = 50 * 1024 * 1024
 )
 
 // OFACSource polls the OFAC SDN list for sanction designation events.
@@ -35,7 +41,9 @@ func NewOFACSource(client *http.Client) *OFACSource {
 // Name implements ingestion.Source.
 func (o *OFACSource) Name() string { return ofacSourceName }
 
-// Poll fetches the OFAC SDN list and returns parsed sanction events.
+// Poll fetches the OFAC SDN list from the official US Treasury XML feed and
+// returns parsed sanction events. The endpoint may return a 302 redirect to an
+// S3 pre-signed URL; the default http.Client follows redirects automatically.
 // Implements ingestion.Source.
 func (o *OFACSource) Poll(ctx context.Context) ([]db.Event, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ofacBaseURL, nil)
@@ -52,12 +60,12 @@ func (o *OFACSource) Poll(ctx context.Context) ([]db.Event, error) {
 		return nil, fmt.Errorf("ofac: unexpected status %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, ofacMaxResponseBody))
 	if err != nil {
 		return nil, fmt.Errorf("ofac: reading response body: %w", err)
 	}
 
-	events, err := ParseOFAC(body)
+	events, err := ParseOFACXML(body)
 	if err != nil {
 		return nil, fmt.Errorf("ofac: parsing response: %w", err)
 	}
@@ -78,6 +86,64 @@ type ofacEntry struct {
 // ofacResponse is the top-level envelope returned by the OFAC API.
 type ofacResponse struct {
 	SDNList []ofacEntry `json:"sdnList"`
+}
+
+// ofacXMLSDNList is the top-level XML envelope from the Treasury SDN XML feed.
+type ofacXMLSDNList struct {
+	XMLName xml.Name        `xml:"sdnList"`
+	Entries []ofacXMLEntry  `xml:"sdnEntry"`
+}
+
+// ofacXMLEntry is a single SDN entry in the Treasury XML format.
+type ofacXMLEntry struct {
+	UID       int              `xml:"uid"`
+	FirstName string           `xml:"firstName"`
+	LastName  string           `xml:"lastName"`
+	SDNType   string           `xml:"sdnType"`
+	Programs  ofacXMLPrograms  `xml:"programList"`
+}
+
+type ofacXMLPrograms struct {
+	Programs []string `xml:"program"`
+}
+
+// ParseOFACXML parses the official US Treasury OFAC SDN XML feed and returns
+// one db.Event per SDN entry with EventType "sanction_designation".
+func ParseOFACXML(data []byte) ([]db.Event, error) {
+	var list ofacXMLSDNList
+	dec := xml.NewDecoder(bytes.NewReader(data))
+	if err := dec.Decode(&list); err != nil {
+		return nil, fmt.Errorf("ofac: unmarshal xml: %w", err)
+	}
+
+	events := make([]db.Event, 0, len(list.Entries))
+	for _, entry := range list.Entries {
+		// Convert to our JSON-friendly struct for storage.
+		jsonEntry := ofacEntry{
+			UID:       entry.UID,
+			FirstName: entry.FirstName,
+			LastName:  entry.LastName,
+			SDNType:   entry.SDNType,
+			Programs:  entry.Programs.Programs,
+		}
+
+		raw, err := json.Marshal(jsonEntry)
+		if err != nil {
+			return nil, fmt.Errorf("ofac: marshaling entry uid=%d: %w", entry.UID, err)
+		}
+		if err := ValidateEventData(raw); err != nil {
+			return nil, fmt.Errorf("ofac: entry uid=%d: %w", entry.UID, err)
+		}
+
+		events = append(events, db.Event{
+			Source:     ofacSourceName,
+			SourceID:   sourceID(ofacSourceName, strconv.Itoa(entry.UID)),
+			EventType:  "sanction_designation",
+			EventData:  raw,
+			OccurredAt: time.Now().UTC(),
+		})
+	}
+	return events, nil
 }
 
 // ParseOFAC parses the raw OFAC SDN JSON response and returns one db.Event per

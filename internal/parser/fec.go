@@ -15,7 +15,8 @@ import (
 const (
 	fecSourceName = "fec"
 	// fecBaseURL is the FEC Schedule A contributions endpoint.
-	// Hardcoded to prevent SSRF. API key is appended at runtime.
+	// Hardcoded to prevent SSRF. API key and two_year_transaction_period are
+	// appended at runtime.
 	fecBaseURL = "https://api.open.fec.gov/v1/schedules/schedule_a/" +
 		"?sort=-contribution_receipt_date&per_page=50"
 )
@@ -44,7 +45,13 @@ func (f *FECSource) Name() string { return fecSourceName }
 // Security note: the API key is never included in error messages.
 // Any URL in errors has the key value replaced with "[REDACTED]".
 func (f *FECSource) Poll(ctx context.Context) ([]db.Event, error) {
-	rawURL := fmt.Sprintf("%s&api_key=%s", fecBaseURL, f.apiKey)
+	// FEC requires two_year_transaction_period; use the current even-numbered
+	// election cycle year (e.g. 2025→2026, 2026→2026).
+	year := time.Now().Year()
+	if year%2 != 0 {
+		year++
+	}
+	rawURL := fmt.Sprintf("%s&two_year_transaction_period=%d&api_key=%s", fecBaseURL, year, f.apiKey)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {

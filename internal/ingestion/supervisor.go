@@ -3,12 +3,14 @@ package ingestion
 import (
 	"context"
 	"log"
+	"net/http"
 	"sync"
 	"time"
 
 	"github.com/arclighteng/mrdn/internal/broker"
 	"github.com/arclighteng/mrdn/internal/config"
 	"github.com/arclighteng/mrdn/internal/db"
+	"github.com/arclighteng/mrdn/internal/parser"
 )
 
 const (
@@ -21,14 +23,16 @@ const (
 // PollWorker per registered source, recovers from panics, and restarts workers
 // that exit unexpectedly.
 type Supervisor struct {
-	cfg    *config.Config
-	store  *db.Store
-	broker *broker.Broker
-	clock  Clock
+	cfg      *config.Config
+	store    *db.Store
+	broker   *broker.Broker
+	resolver EventResolver
+	clock    Clock
 
 	// sources is the set of sources to supervise. Populated by registerSources
 	// but can be overridden in tests via WithSources.
-	sources []Source
+	sources    []Source
+	sourcesSet bool // true if WithSources was called (even with nil)
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -45,16 +49,37 @@ func NewSupervisor(cfg *config.Config, store *db.Store, b *broker.Broker, clock 
 	}
 }
 
+// SetResolver sets the entity resolver for all poll workers.
+func (s *Supervisor) SetResolver(r EventResolver) {
+	s.resolver = r
+}
+
 // WithSources overrides the source list used by Start. Intended for tests.
 func (s *Supervisor) WithSources(sources []Source) {
 	s.sources = sources
+	s.sourcesSet = true
 }
 
-// registerSources returns the set of Sources to supervise. Wave 4 tasks will
-// populate this list with real API sources; for now it returns nil so Start is
-// a clean no-op in production.
+// registerSources returns the set of poll-based Sources to supervise.
 func (s *Supervisor) registerSources() []Source {
-	return nil
+	client := &http.Client{Timeout: 30 * time.Second}
+
+	sources := []Source{
+		parser.NewOFACSource(client),
+		parser.NewEdgarSource(client),
+		parser.NewEFDSSource(client),
+		parser.NewUSAspendingSource(client),
+		parser.NewFedRegisterSource(client),
+	}
+
+	if s.cfg.PolygonAPIKey != "" {
+		sources = append(sources, parser.NewPolygonSource(client, s.cfg.PolygonAPIKey))
+	}
+	if s.cfg.FECAPIKey != "" {
+		sources = append(sources, parser.NewFECSource(client, s.cfg.FECAPIKey))
+	}
+
+	return sources
 }
 
 // Start creates a child context and launches one supervised goroutine per
@@ -63,7 +88,7 @@ func (s *Supervisor) Start() {
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 
 	srcs := s.sources
-	if srcs == nil {
+	if !s.sourcesSet {
 		srcs = s.registerSources()
 	}
 
@@ -72,7 +97,30 @@ func (s *Supervisor) Start() {
 		go s.runWorkerLoop(src)
 	}
 
-	log.Printf("[supervisor] started with %d source(s)", len(srcs))
+	// Launch Finnhub stream worker if key is present (skip when sources are overridden in tests).
+	if !s.sourcesSet && s.cfg != nil && s.cfg.FinnhubAPIKey != "" {
+		finnhub := parser.NewFinnhubSource(s.cfg.FinnhubAPIKey, nil)
+		sw := NewStreamWorker(finnhub, s.store, s.broker, s.clock)
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			log.Printf("[supervisor] starting stream worker for %q", finnhub.Name())
+			sw.Run(s.ctx)
+			log.Printf("[supervisor] stream worker for %q stopped", finnhub.Name())
+		}()
+
+		// Launch rebalancer to rotate Finnhub symbols based on score rankings.
+		rebalancer := NewRebalancer(s.store.GetScoreRankings, finnhub, s.clock, 5*time.Minute)
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			log.Printf("[supervisor] starting rebalancer")
+			rebalancer.Run(s.ctx)
+			log.Printf("[supervisor] rebalancer stopped")
+		}()
+	}
+
+	log.Printf("[supervisor] started with %d poll source(s)", len(srcs))
 }
 
 // Stop cancels the supervisor context and waits up to 10 seconds for all
@@ -139,6 +187,9 @@ func (s *Supervisor) runWorkerOnce(src Source) (panicked bool) {
 	}()
 
 	w := NewPollWorker(src, s.store, s.broker, workerPollInterval, s.clock)
+	if s.resolver != nil {
+		w.SetResolver(s.resolver)
+	}
 	w.Run(s.ctx)
 	return false
 }

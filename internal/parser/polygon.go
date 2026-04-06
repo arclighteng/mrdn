@@ -37,20 +37,36 @@ func NewPolygonSource(client *http.Client, apiKey string) *PolygonSource {
 // Name implements ingestion.Source.
 func (p *PolygonSource) Name() string { return polygonSourceName }
 
-// Poll fetches the previous trading day's grouped daily bars from Polygon.io.
+// Poll fetches the most recent trading day's grouped daily bars from Polygon.io.
+// It walks backward up to 5 days to skip weekends and holidays.
 // Implements ingestion.Source.
 //
 // Security note (S07): the API key is never included in error messages.
 // Any URL logged or returned in errors has the key value replaced with "[REDACTED]".
 func (p *PolygonSource) Poll(ctx context.Context) ([]db.Event, error) {
-	// Use yesterday as the trading date.
-	date := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+	// Try the most recent weekday, then walk back up to 4 more to handle
+	// holidays (e.g. Good Friday, MLK Day). Stop at the first date with data.
+	now := time.Now().UTC()
+	for attempt := 0; attempt < 5; attempt++ {
+		date := nthWeekdayBefore(now, attempt)
+		events, err := p.fetchDate(ctx, date)
+		if err != nil {
+			return nil, err
+		}
+		if len(events) > 0 {
+			return events, nil
+		}
+		// 0 results — likely a market holiday, try the previous weekday.
+	}
+	return nil, nil // no data found in the last 5 weekdays
+}
 
+// fetchDate fetches grouped daily bars for a single date.
+func (p *PolygonSource) fetchDate(ctx context.Context, date string) ([]db.Event, error) {
 	rawURL := fmt.Sprintf("%s/%s?adjusted=true&apiKey=%s", polygonBaseURL, date, p.apiKey)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
-		// Redact the key before surfacing the error.
 		return nil, fmt.Errorf("polygon: building request for %s: %w",
 			redactKey(rawURL, p.apiKey), err)
 	}
@@ -71,11 +87,7 @@ func (p *PolygonSource) Poll(ctx context.Context) ([]db.Event, error) {
 		return nil, fmt.Errorf("polygon: reading response body: %w", err)
 	}
 
-	events, err := ParsePolygonDaily(body)
-	if err != nil {
-		return nil, fmt.Errorf("polygon: parsing response: %w", err)
-	}
-	return events, nil
+	return ParsePolygonDaily(body)
 }
 
 // redactKey replaces apiKey value in s with "[REDACTED]" so keys never appear
@@ -137,4 +149,21 @@ func ParsePolygonDaily(data []byte) ([]db.Event, error) {
 		})
 	}
 	return events, nil
+}
+
+// nthWeekdayBefore returns the nth weekday before now (0 = most recent weekday
+// before today, 1 = the one before that, etc.), formatted as "2006-01-02".
+func nthWeekdayBefore(now time.Time, n int) string {
+	d := now.AddDate(0, 0, -1) // start with yesterday
+	found := 0
+	for i := 0; i < 14; i++ { // 14 days covers any n up to ~10
+		if wd := d.Weekday(); wd != time.Saturday && wd != time.Sunday {
+			if found == n {
+				return d.Format("2006-01-02")
+			}
+			found++
+		}
+		d = d.AddDate(0, 0, -1)
+	}
+	return d.Format("2006-01-02")
 }

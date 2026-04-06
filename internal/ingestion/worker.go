@@ -10,6 +10,12 @@ import (
 	"github.com/arclighteng/mrdn/internal/db"
 )
 
+// EventResolver is the interface for post-insert entity resolution.
+// Implemented by resolver.Resolver.
+type EventResolver interface {
+	Resolve(ctx context.Context, evt db.Event) int
+}
+
 // PollWorker drives a Source on a fixed interval, inserting events into the
 // store, publishing them to the broker, and updating source health metadata.
 // It applies exponential backoff on consecutive poll failures.
@@ -17,6 +23,7 @@ type PollWorker struct {
 	source   Source
 	store    *db.Store
 	broker   *broker.Broker
+	resolver EventResolver
 	backoff  *Backoff
 	interval time.Duration
 	clock    Clock
@@ -33,6 +40,11 @@ func NewPollWorker(source Source, store *db.Store, b *broker.Broker, interval ti
 		interval: interval,
 		clock:    clock,
 	}
+}
+
+// SetResolver sets the entity resolver for post-insert processing.
+func (w *PollWorker) SetResolver(r EventResolver) {
+	w.resolver = r
 }
 
 // Run starts the polling loop. It returns when ctx is cancelled.
@@ -80,6 +92,11 @@ func (w *PollWorker) Run(ctx context.Context) {
 					continue // skip this event, don't fail the whole batch
 				}
 				evt.ID = id
+				if w.resolver != nil {
+					if cid := w.resolver.Resolve(ctx, evt); cid > 0 {
+						evt.CompanyID = &cid
+					}
+				}
 				w.broker.Publish(broker.Event{
 					ID:         id,
 					CompanyID:  evt.CompanyID,

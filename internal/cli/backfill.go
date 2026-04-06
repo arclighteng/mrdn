@@ -8,28 +8,25 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/arclighteng/mrdn/internal/broker"
 	"github.com/arclighteng/mrdn/internal/config"
 	"github.com/arclighteng/mrdn/internal/db"
-	"github.com/arclighteng/mrdn/internal/ingestion"
 	"github.com/arclighteng/mrdn/internal/resolver"
 	"github.com/spf13/cobra"
 )
 
-var ingestCmd = &cobra.Command{
-	Use:   "ingest",
-	Short: "Start the ingestion workers",
+var backfillCmd = &cobra.Command{
+	Use:   "backfill [source]",
+	Short: "Resolve unlinked events to companies and populate typed tables",
+	Long: `Processes events with NULL company_id, matches them to companies,
+and inserts typed records (market_data, insider_trades, etc.).
+Optionally filter by source name (e.g., "polygon", "sec_edgar").`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load()
 		if err != nil {
 			return fmt.Errorf("loading config: %w", err)
 		}
 
-		if err := cfg.ValidateIngestion(); err != nil {
-			return fmt.Errorf("ingestion config invalid: %w", err)
-		}
-
-		// Trap SIGINT / SIGTERM for graceful shutdown.
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
@@ -40,28 +37,28 @@ var ingestCmd = &cobra.Command{
 		defer pool.Close()
 
 		store := db.NewStore(pool)
-		b := broker.New(cfg.SSEMaxGlobal)
-		defer b.Close()
 
 		res, err := resolver.New(ctx, store)
 		if err != nil {
 			return fmt.Errorf("initializing resolver: %w", err)
 		}
 
-		sup := ingestion.NewSupervisor(cfg, store, b, ingestion.RealClock())
-		sup.SetResolver(res)
-		sup.Start()
-		log.Println("ingestion supervisor started")
+		source := ""
+		if len(args) > 0 {
+			source = args[0]
+		}
 
-		<-ctx.Done()
-		log.Println("shutting down ingestion supervisor...")
+		log.Printf("starting backfill (source filter: %q)", source)
+		resolved, err := res.Backfill(ctx, source)
+		if err != nil {
+			return fmt.Errorf("backfill: %w", err)
+		}
 
-		sup.Stop()
-		log.Println("ingestion supervisor stopped")
+		log.Printf("backfill complete: %d events resolved", resolved)
 		return nil
 	},
 }
 
 func init() {
-	rootCmd.AddCommand(ingestCmd)
+	rootCmd.AddCommand(backfillCmd)
 }

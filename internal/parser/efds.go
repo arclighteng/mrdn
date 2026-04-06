@@ -17,7 +17,7 @@ const (
 	efdsSourceName = "senate_efds"
 	// efdsBaseURL is the Senate EFDS report data endpoint.
 	// Hardcoded to prevent SSRF; no API key required (public data).
-	efdsBaseURL = "https://efds.senate.gov/search/report/data/"
+	efdsBaseURL = "https://efdsearch.senate.gov/search/report/data/"
 )
 
 // EFDSSource polls the Senate Electronic Financial Disclosure System for

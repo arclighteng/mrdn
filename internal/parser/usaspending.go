@@ -19,26 +19,40 @@ const (
 	usaspendingBaseURL = "https://api.usaspending.gov/api/v2/search/spending_by_award/"
 )
 
-// usaspendingRequestBody is the JSON body sent to the USAspending search API.
-var usaspendingRequestBody = []byte(`{
-	"subawards": false,
-	"limit": 50,
-	"page": 1,
-	"filters": {
-		"award_type_codes": ["A","B","C","D"]
-	},
-	"fields": [
-		"internal_id",
-		"Award ID",
-		"Recipient Name",
-		"Award Amount",
-		"Award Type",
-		"Start Date",
-		"Awarding Agency"
-	],
-	"sort": "Award Amount",
-	"order": "desc"
-}`)
+// usaspendingFields are the fields requested from the USAspending search API.
+// Note: internal_id is returned automatically and must NOT be in the fields list
+// (causes a 400 error). generated_internal_id provides a stable unique key.
+var usaspendingFields = []string{
+	"Award ID",
+	"Recipient Name",
+	"Award Amount",
+	"Award Type",
+	"Start Date",
+	"Awarding Agency",
+	"generated_internal_id",
+}
+
+// usaspendingRequest is the JSON body sent to the USAspending search API.
+// Built dynamically in Poll() to include a rolling time_period filter.
+type usaspendingRequest struct {
+	Subawards bool                     `json:"subawards"`
+	Limit     int                      `json:"limit"`
+	Page      int                      `json:"page"`
+	Filters   usaspendingFilters       `json:"filters"`
+	Fields    []string                 `json:"fields"`
+	Sort      string                   `json:"sort"`
+	Order     string                   `json:"order"`
+}
+
+type usaspendingFilters struct {
+	AwardTypeCodes []string                   `json:"award_type_codes"`
+	TimePeriod     []usaspendingTimePeriod     `json:"time_period"`
+}
+
+type usaspendingTimePeriod struct {
+	StartDate string `json:"start_date"`
+	EndDate   string `json:"end_date"`
+}
 
 // USAspendingSource polls the USAspending API for recent government contract awards.
 type USAspendingSource struct {
@@ -58,10 +72,32 @@ func NewUSAspendingSource(client *http.Client) *USAspendingSource {
 func (u *USAspendingSource) Name() string { return usaspendingSourceName }
 
 // Poll fetches recent government contract awards from USAspending.gov.
+// Uses a rolling 90-day time_period filter as required by the API.
 // Implements ingestion.Source.
 func (u *USAspendingSource) Poll(ctx context.Context) ([]db.Event, error) {
+	now := time.Now()
+	reqBody := usaspendingRequest{
+		Subawards: false,
+		Limit:     50,
+		Page:      1,
+		Filters: usaspendingFilters{
+			AwardTypeCodes: []string{"A", "B", "C", "D"},
+			TimePeriod: []usaspendingTimePeriod{{
+				StartDate: now.AddDate(0, 0, -90).Format("2006-01-02"),
+				EndDate:   now.Format("2006-01-02"),
+			}},
+		},
+		Fields: usaspendingFields,
+		Sort:   "Award Amount",
+		Order:  "desc",
+	}
+	bodyJSON, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("usaspending: marshaling request body: %w", err)
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, usaspendingBaseURL,
-		bytes.NewReader(usaspendingRequestBody))
+		bytes.NewReader(bodyJSON))
 	if err != nil {
 		return nil, fmt.Errorf("usaspending: building request: %w", err)
 	}
