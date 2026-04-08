@@ -34,10 +34,15 @@ jobs:
       - name: Install Railway CLI
         run: npm i -g @railway/cli
 
-      - name: Bump DEPLOY_SHA to force Railway redeploy with fresh image
+      - name: Point Railway at SHA-tagged image (forces fresh pull)
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
+          ENV_ID: ${{ secrets.RAILWAY_ENVIRONMENT_ID }}
+          SHA: ${{ github.sha }}
         run: |
-          railway variables \
-            --service mrdn-api \
-            --set "DEPLOY_SHA=${{ github.sha }}"
+          curl -sS -X POST https://backboard.railway.app/graphql/v2 \
+            -H "Project-Access-Token: $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"query\":\"mutation(\$serviceId: String!, \$environmentId: String, \$input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: \$serviceId, environmentId: \$environmentId, input: \$input) }\",\"variables\":{\"serviceId\":\"$SERVICE_ID\",\"environmentId\":\"$ENV_ID\",\"input\":{\"source\":{\"image\":\"adamreed/mrdn:$SHA\"}}}}" | tee /tmp/railway.json
+          grep -q '"errors"' /tmp/railway.json && { echo "Railway API error"; exit 1; } || true
