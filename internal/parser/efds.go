@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	efdsSourceName = "senate_efds"
+	efdsSourceName = "efds_senate"
 	// efdsBaseURL is the Senate EFDS report data endpoint.
 	// Hardcoded to prevent SSRF; no API key required (public data).
 	efdsBaseURL = "https://efdsearch.senate.gov/search/report/data/"

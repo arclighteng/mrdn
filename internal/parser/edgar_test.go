@@ -31,7 +31,7 @@ func TestParseEdgarForm4_SingleTransaction(t *testing.T) {
 	require.Len(t, events, 1)
 
 	e := events[0]
-	assert.Equal(t, "sec_edgar", e.Source)
+	assert.Equal(t, "edgar_form4", e.Source)
 	assert.NotNil(t, e.SourceID)
 	assert.NotEmpty(t, *e.SourceID)
 	assert.Equal(t, "insider_trade", e.EventType)
@@ -56,7 +56,7 @@ func TestParseEdgarForm4_MultipleTransactions(t *testing.T) {
 	assert.NotEqual(t, *events[0].SourceID, *events[1].SourceID)
 
 	for _, e := range events {
-		assert.Equal(t, "sec_edgar", e.Source)
+		assert.Equal(t, "edgar_form4", e.Source)
 		assert.Equal(t, "insider_trade", e.EventType)
 		assert.False(t, e.OccurredAt.IsZero())
 		require.NoError(t, parser.ValidateEventData(e.EventData))

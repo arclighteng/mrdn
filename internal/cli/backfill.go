@@ -19,7 +19,7 @@ var backfillCmd = &cobra.Command{
 	Short: "Resolve unlinked events to companies and populate typed tables",
 	Long: `Processes events with NULL company_id, matches them to companies,
 and inserts typed records (market_data, insider_trades, etc.).
-Optionally filter by source name (e.g., "polygon", "sec_edgar").`,
+Optionally filter by source name (e.g., "polygon", "edgar_form4").`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load()

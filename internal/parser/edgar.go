@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	edgarSourceName = "sec_edgar"
+	edgarSourceName = "edgar_form4"
 	// edgarBaseURL is the SEC EDGAR full-text search index endpoint.
 	// Hardcoded to prevent SSRF; no API key required (public data).
 	edgarBaseURL = "https://efts.sec.gov/LATEST/search-index"
