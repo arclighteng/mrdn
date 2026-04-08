@@ -1655,15 +1655,20 @@ function app() {
       const rawCells = this.partySectorHeatmap
         .filter(c => sectorIdx[c.sector] !== undefined);
       const palette = ['#1a1a1a','#1e3a8a','#2563eb','#f59e0b','#ef4444'];
-      const sortedCounts = [...rawCells.map(c => c.trade_count)].sort((a, b) => a - b);
-      const quantileColor = (count) => {
-        const rank = sortedCounts.indexOf(count) / Math.max(1, sortedCounts.length - 1);
+      const ranked = [...rawCells].sort((a, b) => a.trade_count - b.trade_count);
+      const rankByKey = new Map();
+      ranked.forEach((c, i) => {
+        const key = c.party + '|' + c.sector;
+        rankByKey.set(key, i / Math.max(1, ranked.length - 1));
+      });
+      const quantileColor = (c) => {
+        const rank = rankByKey.get(c.party + '|' + c.sector) ?? 0;
         const bucket = Math.min(palette.length - 1, Math.floor(rank * palette.length));
         return palette[bucket];
       };
       const data = rawCells.map(c => ({
         value: [sectorIdx[c.sector], partyIdx[c.party], c.trade_count, c.volume_mid],
-        itemStyle: { color: quantileColor(c.trade_count) }
+        itemStyle: { color: quantileColor(c) }
       }));
       const maxCount = Math.max(...rawCells.map(c => c.trade_count));
       chart.setOption({
@@ -1721,15 +1726,19 @@ function app() {
       const repIdx = Object.fromEntries(reps.map((r, i) => [r, i]));
       const monthIdx = Object.fromEntries(months.map((m, i) => [m, i]));
       const palette = ['#1a1a1a','#1e3a5f','#1e6091','#f59e0b','#ef4444'];
-      const sortedCounts = [...this.repMonthHeatmap.map(c => c.trade_count)].sort((a, b) => a - b);
-      const quantileColor = (count) => {
-        const rank = sortedCounts.indexOf(count) / Math.max(1, sortedCounts.length - 1);
+      const ranked = [...this.repMonthHeatmap].sort((a, b) => a.trade_count - b.trade_count);
+      const rankByKey = new Map();
+      ranked.forEach((c, i) => {
+        rankByKey.set(c.person_slug + '|' + c.month, i / Math.max(1, ranked.length - 1));
+      });
+      const quantileColor = (c) => {
+        const rank = rankByKey.get(c.person_slug + '|' + c.month) ?? 0;
         const bucket = Math.min(palette.length - 1, Math.floor(rank * palette.length));
         return palette[bucket];
       };
       const data = this.repMonthHeatmap.map(c => ({
         value: [monthIdx[c.month], repIdx[c.person_slug], c.trade_count, c.volume_mid],
-        itemStyle: { color: quantileColor(c.trade_count) }
+        itemStyle: { color: quantileColor(c) }
       }));
       const maxCount = Math.max(...this.repMonthHeatmap.map(c => c.trade_count));
       const shortName = n => n.length > 20 ? n.slice(0, 19) + '…' : n;
