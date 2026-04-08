@@ -1703,7 +1703,7 @@ function app() {
             return `<div style="font-weight:600;margin-bottom:2px">${label} — ${sectors[p.value[1]]}</div><div style="color:#a3a3a3"><span style="color:#fff;font-weight:600">${p.value[2]}</span> trades${vol}</div>`;
           }
         },
-        grid: { top: 28, right: 12, bottom: 8, left: 130, containLabel: false },
+        grid: { top: 28, right: 12, bottom: 8, left: 8, containLabel: true },
         xAxis: {
           type: 'category', data: parties.map(p => partyLabel[p] || p), position: 'top',
           axisLine: { show: false }, axisTick: { show: false },
