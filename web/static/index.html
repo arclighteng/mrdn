@@ -1389,7 +1389,7 @@ function app() {
       const [moversRes, rankRes, eventsRes, sourcesRes, statsRes, activityHeatRes, partySectorRes, repMonthRes] = await Promise.all([
         this.api('/scores/movers?hours=24&limit=10'),
         this.api('/scores/rankings?limit=50'),
-        this.api('/events/latest?limit=20'),
+        this.api('/events/latest?limit=100'),
         this.api('/sources'),
         this.api('/stats/activity'),
         this.api('/stats/activity/heatmap?days=3650'),
@@ -1399,7 +1399,7 @@ function app() {
 
       this.movers = moversRes?.data || [];
       this.rankings = rankRes?.data || [];
-      this.latestEvents = eventsRes?.data || [];
+      this.latestEvents = this.dedupeEvents(eventsRes?.data || []);
       this.sources = sourcesRes?.data || [];
       this.stats = statsRes?.data || null;
       this.activityHeatmap = activityHeatRes?.data || [];
@@ -1959,6 +1959,24 @@ function app() {
         spending: 'Federal spending',
       };
       return map[type] || type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    },
+
+    // Collapse high-volume tick sources (finnhub) so a single noisy symbol
+    // doesn't drown out other signals. Keeps one row per source+ticker (the
+    // most recent), passes everything else through, then trims to 20.
+    dedupeEvents(events) {
+      const seen = new Map();
+      const out = [];
+      for (const e of events) {
+        if (e.source === 'finnhub') {
+          const key = 'finnhub:' + (this.eventTicker(e) || e.id);
+          if (seen.has(key)) continue;
+          seen.set(key, true);
+        }
+        out.push(e);
+        if (out.length >= 20) break;
+      }
+      return out;
     },
 
     // Pull a ticker from event_data when the top-level e.ticker isn't set.
