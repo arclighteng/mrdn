@@ -154,7 +154,7 @@ tailwind.config = {
     </div>
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <!-- Heatmap -->
-      <div class="lg:col-span-2 lg:self-start bg-surface-1 rounded-xl border border-white/10 p-5">
+      <div class="lg:col-span-2 bg-surface-1 rounded-xl border border-white/10 p-5 flex flex-col">
         <div class="flex items-start justify-between mb-1 gap-4">
           <div class="min-w-0">
             <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider" x-text="heatmapMode === 'party' ? 'Party × Sector Trade Count' : 'Top 15 Reps × Last 12 Months'"></h2>
@@ -167,7 +167,7 @@ tailwind.config = {
             </div>
           </div>
         </div>
-        <div id="heatmap-chart" class="w-full mt-2" :style="heatmapMode === 'party' ? 'height:200px' : 'height:280px'"></div>
+        <div id="heatmap-chart" class="w-full mt-2 flex-1 min-h-[320px]"></div>
       </div>
       <!-- Top Movers -->
       <div class="bg-surface-1 rounded-xl border border-white/10 p-5">
@@ -1660,23 +1660,8 @@ function app() {
         chart.setOption({ backgroundColor: 'transparent', graphic: { type: 'text', left: 'center', top: 'middle', style: { text: 'No congressional trades yet — run ingest-house-trades', fill: '#525252', fontSize: 14 }}});
         return;
       }
-      // Canonical GICS-11 + Other column order
+      // Canonical GICS-11 + Other row order (sectors on the y-axis).
       const sectorOrder = ['Information Technology','Health Care','Financials','Consumer Discretionary','Communication Services','Industrials','Consumer Staples','Energy','Utilities','Real Estate','Materials','Other'];
-      // Compact labels so the x-axis fits without getting clipped.
-      const sectorShort = {
-        'Information Technology': 'Info Tech',
-        'Health Care': 'Health',
-        'Financials': 'Financials',
-        'Consumer Discretionary': 'Cons. Disc.',
-        'Communication Services': 'Comms',
-        'Industrials': 'Industrials',
-        'Consumer Staples': 'Cons. Staples',
-        'Energy': 'Energy',
-        'Utilities': 'Utilities',
-        'Real Estate': 'Real Estate',
-        'Materials': 'Materials',
-        'Other': 'Other',
-      };
       const partyLabel = { D: 'Democrat', R: 'Republican', I: 'Independent', '?': 'Unknown' };
       // Parties as rows — sorted by total desc
       const partyTotals = {};
@@ -1700,39 +1685,38 @@ function app() {
         const bucket = Math.min(palette.length - 1, Math.floor(rank * palette.length));
         return palette[bucket];
       };
+      // Orient sectors as rows and parties as columns so the chart fills
+      // the card vertically (12 rows x 4 cols) instead of leaving dead
+      // horizontal space with only 4 rows.
       const data = rawCells.map(c => ({
-        value: [sectorIdx[c.sector], partyIdx[c.party], c.trade_count, c.volume_mid],
+        value: [partyIdx[c.party], sectorIdx[c.sector], c.trade_count, c.volume_mid],
         itemStyle: { color: quantileColor(c) }
       }));
-      const maxCount = Math.max(...rawCells.map(c => c.trade_count));
       chart.setOption({
         backgroundColor: 'transparent',
         tooltip: {
           backgroundColor: '#1f1f1f', borderColor: '#292929', textStyle: { color: '#e5e5e5', fontSize: 12 },
           formatter: p => {
-            const party = parties[p.value[1]];
+            const party = parties[p.value[0]];
             const label = partyLabel[party] || party;
             const vol = p.value[3] ? ' · ~$' + this.fmtNum(p.value[3]) : '';
-            return `<div style="font-weight:600;margin-bottom:2px">${label} — ${sectors[p.value[0]]}</div><div style="color:#a3a3a3"><span style="color:#fff;font-weight:600">${p.value[2]}</span> trades${vol}</div>`;
+            return `<div style="font-weight:600;margin-bottom:2px">${label} — ${sectors[p.value[1]]}</div><div style="color:#a3a3a3"><span style="color:#fff;font-weight:600">${p.value[2]}</span> trades${vol}</div>`;
           }
         },
-        grid: { top: 46, right: 10, bottom: 6, left: 92, containLabel: false },
+        grid: { top: 28, right: 12, bottom: 8, left: 130, containLabel: false },
         xAxis: {
-          type: 'category', data: sectors, position: 'top',
+          type: 'category', data: parties.map(p => partyLabel[p] || p), position: 'top',
           axisLine: { show: false }, axisTick: { show: false },
-          axisLabel: {
-            color: '#a3a3a3', fontSize: 10, rotate: 28, interval: 0, margin: 10,
-            formatter: (v) => sectorShort[v] || v,
-          }
+          axisLabel: { color: '#a3a3a3', fontSize: 11, fontWeight: 600 }
         },
         yAxis: {
-          type: 'category', data: parties.map(p => partyLabel[p] || p),
+          type: 'category', data: sectors, inverse: true,
           axisLine: { show: false }, axisTick: { show: false },
           axisLabel: { color: '#a3a3a3', fontSize: 11 }
         },
         series: [{
           type: 'heatmap', data: data,
-          label: { show: true, color: '#f5f5f5', fontSize: 10, fontWeight: 600, formatter: p => p.value[2] || '' },
+          label: { show: true, color: '#f5f5f5', fontSize: 11, fontWeight: 600, formatter: p => p.value[2] || '' },
           itemStyle: { borderRadius: 3, borderColor: '#0f0f0f', borderWidth: 2 },
           emphasis: { itemStyle: { borderColor: '#fff', borderWidth: 1.5 }}
         }]
@@ -1740,7 +1724,7 @@ function app() {
       chart.off('click');
       chart.on('click', (p) => {
         if (!p || !p.value) return;
-        this.openDrillPartySector(parties[p.value[1]], sectors[p.value[0]]);
+        this.openDrillPartySector(parties[p.value[0]], sectors[p.value[1]]);
       });
       window.addEventListener('resize', () => chart.resize());
     },
