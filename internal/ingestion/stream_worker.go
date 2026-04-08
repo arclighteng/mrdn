@@ -51,6 +51,11 @@ func (w *StreamWorker) Run(ctx context.Context) {
 		}
 
 		log.Printf("[%s] connected", w.source.Name())
+		if w.store != nil {
+			if rerr := w.store.RecordPoll(ctx, w.source.Name(), false); rerr != nil {
+				log.Printf("[%s] record poll: %v", w.source.Name(), rerr)
+			}
+		}
 		w.recvLoop(ctx)
 
 		// recvLoop returned — either ctx cancelled or recv error.
@@ -109,6 +114,12 @@ func (w *StreamWorker) recvLoop(ctx context.Context) {
 				EventType:  evt.EventType,
 				OccurredAt: evt.OccurredAt,
 			})
+		}
+
+		if w.store != nil {
+			if rerr := w.store.RecordPoll(ctx, w.source.Name(), true); rerr != nil {
+				log.Printf("[%s] record poll: %v", w.source.Name(), rerr)
+			}
 		}
 	}
 }
