@@ -57,7 +57,7 @@ func (o *OFACSource) Poll(ctx context.Context) ([]db.Event, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("ofac: unexpected status %d", resp.StatusCode)
+		return nil, &HTTPStatusError{Source: "ofac", StatusCode: resp.StatusCode}
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, ofacMaxResponseBody))

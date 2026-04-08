@@ -2,12 +2,14 @@ package ingestion
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
 
 	"github.com/arclighteng/mrdn/internal/broker"
 	"github.com/arclighteng/mrdn/internal/db"
+	"github.com/arclighteng/mrdn/internal/parser"
 )
 
 // EventResolver is the interface for post-insert entity resolution.
@@ -56,19 +58,34 @@ func (w *PollWorker) Run(ctx context.Context) {
 			return
 		}
 
+		started := w.clock.Now()
 		events, err := w.pollWithRecovery(ctx)
+		durMs := int(w.clock.Now().Sub(started) / time.Millisecond)
 		if err != nil {
 			consecutiveFailures++
 			log.Printf("[%s] poll error (%d consecutive): %v", w.source.Name(), consecutiveFailures, err)
 
 			if w.store != nil {
+				httpCode := 0
+				var hse *parser.HTTPStatusError
+				if errors.As(err, &hse) {
+					httpCode = hse.StatusCode
+				}
+				attempt := db.IngestAttempt{
+					Source:     w.source.Name(),
+					Success:    false,
+					HTTPCode:   httpCode,
+					Error:      err.Error(),
+					DurationMs: durMs,
+				}
+				if rerr := w.store.RecordIngestAttempt(ctx, attempt); rerr != nil {
+					log.Printf("[%s] record failure: %v", w.source.Name(), rerr)
+				}
+				// Escalate status after sustained failure so the dashboard
+				// differentiates a single blip from a persistent outage.
 				if consecutiveFailures >= 10 {
 					if serr := w.store.SetSourceStatus(ctx, w.source.Name(), "down"); serr != nil {
 						log.Printf("[%s] set status down: %v", w.source.Name(), serr)
-					}
-				} else if consecutiveFailures >= 3 {
-					if serr := w.store.SetSourceStatus(ctx, w.source.Name(), "degraded"); serr != nil {
-						log.Printf("[%s] set status degraded: %v", w.source.Name(), serr)
 					}
 				}
 			}
@@ -112,13 +129,15 @@ func (w *PollWorker) Run(ctx context.Context) {
 				})
 			}
 
-			if rerr := w.store.RecordPoll(ctx, w.source.Name(), hasNewData); rerr != nil {
-				log.Printf("[%s] record poll: %v", w.source.Name(), rerr)
+			attempt := db.IngestAttempt{
+				Source:     w.source.Name(),
+				Success:    true,
+				Records:    len(events),
+				DurationMs: durMs,
+				HasNewData: hasNewData,
 			}
-			if hasNewData {
-				if serr := w.store.SetSourceStatus(ctx, w.source.Name(), "healthy"); serr != nil {
-					log.Printf("[%s] set status healthy: %v", w.source.Name(), serr)
-				}
+			if rerr := w.store.RecordIngestAttempt(ctx, attempt); rerr != nil {
+				log.Printf("[%s] record success: %v", w.source.Name(), rerr)
 			}
 		}
 
