@@ -105,6 +105,24 @@ tailwind.config = {
 
   <!-- Dashboard -->
   <div x-show="view === 'dashboard'" x-transition class="space-y-6 fade-in">
+    <!-- Source status banner -->
+    <div x-show="sourceIssues().length > 0" class="rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-4">
+      <div class="flex items-start gap-3">
+        <div class="text-yellow-400 text-lg leading-none mt-0.5">⚠</div>
+        <div class="flex-1 min-w-0">
+          <div class="text-sm font-semibold text-yellow-300">Some data sources are having trouble</div>
+          <div class="text-xs text-neutral-400 mt-0.5">These feeds aren't updating right now. Everything else on the dashboard is still live.</div>
+          <ul class="mt-2 space-y-1">
+            <template x-for="issue in sourceIssues()" :key="issue.source_name">
+              <li class="text-xs text-neutral-300 font-mono flex gap-2">
+                <span class="text-yellow-400 w-32 shrink-0" x-text="issue.source_name"></span>
+                <span x-text="issue.message"></span>
+              </li>
+            </template>
+          </ul>
+        </div>
+      </div>
+    </div>
     <!-- Activity Strip -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3" x-show="stats">
       <div class="bg-surface-1 border border-white/10 rounded-xl px-4 py-3">
@@ -1937,6 +1955,30 @@ function app() {
         spending: 'Federal spending',
       };
       return map[type] || type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    },
+
+    sourceIssues() {
+      if (!this.sources || !this.sources.length) return [];
+      const out = [];
+      for (const s of this.sources) {
+        // Skip sources that look fine.
+        if (s.status === 'healthy' && !s.last_error) continue;
+        let msg;
+        const code = s.last_http_code;
+        if (code === 503) msg = 'upstream temporarily unavailable (HTTP 503) — retrying';
+        else if (code === 502 || code === 504) msg = 'upstream gateway error (HTTP ' + code + ') — retrying';
+        else if (code === 429) msg = 'rate limited by upstream (HTTP 429) — backing off';
+        else if (code === 500) msg = 'upstream internal error (HTTP 500) — retrying';
+        else if (code === 401 || code === 403) msg = 'authentication/permission error (HTTP ' + code + ')';
+        else if (code === 404) msg = 'upstream endpoint not found (HTTP 404)';
+        else if (code && code >= 400) msg = 'upstream HTTP ' + code;
+        else if (s.last_error) msg = s.last_error.length > 140 ? s.last_error.slice(0, 140) + '…' : s.last_error;
+        else if (s.status === 'down') msg = 'marked down after repeated failures';
+        else if (s.status === 'degraded') msg = 'degraded';
+        else continue;
+        out.push({ source_name: s.source_name, message: msg });
+      }
+      return out;
     },
 
     timeAgo(dateStr) {

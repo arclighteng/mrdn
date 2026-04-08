@@ -110,7 +110,7 @@ func (u *USAspendingSource) Poll(ctx context.Context) ([]db.Event, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("usaspending: unexpected status %d", resp.StatusCode)
+		return nil, &HTTPStatusError{Source: "usaspending", StatusCode: resp.StatusCode}
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))

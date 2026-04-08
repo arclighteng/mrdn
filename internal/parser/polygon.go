@@ -79,7 +79,7 @@ func (p *PolygonSource) fetchDate(ctx context.Context, date string) ([]db.Event,
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("polygon: unexpected status %d for date %s", resp.StatusCode, date)
+		return nil, &HTTPStatusError{Source: "polygon", StatusCode: resp.StatusCode, Detail: "date " + date}
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))

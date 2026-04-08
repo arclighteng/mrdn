@@ -67,7 +67,7 @@ func (f *FECSource) Poll(ctx context.Context) ([]db.Event, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("fec: unexpected status %d", resp.StatusCode)
+		return nil, &HTTPStatusError{Source: "fec", StatusCode: resp.StatusCode}
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))

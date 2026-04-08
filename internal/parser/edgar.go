@@ -69,7 +69,7 @@ func (e *EdgarSource) Poll(ctx context.Context) ([]db.Event, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("edgar: unexpected status %d", resp.StatusCode)
+		return nil, &HTTPStatusError{Source: "edgar", StatusCode: resp.StatusCode}
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
