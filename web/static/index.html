@@ -210,23 +210,24 @@ tailwind.config = {
         <p class="text-xs text-neutral-400 mt-0.5 mb-3">Live feed of things happening right now: politicians trading stocks, governments handing out contracts, sanctions, lawsuits, big stock moves. The colored dot shows the type.</p>
         <div class="space-y-1.5 max-h-80 overflow-y-auto">
           <template x-for="e in latestEvents" :key="e.id">
-            <div @click="e.ticker && openCompany(e.ticker)"
-              :class="e.ticker ? 'cursor-pointer' : ''"
+            <div @click="eventTicker(e) && openCompany(eventTicker(e))"
+              :class="eventTicker(e) ? 'cursor-pointer' : ''"
               class="flex items-center gap-3 p-2 rounded-lg hover:bg-surface-2 transition-colors">
               <span class="shrink-0 text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded w-24 text-center"
                 :class="eventBadge(e.event_type)"
                 x-text="eventCategory(e.event_type)"></span>
               <div class="flex-1 min-w-0">
                 <div class="text-sm truncate text-neutral-200" x-text="prettyEventType(e.event_type)"></div>
-                <div class="text-xs text-neutral-400">
+                <div class="text-xs text-neutral-300 truncate" x-show="eventDetail(e)" x-text="eventDetail(e)"></div>
+                <div class="text-xs text-neutral-500">
                   <span x-text="e.source"></span>
                   <span class="mx-1">&middot;</span>
                   <span x-text="timeAgo(e.occurred_at)"></span>
                 </div>
               </div>
-              <span x-show="e.ticker" @click.stop="openCompany(e.ticker)"
+              <span x-show="eventTicker(e)" @click.stop="openCompany(eventTicker(e))"
                 class="font-mono text-xs px-1.5 py-0.5 rounded bg-surface-3 text-neutral-300 cursor-pointer hover:text-white shrink-0"
-                x-text="e.ticker"></span>
+                x-text="eventTicker(e)"></span>
             </div>
           </template>
           <div x-show="latestEvents.length === 0" class="text-neutral-400 text-sm text-center py-8">No events yet</div>
@@ -1958,6 +1959,85 @@ function app() {
         spending: 'Federal spending',
       };
       return map[type] || type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    },
+
+    // Pull a ticker from event_data when the top-level e.ticker isn't set.
+    eventTicker(e) {
+      if (e.ticker) return e.ticker;
+      const d = e.event_data || {};
+      return d.ticker || d.symbol || d.T || d.s || '';
+    },
+
+    // Compose a one-line, human-readable detail line from event_data, varying
+    // by source. Returns '' when nothing useful is available so the row stays
+    // clean instead of dumping JSON.
+    eventDetail(e) {
+      const d = e.event_data || {};
+      const fmtMoney = (n) => {
+        if (n == null || isNaN(n)) return '';
+        const a = Math.abs(n);
+        if (a >= 1e9) return '$' + (n/1e9).toFixed(1) + 'B';
+        if (a >= 1e6) return '$' + (n/1e6).toFixed(1) + 'M';
+        if (a >= 1e3) return '$' + (n/1e3).toFixed(0) + 'K';
+        return '$' + n.toFixed(0);
+      };
+      const fmtNum = (n) => {
+        if (n == null || isNaN(n)) return '';
+        if (n >= 1e6) return (n/1e6).toFixed(1) + 'M';
+        if (n >= 1e3) return (n/1e3).toFixed(0) + 'K';
+        return String(n);
+      };
+      const join = (parts) => parts.filter(Boolean).join(' · ');
+
+      switch (e.source) {
+        case 'finnhub': {
+          const price = d.p != null ? '$' + Number(d.p).toFixed(2) : '';
+          const vol = d.v != null ? fmtNum(d.v) + ' sh' : '';
+          return join([price, vol]);
+        }
+        case 'polygon': {
+          const close = d.c != null ? '$' + Number(d.c).toFixed(2) : '';
+          let chg = '';
+          if (d.o && d.c) {
+            const pct = ((d.c - d.o) / d.o) * 100;
+            chg = (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%';
+          }
+          const vol = d.v != null ? 'vol ' + fmtNum(d.v) : '';
+          return join([close, chg, vol]);
+        }
+        case 'efds_senate':
+        case 'house_clerk_ptr': {
+          const name = [d.first_name, d.last_name].filter(Boolean).join(' ');
+          return join([name, d.filing_type]);
+        }
+        case 'usaspending': {
+          const recip = d['Recipient Name'] || d.recipient_name;
+          const amt = fmtMoney(d['Award Amount'] || d.award_amount);
+          const agency = d['Awarding Agency'] || d.awarding_agency;
+          return join([agency, recip, amt]);
+        }
+        case 'ofac_sdn': {
+          const name = [d.firstName, d.lastName].filter(Boolean).join(' ').trim();
+          const programs = Array.isArray(d.programs) ? d.programs.join(', ') : '';
+          return join([name, d.sdnType, programs]);
+        }
+        case 'fec': {
+          const amt = fmtMoney(d.contribution_receipt_amount);
+          return join([d.contributor_name, d.committee_name, amt]);
+        }
+        case 'edgar_form4':
+        case 'edgar': {
+          const name = d.entity_name || (Array.isArray(d.display_names) && d.display_names[0]);
+          return join([name, d.form_type || d.form]);
+        }
+        case 'federal_register': {
+          return d.title || d.agencies?.[0]?.name || '';
+        }
+      }
+
+      // Generic fallback: try a handful of common keys.
+      const generic = d.title || d.name || d.description || d.summary;
+      return generic ? String(generic).slice(0, 120) : '';
     },
 
     // Known-source explanations in plain English. Each entry returns the
