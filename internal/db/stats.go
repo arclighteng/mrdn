@@ -278,12 +278,12 @@ func (s *Store) GetRepMonthHeatmap(ctx context.Context, topN int) ([]RepMonthCel
 			LIMIT $1
 		)
 		SELECT p.slug, p.name, COALESCE(NULLIF(p.party,''), '?') AS party,
-		       to_char(date_trunc('month', wt.traded_at), 'YYYY-MM') AS month,
+		       to_char(date_trunc('month', ct.traded_at), 'YYYY-MM') AS month,
 		       COUNT(*) AS trade_count,
 		       COALESCE(SUM(`+midpointExpr+`), 0)::bigint AS volume_mid
-		FROM window_trades wt
-		JOIN top_reps  tr ON tr.person_id = wt.person_id
-		JOIN persons   p  ON p.id         = wt.person_id
+		FROM window_trades ct
+		JOIN top_reps  tr ON tr.person_id = ct.person_id
+		JOIN persons   p  ON p.id         = ct.person_id
 		GROUP BY p.slug, p.name, p.party, month
 		ORDER BY p.name, month
 	`, topN)
