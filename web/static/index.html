@@ -374,15 +374,37 @@ tailwind.config = {
 
     <!-- Score Cards -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-      <template x-for="[label, val, desc] in [
-        ['Composite', detail.scores?.composite, 'Overall political risk — weighted blend of all sub-scores'],
-        ['Market', detail.scores?.market, 'Abnormal price/volume activity around political events'],
-        ['Policy', detail.scores?.policy, 'Government contracts, sanctions, and regulatory exposure'],
-        ['Insider', detail.scores?.insider, 'Congressional trades and executive financial disclosures']
+      <template x-for="[label, val, desc, key] in [
+        ['Composite', detail.scores?.composite, 'Overall political risk — weighted blend of all sub-scores. The coloured bar shows how much each sub-score contributes to this total.', 'composite'],
+        ['Market', detail.scores?.market, 'Abnormal price/volume activity around political events. Weighted 35% of composite.', 'market'],
+        ['Policy', detail.scores?.policy, 'Government contracts, sanctions, and regulatory exposure. Weighted 40% of composite.', 'policy'],
+        ['Insider', detail.scores?.insider, 'Congressional trades and executive financial disclosures. Weighted 25% of composite.', 'insider']
       ]" :key="label">
         <div class="bg-surface-1 rounded-xl border border-white/15 p-4 text-center">
           <div class="text-xs text-neutral-400 uppercase tracking-wider mb-1"><span class="tip" :data-tip="desc" x-text="label"></span></div>
           <div class="text-3xl font-bold font-mono" :style="`color:${scoreColor(val)}`" x-text="val != null ? val.toFixed(1) : '—'"></div>
+          <!-- Composite: stacked contribution bar. Sub-scores: single bar showing own value. -->
+          <template x-if="key === 'composite' && detail.scores">
+            <div class="mt-3">
+              <div class="flex h-1.5 rounded-full overflow-hidden bg-surface-3">
+                <div class="h-full" :style="`width:${scoreContribution('market')}%;background:#60a5fa`" :title="`Market contributes ${scoreContribution('market').toFixed(1)} to the composite`"></div>
+                <div class="h-full" :style="`width:${scoreContribution('policy')}%;background:#a78bfa`" :title="`Policy contributes ${scoreContribution('policy').toFixed(1)} to the composite`"></div>
+                <div class="h-full" :style="`width:${scoreContribution('insider')}%;background:#fbbf24`" :title="`Insider contributes ${scoreContribution('insider').toFixed(1)} to the composite`"></div>
+              </div>
+              <div class="flex justify-between text-[10px] text-neutral-400 mt-1 font-mono">
+                <span><span class="text-[#60a5fa]">&#9632;</span> M <span x-text="scoreContribution('market').toFixed(0)"></span></span>
+                <span><span class="text-[#a78bfa]">&#9632;</span> P <span x-text="scoreContribution('policy').toFixed(0)"></span></span>
+                <span><span class="text-[#fbbf24]">&#9632;</span> I <span x-text="scoreContribution('insider').toFixed(0)"></span></span>
+              </div>
+            </div>
+          </template>
+          <template x-if="key !== 'composite' && val != null">
+            <div class="mt-3">
+              <div class="h-1.5 rounded-full bg-surface-3 overflow-hidden">
+                <div class="h-full" :style="`width:${val}%;background:${scoreColor(val)}`"></div>
+              </div>
+            </div>
+          </template>
         </div>
       </template>
     </div>
@@ -1896,6 +1918,17 @@ function app() {
       if (v >= 70) return '#ef4444';
       if (v >= 40) return '#f59e0b';
       return '#22c55e';
+    },
+
+    // Weighted contribution of a sub-score to the composite. Weights mirror
+    // internal/score/engine.go (Market 35 / Policy 40 / Insider 25). Returns
+    // 0 when the sub-score is missing so the stacked bar degrades cleanly.
+    scoreContribution(key) {
+      const s = this.detail?.scores;
+      if (!s) return 0;
+      const weights = { market: 0.35, policy: 0.40, insider: 0.25 };
+      const v = s[key];
+      return v == null ? 0 : v * weights[key];
     },
 
     eventCategory(type) {
