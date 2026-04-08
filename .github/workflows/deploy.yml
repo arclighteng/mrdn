@@ -36,7 +36,7 @@ jobs:
 
       - name: Bump DEPLOY_SHA to force Railway redeploy with fresh image
         env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
           railway link \
             --project 403faba4-36e7-4a68-9d13-f07ed67bb781 \
