@@ -1957,26 +1957,36 @@ function app() {
       return map[type] || type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     },
 
+    // Known-source explanations in plain English. Each entry returns the
+    // one-line message shown to the user; the raw HTTP code (if any) is
+    // appended by the caller. When a source isn't in this map we show a
+    // generic "temporarily unavailable" rather than leaking a stack trace.
+    sourceOutageCopy: {
+      efds_senate: "Senate's disclosure portal is offline — they take it down for maintenance regularly. Waiting for them to bring it back.",
+      edgar_form4: "SEC EDGAR is not responding. This usually clears on its own within a few minutes.",
+      fec:        "FEC API is not responding. This usually clears on its own within a few minutes.",
+      federal_register: "Federal Register is not responding. This usually clears on its own within a few minutes.",
+      usaspending: "USAspending.gov is not responding. This usually clears on its own within a few minutes.",
+      ofac_sdn:   "Treasury OFAC sanctions list download is not responding. Waiting for them to come back.",
+      polygon:    "Polygon market-data feed is not responding. Waiting for them to come back.",
+      finnhub:    "Finnhub live quote stream is not connected. Reconnecting automatically.",
+      house_clerk_ptr: "House Clerk disclosure feed is not responding. Waiting for them to come back.",
+    },
+
     sourceIssues() {
       if (!this.sources || !this.sources.length) return [];
       const out = [];
       for (const s of this.sources) {
-        // Skip sources that look fine.
         if (s.status === 'healthy' && !s.last_error) continue;
-        let msg;
+
+        let explain = this.sourceOutageCopy[s.source_name]
+          || 'Upstream provider is temporarily unavailable. Retrying automatically.';
+
         const code = s.last_http_code;
-        if (code === 503) msg = 'upstream temporarily unavailable (HTTP 503) — retrying';
-        else if (code === 502 || code === 504) msg = 'upstream gateway error (HTTP ' + code + ') — retrying';
-        else if (code === 429) msg = 'rate limited by upstream (HTTP 429) — backing off';
-        else if (code === 500) msg = 'upstream internal error (HTTP 500) — retrying';
-        else if (code === 401 || code === 403) msg = 'authentication/permission error (HTTP ' + code + ')';
-        else if (code === 404) msg = 'upstream endpoint not found (HTTP 404)';
-        else if (code && code >= 400) msg = 'upstream HTTP ' + code;
-        else if (s.last_error) msg = s.last_error.length > 140 ? s.last_error.slice(0, 140) + '…' : s.last_error;
-        else if (s.status === 'down') msg = 'marked down after repeated failures';
-        else if (s.status === 'degraded') msg = 'degraded';
-        else continue;
-        out.push({ source_name: s.source_name, message: msg });
+        if (code && code >= 400) {
+          explain += ' (HTTP ' + code + ')';
+        }
+        out.push({ source_name: s.source_name, message: explain });
       }
       return out;
     },
