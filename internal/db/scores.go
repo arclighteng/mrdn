@@ -19,11 +19,12 @@ type Score struct {
 
 type ScoreRanking struct {
 	Ticker         string    `json:"ticker"`
-	CompanyName    string    `json:"company_name"`
-	MarketScore    float64   `json:"market_score"`
-	PolicyScore    float64   `json:"policy_score"`
-	InsiderScore   float64   `json:"insider_score"`
-	CompositeScore float64   `json:"composite_score"`
+	CompanyName    string    `json:"name"`
+	Sector         *string   `json:"sector"`
+	MarketScore    float64   `json:"market"`
+	PolicyScore    float64   `json:"policy"`
+	InsiderScore   float64   `json:"insider"`
+	CompositeScore float64   `json:"composite"`
 	WeightVersion  int       `json:"weight_version"`
 	ComputedAt     time.Time `json:"computed_at"`
 }
@@ -89,7 +90,7 @@ func (s *Store) GetScoreRankings(ctx context.Context, limit int) ([]ScoreRanking
 			FROM scores
 			ORDER BY company_id, computed_at DESC
 		)
-		SELECT c.ticker, c.name, l.market_score, l.policy_score, l.insider_score,
+		SELECT c.ticker, c.name, c.sector, l.market_score, l.policy_score, l.insider_score,
 			l.composite_score, l.weight_version, l.computed_at
 		FROM latest l
 		JOIN companies c ON c.id = l.company_id
@@ -104,7 +105,7 @@ func (s *Store) GetScoreRankings(ctx context.Context, limit int) ([]ScoreRanking
 	rankings := make([]ScoreRanking, 0)
 	for rows.Next() {
 		var r ScoreRanking
-		if err := rows.Scan(&r.Ticker, &r.CompanyName, &r.MarketScore, &r.PolicyScore,
+		if err := rows.Scan(&r.Ticker, &r.CompanyName, &r.Sector, &r.MarketScore, &r.PolicyScore,
 			&r.InsiderScore, &r.CompositeScore, &r.WeightVersion, &r.ComputedAt); err != nil {
 			return nil, fmt.Errorf("scanning ranking: %w", err)
 		}
@@ -121,10 +122,10 @@ func (s *Store) GetScoreRankings(ctx context.Context, limit int) ([]ScoreRanking
 // preceding that window entry.
 type ScoreMover struct {
 	Ticker        string  `json:"ticker"`
-	CompanyName   string  `json:"company_name"`
+	CompanyName   string  `json:"name"`
 	PreviousScore float64 `json:"previous_score"`
-	CurrentScore  float64 `json:"current_score"`
-	Change        float64 `json:"change"`
+	CurrentScore  float64 `json:"composite"`
+	Change        float64 `json:"delta"`
 	AbsChange     float64 `json:"abs_change"`
 }
 

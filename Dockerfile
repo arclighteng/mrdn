@@ -8,4 +8,6 @@ RUN CGO_ENABLED=0 go build -o /mrdn ./cmd/mrdn
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates tzdata
 COPY --from=build /mrdn /usr/local/bin/mrdn
+COPY --from=build /src/tmp/hsw.json /data/hsw.json
 ENTRYPOINT ["mrdn"]
+CMD ["serve"]

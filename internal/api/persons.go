@@ -40,6 +40,7 @@ func (s *Server) handleListPersons(w http.ResponseWriter, r *http.Request) {
 		Role:   parseString(r, "role", ""),
 		State:  parseString(r, "state", ""),
 		Party:  parseString(r, "party", ""),
+		Sort:   parseString(r, "sort", "influence"),
 		Limit:  limit,
 		Offset: offset,
 	}

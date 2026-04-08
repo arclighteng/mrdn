@@ -96,6 +96,8 @@ func (s *Server) setupRoutes() {
 
 		r.Get("/persons", s.handleListPersons)
 		r.Get("/persons/{slug}", s.handleGetPerson)
+		r.Get("/persons/{slug}/profile", s.handlePersonProfile)
+		r.Get("/persons/{slug}/co-traders", s.handleCoTraders)
 
 		r.Get("/connections/company/{ticker}", s.handleConnectionsByCompany)
 		r.Get("/connections/person/{slug}", s.handleConnectionsByPerson)
@@ -104,6 +106,25 @@ func (s *Server) setupRoutes() {
 
 		r.Get("/sources", s.handleListSources)
 		r.Get("/sources/{name}", s.handleGetSource)
+
+		r.Get("/stats/activity", s.handleActivityStats)
+		r.Get("/stats/activity/heatmap", s.handleActivityHeatmap)
+		r.Get("/stats/activity/heatmap/drill", s.handleActivityHeatmapDrill)
+		r.Get("/stats/rep-ticker-heatmap", s.handleRepTickerHeatmap)
+		r.Get("/stats/rep-ticker-heatmap/drill", s.handleRepTickerDrill)
+		r.Get("/stats/party-sector-heatmap", s.handlePartySectorHeatmap)
+		r.Get("/stats/party-sector-heatmap/drill", s.handlePartySectorDrill)
+		r.Get("/stats/rep-month-heatmap", s.handleRepMonthHeatmap)
+		r.Get("/stats/rep-month-heatmap/drill", s.handleRepMonthDrill)
+
+		r.Get("/compliance/latency", s.handleComplianceLatency)
+		r.Get("/signals/swarms", s.handleSwarms)
+		r.Get("/signals/partisan", s.handlePartisan)
+		r.Get("/signals/first-movers", s.handleFirstMovers)
+		r.Get("/signals/round-trips", s.handleRoundTrips)
+
+		r.Get("/tickers/top", s.handleTopTickers)
+		r.Get("/tickers/{symbol}", s.handleTickerDetail)
 	})
 
 	s.router = r

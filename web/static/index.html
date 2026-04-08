@@ -14,9 +14,9 @@ tailwind.config = {
     extend: {
       colors: {
         surface: { DEFAULT: '#0f0f0f', 1: '#171717', 2: '#1f1f1f', 3: '#292929' },
-        accent: { DEFAULT: '#6366f1', light: '#818cf8' },
-        up: '#22c55e',
-        down: '#ef4444',
+        accent: { DEFAULT: '#818cf8', light: '#a5b4fc' },
+        up: '#4ade80',
+        down: '#f87171',
       }
     }
   }
@@ -30,98 +30,198 @@ tailwind.config = {
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: #171717; }
   ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+  .tip { position: relative; cursor: help; }
+  .tip::after {
+    content: attr(data-tip);
+    position: absolute; left: 50%; bottom: calc(100% + 8px);
+    transform: translateX(-50%); white-space: normal; width: 260px;
+    background: #292929; color: #d4d4d4; font-size: 12px; font-weight: 400;
+    line-height: 1.5; padding: 10px 12px; border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.08);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    pointer-events: none; opacity: 0; transition: opacity 0.15s;
+    z-index: 50; text-transform: none; letter-spacing: normal;
+  }
+  .tip:hover::after { opacity: 1; }
+  .tip-right::after { left: 0; transform: none; }
+  .tip-left::after { left: auto; right: 0; transform: none; }
 </style>
 </head>
 <body x-data="app()" x-cloak>
 
 <!-- Nav -->
-<nav class="sticky top-0 z-50 bg-surface-1/80 backdrop-blur border-b border-white/5">
+<nav class="sticky top-0 z-50 bg-surface-1/80 backdrop-blur border-b border-white/10">
   <div class="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
-    <div class="flex items-center gap-6">
-      <span class="text-lg font-bold tracking-tight text-white">MRDN</span>
-      <div class="flex gap-1">
-        <template x-for="tab in ['dashboard','rankings','companies','persons','sources']" :key="tab">
+    <div class="flex items-center gap-4 md:gap-6 min-w-0">
+      <div class="flex items-baseline gap-2 shrink-0">
+        <span class="text-lg font-bold tracking-tight text-white">MRDN</span>
+        <span class="hidden sm:inline text-[11px] uppercase tracking-wider text-neutral-400">Meridian &middot; trades that move with policy, people that move with both</span>
+      </div>
+      <!-- Desktop tabs -->
+      <div class="hidden md:flex gap-1">
+        <template x-for="tab in ['dashboard','rankings','companies','persons','tickers','signals','status']" :key="tab">
           <button @click="navigate(tab)"
             :class="view === tab ? 'bg-surface-3 text-white' : 'text-neutral-400 hover:text-white hover:bg-surface-2'"
             class="px-3 py-1.5 rounded-md text-sm font-medium transition-colors capitalize"
             x-text="tab"></button>
         </template>
       </div>
+      <!-- Mobile select -->
+      <select class="md:hidden bg-surface-2 border border-white/10 rounded px-2 py-1 text-sm text-neutral-200 capitalize"
+        @change="navigate($event.target.value)">
+        <template x-for="tab in ['dashboard','rankings','companies','persons','tickers','signals','status']" :key="tab">
+          <option :value="tab" :selected="view === tab" x-text="tab"></option>
+        </template>
+      </select>
     </div>
-    <div class="flex items-center gap-3">
+    <div class="flex items-center gap-3 shrink-0">
       <input type="text" x-model="apiKey" placeholder="API Key"
-        class="bg-surface-2 border border-white/10 rounded px-3 py-1 text-sm w-48 focus:border-accent focus:outline-none text-neutral-300">
+        class="hidden sm:block bg-surface-2 border border-white/10 rounded px-3 py-1 text-sm w-32 lg:w-48 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus:outline-none text-neutral-300">
       <div class="w-2 h-2 rounded-full" :class="connected ? 'bg-up' : 'bg-down'"></div>
     </div>
   </div>
 </nav>
+
+<!-- Score Legend (dismissable) -->
+<div x-data="{ show: !localStorage.getItem('mrdn_legend_dismissed') }" x-show="show" x-transition
+  class="max-w-7xl mx-auto px-4 mt-3">
+  <div class="bg-surface-1 border border-white/10 rounded-lg px-4 py-3 flex items-center gap-6 text-xs text-neutral-400">
+    <span class="text-neutral-400 font-semibold uppercase tracking-wider shrink-0">Risk Scale</span>
+    <div class="flex items-center gap-4">
+      <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-up"></span> 0–39 Low</span>
+      <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-yellow-500"></span> 40–69 Moderate</span>
+      <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-down"></span> 70–100 High</span>
+    </div>
+    <span class="text-neutral-500 mx-2">|</span>
+    <span>Scores measure political risk exposure from market signals, policy actions, and insider activity. Hover any <span class="text-neutral-300">&#9432;</span> for details.</span>
+    <button @click="show = false; localStorage.setItem('mrdn_legend_dismissed', '1')"
+      class="ml-auto text-neutral-400 hover:text-white shrink-0">&times;</button>
+  </div>
+</div>
 
 <!-- Main -->
 <main class="max-w-7xl mx-auto px-4 py-6">
 
   <!-- Dashboard -->
   <div x-show="view === 'dashboard'" x-transition class="space-y-6 fade-in">
+    <!-- Activity Strip -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3" x-show="stats">
+      <div class="bg-surface-1 border border-white/10 rounded-xl px-4 py-3">
+        <div class="text-[10px] uppercase tracking-wider text-neutral-400">Events / 24h</div>
+        <div class="text-2xl font-bold font-mono text-white" x-text="stats?.events_last_24h?.toLocaleString() || '0'"></div>
+        <div class="text-xs text-neutral-400" x-text="(stats?.events_last_7d?.toLocaleString() || '0') + ' this week'"></div>
+      </div>
+      <div class="bg-surface-1 border border-white/10 rounded-xl px-4 py-3">
+        <div class="text-[10px] uppercase tracking-wider text-neutral-400">Companies Scored</div>
+        <div class="text-2xl font-bold font-mono text-white">
+          <span x-text="stats?.companies_scored?.toLocaleString() || '0'"></span>
+          <span class="text-sm text-neutral-400 font-normal">/ <span x-text="stats?.companies_total?.toLocaleString() || '0'"></span></span>
+        </div>
+        <div class="text-xs text-neutral-400">tracked universe</div>
+      </div>
+      <div class="bg-surface-1 border border-white/10 rounded-xl px-4 py-3 md:col-span-2">
+        <div class="text-[10px] uppercase tracking-wider text-neutral-400 mb-1.5">Activity Mix (24h)</div>
+        <div class="flex flex-wrap gap-1.5">
+          <template x-for="c in stats?.categories_last_24h || []" :key="c.category">
+            <span class="text-[11px] px-2 py-0.5 rounded-full" :class="eventBadge(c.category)">
+              <span x-text="prettyEventType(c.category)"></span>
+              <span class="font-mono opacity-70 ml-1" x-text="c.count.toLocaleString()"></span>
+            </span>
+          </template>
+          <span x-show="!stats?.categories_last_24h?.length" class="text-xs text-neutral-400">No activity in the last 24 hours</span>
+        </div>
+      </div>
+    </div>
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <!-- Heatmap -->
-      <div class="lg:col-span-2 bg-surface-1 rounded-xl border border-white/5 p-5">
-        <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider mb-4">Sector Risk Heatmap</h2>
-        <div id="heatmap-chart" class="w-full" style="height:350px"></div>
+      <div class="lg:col-span-2 bg-surface-1 rounded-xl border border-white/10 p-5">
+        <div class="flex items-start justify-between mb-1 gap-4">
+          <div class="min-w-0">
+            <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider" x-text="heatmapMode === 'party' ? 'Party × Sector Trade Count' : 'Top 15 Reps × Last 12 Months'"></h2>
+            <p class="text-xs text-neutral-400 mt-0.5" x-text="heatmapMode === 'party' ? 'Congressional trade counts by party and GICS sector. Click a cell to drill into the underlying trades.' : 'Trade counts for the 15 most active representatives across the last 12 months. Click a cell to drill in.'"></p>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <div class="flex items-center rounded-md bg-surface-2 border border-white/10 p-0.5 text-[11px] font-medium">
+              <button @click="setHeatmapMode('party')" :class="heatmapMode === 'party' ? 'bg-surface-3 text-white' : 'text-neutral-400 hover:text-white'" class="px-2.5 py-1 rounded transition-colors">Party × Sector</button>
+              <button @click="setHeatmapMode('repmonth')" :class="heatmapMode === 'repmonth' ? 'bg-surface-3 text-white' : 'text-neutral-400 hover:text-white'" class="px-2.5 py-1 rounded transition-colors">Reps × Months</button>
+            </div>
+          </div>
+        </div>
+        <div id="heatmap-chart" class="w-full mt-2" style="height:280px"></div>
       </div>
       <!-- Top Movers -->
-      <div class="bg-surface-1 rounded-xl border border-white/5 p-5">
-        <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider mb-4">Top Movers (24h)</h2>
+      <div class="bg-surface-1 rounded-xl border border-white/10 p-5">
+        <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Top Movers (24h)</h2>
+        <p class="text-xs text-neutral-400 mt-0.5 mb-3">Companies whose risk score changed the most today. Red number = risk got worse. Green = risk improved.</p>
         <div class="space-y-2">
           <template x-for="m in movers" :key="m.ticker">
             <div @click="openCompany(m.ticker)" class="flex items-center justify-between p-2.5 rounded-lg bg-surface-2 hover:bg-surface-3 cursor-pointer transition-colors">
               <div>
                 <span class="font-mono text-sm font-semibold text-white" x-text="m.ticker"></span>
-                <span class="text-xs text-neutral-500 ml-2" x-text="m.name"></span>
+                <span class="text-xs text-neutral-400 ml-2" x-text="m.name"></span>
               </div>
               <div class="text-right">
                 <span class="font-mono text-sm" :class="m.delta >= 0 ? 'text-up' : 'text-down'"
                   x-text="(m.delta >= 0 ? '+' : '') + m.delta.toFixed(1)"></span>
-                <div class="text-xs text-neutral-500" x-text="m.composite.toFixed(1)"></div>
+                <div class="text-xs text-neutral-400" x-text="m.composite.toFixed(1)"></div>
               </div>
             </div>
           </template>
-          <div x-show="movers.length === 0" class="text-neutral-500 text-sm text-center py-8">No score data yet — run ingestion first</div>
+          <div x-show="movers.length === 0" class="text-neutral-400 text-sm text-center py-8">No score data yet — run ingestion first</div>
         </div>
       </div>
     </div>
 
+    <!-- Congress trade activity heatmap -->
+    <div class="bg-surface-1 rounded-xl border border-white/10 p-5">
+      <div class="flex items-start justify-between mb-1">
+        <div>
+          <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Congress Trade Activity — Day × Month</h2>
+          <p class="text-xs text-neutral-400 mt-0.5">When Congress actually trades. Rows = day of week, columns = calendar month. Darker = more trades. Pure count of <code>congressional_trades.traded_at</code>.</p>
+        </div>
+      </div>
+      <div id="activity-heatmap" class="w-full mt-2" style="height:260px"></div>
+    </div>
+
     <!-- Latest Events + Rankings side by side -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div class="bg-surface-1 rounded-xl border border-white/5 p-5">
-        <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider mb-4">Latest Events</h2>
+      <div class="bg-surface-1 rounded-xl border border-white/10 p-5">
+        <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Latest Events</h2>
+        <p class="text-xs text-neutral-400 mt-0.5 mb-3">Live feed of things happening right now: politicians trading stocks, governments handing out contracts, sanctions, lawsuits, big stock moves. The colored dot shows the type.</p>
         <div class="space-y-1.5 max-h-80 overflow-y-auto">
           <template x-for="e in latestEvents" :key="e.id">
-            <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-surface-2 transition-colors">
-              <span class="shrink-0 w-2 h-2 rounded-full" :class="eventColor(e.event_type)"></span>
+            <div @click="e.ticker && openCompany(e.ticker)"
+              :class="e.ticker ? 'cursor-pointer' : ''"
+              class="flex items-center gap-3 p-2 rounded-lg hover:bg-surface-2 transition-colors">
+              <span class="shrink-0 text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded w-24 text-center"
+                :class="eventBadge(e.event_type)"
+                x-text="eventCategory(e.event_type)"></span>
               <div class="flex-1 min-w-0">
-                <div class="text-sm truncate">
-                  <span class="font-mono text-accent-light" x-text="e.source"></span>
-                  <span class="text-neutral-400 mx-1">&middot;</span>
-                  <span x-text="e.event_type" class="text-neutral-300"></span>
+                <div class="text-sm truncate text-neutral-200" x-text="prettyEventType(e.event_type)"></div>
+                <div class="text-xs text-neutral-400">
+                  <span x-text="e.source"></span>
+                  <span class="mx-1">&middot;</span>
+                  <span x-text="timeAgo(e.occurred_at)"></span>
                 </div>
-                <div class="text-xs text-neutral-500" x-text="timeAgo(e.occurred_at)"></div>
               </div>
               <span x-show="e.ticker" @click.stop="openCompany(e.ticker)"
-                class="font-mono text-xs px-1.5 py-0.5 rounded bg-surface-3 text-neutral-300 cursor-pointer hover:text-white"
+                class="font-mono text-xs px-1.5 py-0.5 rounded bg-surface-3 text-neutral-300 cursor-pointer hover:text-white shrink-0"
                 x-text="e.ticker"></span>
             </div>
           </template>
-          <div x-show="latestEvents.length === 0" class="text-neutral-500 text-sm text-center py-8">No events yet</div>
+          <div x-show="latestEvents.length === 0" class="text-neutral-400 text-sm text-center py-8">No events yet</div>
         </div>
       </div>
-      <div class="bg-surface-1 rounded-xl border border-white/5 p-5">
-        <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider mb-4">Score Rankings</h2>
+      <div class="bg-surface-1 rounded-xl border border-white/10 p-5">
+        <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Score Rankings</h2>
+        <p class="text-xs text-neutral-400 mt-0.5 mb-3">The most politically-exposed companies right now. Higher number = more risk. Click any row to drill in.</p>
         <div class="space-y-1.5 max-h-80 overflow-y-auto">
           <template x-for="(r, i) in rankings.slice(0, 15)" :key="r.ticker">
             <div @click="openCompany(r.ticker)" class="flex items-center gap-3 p-2 rounded-lg hover:bg-surface-2 cursor-pointer transition-colors">
-              <span class="text-xs font-mono text-neutral-500 w-5 text-right" x-text="i+1"></span>
+              <span class="text-xs font-mono text-neutral-400 w-5 text-right" x-text="i+1"></span>
               <div class="flex-1">
                 <span class="font-mono text-sm font-semibold text-white" x-text="r.ticker"></span>
-                <span class="text-xs text-neutral-500 ml-2" x-text="r.name"></span>
+                <span class="text-xs text-neutral-400 ml-2" x-text="r.name"></span>
               </div>
               <div class="w-24 bg-surface-3 rounded-full h-1.5">
                 <div class="h-1.5 rounded-full transition-all" :style="`width:${r.composite}%;background:${scoreColor(r.composite)}`"></div>
@@ -129,14 +229,15 @@ tailwind.config = {
               <span class="font-mono text-sm w-10 text-right" :style="`color:${scoreColor(r.composite)}`" x-text="r.composite.toFixed(0)"></span>
             </div>
           </template>
-          <div x-show="rankings.length === 0" class="text-neutral-500 text-sm text-center py-8">No scores computed yet</div>
+          <div x-show="rankings.length === 0" class="text-neutral-400 text-sm text-center py-8">No scores computed yet</div>
         </div>
       </div>
     </div>
 
     <!-- Data Source Status -->
-    <div class="bg-surface-1 rounded-xl border border-white/5 p-5">
-      <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider mb-4">Data Source Status</h2>
+    <div class="bg-surface-1 rounded-xl border border-white/10 p-5">
+      <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Data Source Status</h2>
+      <p class="text-xs text-neutral-400 mt-0.5 mb-3">Where the data comes from. Green = working. Yellow = data is getting old. Red = something broke.</p>
       <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
         <template x-for="s in sources" :key="s.source_name">
           <div class="bg-surface-2 rounded-lg p-3">
@@ -146,7 +247,7 @@ tailwind.config = {
                 :class="s.status === 'healthy' ? 'bg-up/20 text-up' : s.status === 'stale' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-down/20 text-down'"
                 x-text="s.status"></span>
             </div>
-            <div class="text-xs text-neutral-500" x-text="s.last_successful_poll ? timeAgo(s.last_successful_poll) : 'never polled'"></div>
+            <div class="text-xs text-neutral-400" x-text="s.last_successful_poll ? timeAgo(s.last_successful_poll) : 'never polled'"></div>
           </div>
         </template>
       </div>
@@ -154,8 +255,12 @@ tailwind.config = {
   </div>
 
   <!-- Rankings View -->
-  <div x-show="view === 'rankings'" x-transition class="fade-in">
-    <div class="bg-surface-1 rounded-xl border border-white/5 p-5">
+  <div x-show="view === 'rankings'" x-transition class="fade-in space-y-4">
+    <div class="border-l-2 border-accent pl-4 py-1">
+      <h1 class="text-xl font-bold text-white">Who's the most politically exposed right now?</h1>
+      <p class="text-sm text-neutral-400 mt-1">Every public company, ranked by risk score (0 = calm, 100 = on fire). Switch the dropdown to sort by sub-score: <b>Market</b> (price/volume action), <b>Policy</b> (government activity), or <b>Insider</b> (congressional trades + executive moves). Click any row to see what's driving the number.</p>
+    </div>
+    <div class="bg-surface-1 rounded-xl border border-white/10 p-5">
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">All Company Rankings</h2>
         <select x-model="rankSort" @change="fetchRankings()" class="bg-surface-2 border border-white/10 rounded px-2 py-1 text-sm text-neutral-300">
@@ -167,24 +272,24 @@ tailwind.config = {
       </div>
       <table class="w-full text-sm">
         <thead>
-          <tr class="text-neutral-500 text-xs uppercase border-b border-white/5">
+          <tr class="text-neutral-400 text-xs uppercase border-b border-white/10">
             <th class="text-left py-2 px-2">#</th>
             <th class="text-left py-2">Ticker</th>
             <th class="text-left py-2">Name</th>
             <th class="text-left py-2">Sector</th>
-            <th class="text-right py-2">Market</th>
-            <th class="text-right py-2">Policy</th>
-            <th class="text-right py-2">Insider</th>
-            <th class="text-right py-2 px-2">Composite</th>
+            <th class="text-right py-2"><span class="tip" data-tip="Market risk signal from abnormal stock movements, volume spikes, and options activity around political events.">Market</span></th>
+            <th class="text-right py-2"><span class="tip" data-tip="Policy risk from government contracts, sanctions exposure, regulatory actions, and lobbying connections.">Policy</span></th>
+            <th class="text-right py-2"><span class="tip" data-tip="Insider risk from congressional trading, executive financial disclosures, and related-party transactions.">Insider</span></th>
+            <th class="text-right py-2 px-2"><span class="tip tip-left" data-tip="Weighted combination of Market, Policy, and Insider scores. 0-39 = low risk (green), 40-69 = moderate (yellow), 70-100 = high (red).">Composite</span></th>
           </tr>
         </thead>
         <tbody>
           <template x-for="(r, i) in rankings" :key="r.ticker">
-            <tr @click="openCompany(r.ticker)" class="border-b border-white/5 hover:bg-surface-2 cursor-pointer transition-colors">
-              <td class="py-2 px-2 text-neutral-500 font-mono" x-text="i+1"></td>
+            <tr @click="openCompany(r.ticker)" class="border-b border-white/10 hover:bg-surface-2 cursor-pointer transition-colors">
+              <td class="py-2 px-2 text-neutral-400 font-mono" x-text="i+1"></td>
               <td class="py-2 font-mono font-semibold text-white" x-text="r.ticker"></td>
               <td class="py-2 text-neutral-300" x-text="r.name"></td>
-              <td class="py-2 text-neutral-500" x-text="r.sector || '—'"></td>
+              <td class="py-2 text-neutral-400" x-text="r.sector || '—'"></td>
               <td class="py-2 text-right font-mono" :style="`color:${scoreColor(r.market)}`" x-text="r.market?.toFixed(1) ?? '—'"></td>
               <td class="py-2 text-right font-mono" :style="`color:${scoreColor(r.policy)}`" x-text="r.policy?.toFixed(1) ?? '—'"></td>
               <td class="py-2 text-right font-mono" :style="`color:${scoreColor(r.insider)}`" x-text="r.insider?.toFixed(1) ?? '—'"></td>
@@ -193,27 +298,31 @@ tailwind.config = {
           </template>
         </tbody>
       </table>
-      <div x-show="rankings.length === 0" class="text-neutral-500 text-sm text-center py-12">No scores computed yet — run ingestion to generate data</div>
+      <div x-show="rankings.length === 0" class="text-neutral-400 text-sm text-center py-12">No scores computed yet — run ingestion to generate data</div>
     </div>
   </div>
 
   <!-- Companies List -->
-  <div x-show="view === 'companies'" x-transition class="fade-in">
-    <div class="bg-surface-1 rounded-xl border border-white/5 p-5">
+  <div x-show="view === 'companies'" x-transition class="fade-in space-y-4">
+    <div class="border-l-2 border-accent pl-4 py-1">
+      <h1 class="text-xl font-bold text-white">Browse every company we track</h1>
+      <p class="text-sm text-neutral-400 mt-1">The full universe of public companies MRDN monitors. Filter by sector to narrow it down, then click a card to see that company's score history, recent events, and political connections.</p>
+    </div>
+    <div class="bg-surface-1 rounded-xl border border-white/10 p-5">
       <div class="flex items-center gap-4 mb-4">
         <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Companies</h2>
         <input type="text" x-model="companySearch" @input.debounce.300ms="fetchCompanies()" placeholder="Filter by sector..."
-          class="bg-surface-2 border border-white/10 rounded px-3 py-1 text-sm flex-1 max-w-xs focus:border-accent focus:outline-none text-neutral-300">
+          class="bg-surface-2 border border-white/10 rounded px-3 py-1 text-sm flex-1 max-w-xs focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus:outline-none text-neutral-300">
       </div>
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         <template x-for="c in companies" :key="c.id">
-          <div @click="openCompany(c.ticker)" class="bg-surface-2 rounded-lg p-4 hover:bg-surface-3 cursor-pointer transition-colors border border-white/5">
+          <div @click="openCompany(c.ticker)" class="bg-surface-2 rounded-lg p-4 hover:bg-surface-3 cursor-pointer transition-colors border border-white/10">
             <div class="flex items-center justify-between mb-2">
               <span class="font-mono font-bold text-white" x-text="c.ticker"></span>
               <span class="text-xs px-2 py-0.5 rounded-full bg-surface-3 text-neutral-400" x-text="c.sector || 'Unknown'"></span>
             </div>
             <div class="text-sm text-neutral-300 truncate" x-text="c.name"></div>
-            <div class="text-xs text-neutral-500 mt-1" x-text="c.subsector || ''"></div>
+            <div class="text-xs text-neutral-400 mt-1" x-text="c.subsector || ''"></div>
           </div>
         </template>
       </div>
@@ -221,7 +330,7 @@ tailwind.config = {
         <button @click="companyPage > 0 && (companyPage--, fetchCompanies())"
           :disabled="companyPage === 0"
           class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Prev</button>
-        <span class="text-sm text-neutral-500 py-1" x-text="`${companyPage * 30 + 1}–${Math.min((companyPage+1)*30, companyTotal)} of ${companyTotal}`"></span>
+        <span class="text-sm text-neutral-400 py-1" x-text="`${companyPage * 30 + 1}–${Math.min((companyPage+1)*30, companyTotal)} of ${companyTotal}`"></span>
         <button @click="(companyPage+1)*30 < companyTotal && (companyPage++, fetchCompanies())"
           :disabled="(companyPage+1)*30 >= companyTotal"
           class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Next</button>
@@ -232,18 +341,26 @@ tailwind.config = {
   <!-- Company Detail -->
   <div x-show="view === 'company'" x-transition class="space-y-6 fade-in">
     <div class="flex items-center gap-3 mb-2">
-      <button @click="navigate('dashboard')" class="text-neutral-500 hover:text-white text-sm">&larr; Back</button>
+      <button @click="navigate('dashboard')" class="text-neutral-400 hover:text-white text-sm">&larr; Back</button>
       <h1 class="text-2xl font-bold text-white">
         <span x-text="detail.ticker"></span>
         <span class="text-lg text-neutral-400 font-normal ml-2" x-text="detail.name"></span>
       </h1>
     </div>
+    <div class="border-l-2 border-accent pl-4 py-1">
+      <p class="text-sm text-neutral-400">Everything MRDN knows about this company: current risk score and how it broke down (Market / Policy / Insider), score history over time, recent events that moved the number, and the political figures connected to it. Use this to understand <i>why</i> a company is hot — not just that it is.</p>
+    </div>
 
     <!-- Score Cards -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-      <template x-for="[label, val] in [['Composite', detail.scores?.composite], ['Market', detail.scores?.market], ['Policy', detail.scores?.policy], ['Insider', detail.scores?.insider]]" :key="label">
-        <div class="bg-surface-1 rounded-xl border border-white/5 p-4 text-center">
-          <div class="text-xs text-neutral-500 uppercase tracking-wider mb-1" x-text="label"></div>
+      <template x-for="[label, val, desc] in [
+        ['Composite', detail.scores?.composite, 'Overall political risk — weighted blend of all sub-scores'],
+        ['Market', detail.scores?.market, 'Abnormal price/volume activity around political events'],
+        ['Policy', detail.scores?.policy, 'Government contracts, sanctions, and regulatory exposure'],
+        ['Insider', detail.scores?.insider, 'Congressional trades and executive financial disclosures']
+      ]" :key="label">
+        <div class="bg-surface-1 rounded-xl border border-white/10 p-4 text-center">
+          <div class="text-xs text-neutral-400 uppercase tracking-wider mb-1"><span class="tip" :data-tip="desc" x-text="label"></span></div>
           <div class="text-3xl font-bold font-mono" :style="`color:${scoreColor(val)}`" x-text="val != null ? val.toFixed(1) : '—'"></div>
         </div>
       </template>
@@ -251,11 +368,11 @@ tailwind.config = {
 
     <!-- Score History Chart + Timeline -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div class="bg-surface-1 rounded-xl border border-white/5 p-5">
+      <div class="bg-surface-1 rounded-xl border border-white/10 p-5">
         <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider mb-4">Score History</h2>
         <div id="score-history-chart" class="w-full" style="height:300px"></div>
       </div>
-      <div class="bg-surface-1 rounded-xl border border-white/5 p-5">
+      <div class="bg-surface-1 rounded-xl border border-white/10 p-5">
         <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider mb-4">Timeline</h2>
         <div class="space-y-2 max-h-72 overflow-y-auto">
           <template x-for="t in timeline" :key="t.event_id || t.score_id">
@@ -266,25 +383,40 @@ tailwind.config = {
                   <span x-show="t.type === 'event'" class="text-neutral-300" x-text="(t.source || '') + ' — ' + (t.event_type || '')"></span>
                   <span x-show="t.type === 'score'" class="text-accent-light">Score update: <span class="font-mono" x-text="t.composite_score?.toFixed(1)"></span></span>
                 </div>
-                <div class="text-xs text-neutral-500" x-text="timeAgo(t.timestamp)"></div>
+                <div class="text-xs text-neutral-400" x-text="timeAgo(t.timestamp)"></div>
               </div>
             </div>
           </template>
-          <div x-show="timeline.length === 0" class="text-neutral-500 text-sm text-center py-8">No activity yet</div>
+          <div x-show="timeline.length === 0" class="text-neutral-400 text-sm text-center py-8">No activity yet</div>
         </div>
       </div>
     </div>
 
     <!-- Connections Graph -->
-    <div class="bg-surface-1 rounded-xl border border-white/5 p-5">
+    <div class="bg-surface-1 rounded-xl border border-white/10 p-5">
       <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider mb-4">Entity Connections</h2>
       <div id="connections-chart" class="w-full" style="height:400px"></div>
     </div>
   </div>
 
   <!-- Persons -->
-  <div x-show="view === 'persons'" x-transition class="fade-in">
-    <div class="bg-surface-1 rounded-xl border border-white/5 p-5">
+  <div x-show="view === 'persons'" x-transition class="fade-in space-y-4">
+    <div class="border-l-2 border-accent pl-4 py-1">
+      <h1 class="text-xl font-bold text-white">Who's moving markets from inside government?</h1>
+      <p class="text-sm text-neutral-400 mt-1">A curated watchlist of politicians whose votes, committee seats, and personal stock trades move markets. Once trade disclosures are ingested, the cards below will show trade counts and the companies each person has been touching — and the order will reflect real activity, not seniority.</p>
+    </div>
+
+    <!-- Missing-data warning -->
+    <div x-show="!persons.some(p => (p.trade_count || 0) > 0)" class="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 flex items-start gap-3">
+      <div class="text-yellow-400 text-lg leading-none">⚠</div>
+      <div class="flex-1 text-sm">
+        <div class="text-yellow-200 font-semibold">No trading disclosures ingested yet</div>
+        <div class="text-yellow-200/70 mt-1">The persons table is seeded with <span x-text="persons.length"></span> high-profile figures, but no congressional trades, committee assignments, or external IDs have been loaded. Until then, this page is just a roster — sorting by "influence" is meaningless because every score is zero. Run an EFDS / House PTR ingester to bring it to life.</div>
+        <code class="inline-block mt-2 bg-black/40 text-yellow-100 px-2 py-1 rounded text-[11px] font-mono">go run ./cmd/mrdn ingest-efds</code>
+      </div>
+    </div>
+
+    <div class="bg-surface-1 rounded-xl border border-white/10 p-5">
       <div class="flex items-center gap-4 mb-4">
         <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Political Figures</h2>
         <select x-model="personBranch" @change="fetchPersons()" class="bg-surface-2 border border-white/10 rounded px-2 py-1 text-sm text-neutral-300">
@@ -293,52 +425,857 @@ tailwind.config = {
           <option value="executive">Executive</option>
           <option value="judicial">Judicial</option>
         </select>
+        <span class="text-xs text-neutral-400 ml-auto" x-text="persons.length + ' people'"></span>
       </div>
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         <template x-for="p in persons" :key="p.id">
-          <div class="bg-surface-2 rounded-lg p-4 border border-white/5">
-            <div class="font-semibold text-white" x-text="p.name"></div>
-            <div class="text-sm text-neutral-400 mt-1" x-text="p.role"></div>
-            <div class="flex gap-2 mt-2">
-              <span class="text-xs px-2 py-0.5 rounded-full bg-surface-3 text-neutral-400" x-text="p.branch || '—'"></span>
-              <span class="text-xs px-2 py-0.5 rounded-full bg-accent/20 text-accent-light" x-text="'Tier ' + p.tier"></span>
+          <div @click="openPerson(p.slug)" class="bg-surface-2 rounded-lg p-4 border border-white/10 hover:border-accent/40 transition-colors cursor-pointer">
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0 flex-1">
+                <div class="font-semibold text-white truncate" x-text="p.name"></div>
+                <div class="text-sm text-neutral-400 mt-0.5 capitalize" x-text="(p.role || '').replace('_',' ')"></div>
+              </div>
+              <span class="text-[10px] font-bold px-2 py-1 rounded shrink-0"
+                :class="p.party === 'R' ? 'bg-red-500/15 text-red-300' : p.party === 'D' ? 'bg-blue-500/15 text-blue-300' : 'bg-neutral-500/15 text-neutral-300'"
+                x-text="p.party || '—'"></span>
+            </div>
+            <div class="flex flex-wrap gap-1.5 mt-3">
+              <span class="text-[10px] px-2 py-0.5 rounded-full bg-surface-3 text-neutral-300 capitalize" x-text="p.branch || '—'"></span>
+              <span x-show="p.state" class="text-[10px] px-2 py-0.5 rounded-full bg-surface-3 text-neutral-300" x-text="p.state"></span>
+              <span class="text-[10px] px-2 py-0.5 rounded-full bg-accent/15 text-accent-light tip"
+                :data-tip="'Tier ' + p.tier + ' — ' + (p.tier === 1 ? 'top influence (party leadership, key committees)' : p.tier === 2 ? 'high influence (active traders, swing votes)' : 'tracked but lower-impact')"
+                x-text="'T' + p.tier"></span>
+            </div>
+            <div x-show="(p.trade_count || 0) > 0" class="mt-3 pt-3 border-t border-white/10 flex items-baseline gap-4">
+              <div>
+                <div class="text-lg font-bold text-accent-light tabular-nums" x-text="fmtMoney(p.est_volume_usd)"></div>
+                <div class="text-[10px] uppercase tracking-wider text-neutral-400">est. volume</div>
+              </div>
+              <div>
+                <div class="text-lg font-bold text-white tabular-nums" x-text="(p.trade_count || 0).toLocaleString()"></div>
+                <div class="text-[10px] uppercase tracking-wider text-neutral-400">trades</div>
+              </div>
+              <div>
+                <div class="text-lg font-bold text-white tabular-nums" x-text="(p.tickers_touched || 0).toLocaleString()"></div>
+                <div class="text-[10px] uppercase tracking-wider text-neutral-400">tickers</div>
+              </div>
             </div>
           </div>
         </template>
       </div>
-      <div x-show="persons.length === 0" class="text-neutral-500 text-sm text-center py-12">No persons data — run EFDS ingestion</div>
+      <div x-show="persons.length === 0" class="text-neutral-400 text-sm text-center py-12">No persons data — run EFDS ingestion</div>
     </div>
   </div>
 
-  <!-- Sources -->
-  <div x-show="view === 'sources'" x-transition class="fade-in">
-    <div class="bg-surface-1 rounded-xl border border-white/5 p-5">
-      <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider mb-4">Data Sources</h2>
-      <div class="space-y-3">
-        <template x-for="s in sources" :key="s.source_name">
-          <div class="bg-surface-2 rounded-lg p-4 border border-white/5">
-            <div class="flex items-center justify-between mb-2">
-              <span class="font-mono font-bold text-white" x-text="s.source_name"></span>
-              <span class="text-xs px-2 py-0.5 rounded font-semibold"
-                :class="s.status === 'healthy' ? 'bg-up/20 text-up' : 'bg-yellow-500/20 text-yellow-400'"
-                x-text="s.status"></span>
+  <!-- Signals: derived intelligence from real congressional trades -->
+  <div x-show="view === 'signals'" x-transition class="fade-in space-y-4">
+    <div class="border-l-2 border-accent pl-4 py-1">
+      <h1 class="text-xl font-bold text-white">What does the data actually say?</h1>
+      <p class="text-sm text-neutral-400 mt-1">
+        Three signals derived directly from real House Clerk PTR filings — no inference, no prediction, no fabrication.
+        Pick a tab: who's breaking the law on disclosure timing, when reps cluster on the same ticker in the same week, and which stocks split or unite the parties.
+      </p>
+    </div>
+
+    <!-- Sub-tabs -->
+    <div class="flex gap-1 border-b border-white/10">
+      <template x-for="t in [
+        {id:'compliance', label:'STOCK Act latency'},
+        {id:'swarms', label:'Swarm clusters'},
+        {id:'first-movers', label:'First in'},
+        {id:'round-trips', label:'Fast flips'},
+        {id:'consensus', label:'Bipartisan consensus'},
+        {id:'contrarian', label:'Contrarian splits'}
+      ]" :key="t.id">
+        <button @click="selectSignalsTab(t.id)"
+          :class="signalsTab === t.id ? 'border-accent text-white' : 'border-transparent text-neutral-400 hover:text-white'"
+          class="px-3 py-2 text-sm font-medium border-b-2 transition-colors"
+          x-text="t.label"></button>
+      </template>
+    </div>
+
+    <!-- ============ STOCK Act compliance ============ -->
+    <div x-show="signalsTab === 'compliance'" class="space-y-4">
+    <div class="text-sm text-neutral-400">
+      Federal law requires members of Congress to disclose covered stock transactions within <span class="text-white font-semibold">45 days</span> of the trade.
+      Every row is the gap between when the trade happened and when it was actually filed — pure subtraction, no estimation.
+    </div>
+
+    <!-- Headline summary -->
+    <div x-show="complianceSummary" class="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div class="bg-surface-1 rounded-xl border border-white/10 p-4">
+        <div class="text-[10px] uppercase tracking-wider text-neutral-400">Trades scored</div>
+        <div class="text-2xl font-bold text-white tabular-nums mt-1" x-text="(complianceSummary?.total_scoreable || 0).toLocaleString()"></div>
+      </div>
+      <div class="bg-surface-1 rounded-xl border border-white/10 p-4">
+        <div class="text-[10px] uppercase tracking-wider text-neutral-400">Median latency</div>
+        <div class="text-2xl font-bold text-white tabular-nums mt-1"><span x-text="complianceSummary?.median_days || 0"></span><span class="text-sm text-neutral-400 ml-1">days</span></div>
+      </div>
+      <div class="bg-surface-1 rounded-xl border border-white/10 p-4">
+        <div class="text-[10px] uppercase tracking-wider text-neutral-400">Filed late (>45d)</div>
+        <div class="text-2xl font-bold tabular-nums mt-1"
+          :class="(complianceSummary?.late_pct || 0) > 0.25 ? 'text-red-400' : (complianceSummary?.late_pct || 0) > 0.1 ? 'text-yellow-400' : 'text-white'">
+          <span x-text="Math.round((complianceSummary?.late_pct || 0) * 100)"></span>%
+        </div>
+        <div class="text-[10px] text-neutral-400 mt-0.5"><span x-text="(complianceSummary?.late_count || 0).toLocaleString()"></span> trades</div>
+      </div>
+      <div class="bg-surface-1 rounded-xl border border-white/10 p-4">
+        <div class="text-[10px] uppercase tracking-wider text-neutral-400">Worst single trade</div>
+        <div class="text-2xl font-bold text-red-400 tabular-nums mt-1"><span x-text="(complianceSummary?.worst_days || 0).toLocaleString()"></span><span class="text-sm text-neutral-400 ml-1">days late</span></div>
+      </div>
+    </div>
+
+    <!-- Leaderboard -->
+    <div class="bg-surface-1 rounded-xl border border-white/10 overflow-hidden">
+      <div class="flex items-center gap-3 p-4 border-b border-white/10">
+        <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Worst offenders</h2>
+        <span class="text-xs text-neutral-400">≥10 disclosed trades, sorted by median latency</span>
+        <span class="text-xs text-neutral-400 ml-auto" x-text="compliance.length + ' people'"></span>
+      </div>
+      <div x-show="compliance.length === 0" class="text-neutral-400 text-sm text-center py-12">
+        No latency data — run <code class="bg-black/40 px-2 py-1 rounded text-[11px]">go run ./cmd/mrdn ingest-house-trades</code>
+      </div>
+      <div x-show="compliance.length > 0" class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-surface-2 text-[10px] uppercase tracking-wider text-neutral-400">
+            <tr>
+              <th class="text-left px-4 py-2">#</th>
+              <th class="text-left px-4 py-2">Representative</th>
+              <th class="text-right px-4 py-2">Trades</th>
+              <th class="text-right px-4 py-2 tip" data-tip="50th percentile of (filed_at − traded_at)">Median</th>
+              <th class="text-right px-4 py-2 tip" data-tip="90th percentile — the long tail">P90</th>
+              <th class="text-right px-4 py-2">% late</th>
+              <th class="text-right px-4 py-2">Worst</th>
+              <th class="text-left px-4 py-2">Worst ticker</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="(c, i) in compliance" :key="c.person_id">
+              <tr class="border-t border-white/10 hover:bg-surface-2/50 cursor-default">
+                <td class="px-4 py-2 text-neutral-400 tabular-nums" x-text="i + 1"></td>
+                <td class="px-4 py-2">
+                  <div class="flex items-center gap-2">
+                    <span class="text-white font-medium" x-text="c.name"></span>
+                    <span class="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                      :class="c.party === 'R' ? 'bg-red-500/15 text-red-300' : c.party === 'D' ? 'bg-blue-500/15 text-blue-300' : 'bg-neutral-500/15 text-neutral-300'"
+                      x-text="c.party || '—'"></span>
+                    <span x-show="c.state" class="text-[10px] text-neutral-400" x-text="c.state"></span>
+                  </div>
+                </td>
+                <td class="px-4 py-2 text-right tabular-nums text-neutral-300" x-text="c.trades.toLocaleString()"></td>
+                <td class="px-4 py-2 text-right tabular-nums font-semibold"
+                  :class="c.median_days > 90 ? 'text-red-400' : c.median_days > 45 ? 'text-yellow-400' : 'text-neutral-300'"
+                  x-text="c.median_days + 'd'"></td>
+                <td class="px-4 py-2 text-right tabular-nums text-neutral-400" x-text="c.p90_days + 'd'"></td>
+                <td class="px-4 py-2 text-right tabular-nums"
+                  :class="c.late_pct > 0.5 ? 'text-red-400' : c.late_pct > 0.2 ? 'text-yellow-400' : 'text-neutral-400'"
+                  x-text="Math.round(c.late_pct * 100) + '%'"></td>
+                <td class="px-4 py-2 text-right tabular-nums text-neutral-400" x-text="c.worst_days.toLocaleString() + 'd'"></td>
+                <td class="px-4 py-2 font-mono text-xs text-neutral-400" x-text="c.worst_ticker || '—'"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+      <div class="px-4 py-3 border-t border-white/10 text-[11px] text-neutral-400">
+        Source: House Clerk Periodic Transaction Reports. Latency = days between transaction date and filing date. The 45-day threshold comes from the STOCK Act of 2012 (Pub. L. 112-105). Trades missing either date are excluded.
+      </div>
+    </div>
+    </div>
+    <!-- /compliance -->
+
+    <!-- ============ Swarm clusters ============ -->
+    <div x-show="signalsTab === 'swarms'" class="space-y-4">
+      <div class="text-sm text-neutral-400">
+        A <span class="text-white font-semibold">swarm</span> is when ≥4 distinct representatives traded the same ticker in the same calendar week. Bucketed by ISO week, ordered most-recent first. This is one of the few times you can watch politicians visibly converging on a single stock.
+      </div>
+      <div class="bg-surface-1 rounded-xl border border-white/10 overflow-hidden">
+        <div x-show="swarms.length === 0" class="text-neutral-400 text-sm text-center py-12">No swarms found</div>
+        <div x-show="swarms.length > 0" class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-surface-2 text-[10px] uppercase tracking-wider text-neutral-400">
+              <tr>
+                <th class="text-left px-4 py-2">Week of</th>
+                <th class="text-left px-4 py-2">Ticker</th>
+                <th class="text-right px-4 py-2">Reps</th>
+                <th class="text-right px-4 py-2">Trades</th>
+                <th class="text-right px-4 py-2">Buys</th>
+                <th class="text-right px-4 py-2">Sells</th>
+                <th class="text-right px-4 py-2">R / D</th>
+                <th class="text-left px-4 py-2">Who</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="(s, i) in swarms" :key="i">
+                <tr class="border-t border-white/10 hover:bg-surface-2/50">
+                  <td class="px-4 py-2 font-mono text-xs text-neutral-400" x-text="s.week_start"></td>
+                  <td class="px-4 py-2 font-mono font-semibold text-white" x-text="s.ticker"></td>
+                  <td class="px-4 py-2 text-right tabular-nums font-bold text-accent-light" x-text="s.reps"></td>
+                  <td class="px-4 py-2 text-right tabular-nums text-neutral-300" x-text="s.trades"></td>
+                  <td class="px-4 py-2 text-right tabular-nums text-green-400" x-text="s.buys"></td>
+                  <td class="px-4 py-2 text-right tabular-nums text-red-400" x-text="s.sells"></td>
+                  <td class="px-4 py-2 text-right tabular-nums text-xs">
+                    <span class="text-red-300" x-text="s.r_count"></span>
+                    <span class="text-neutral-500 mx-0.5">/</span>
+                    <span class="text-blue-300" x-text="s.d_count"></span>
+                  </td>
+                  <td class="px-4 py-2 text-xs text-neutral-400 max-w-md truncate" :title="(s.rep_names || []).join(', ')" x-text="(s.rep_names || []).join(', ')"></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+        <div class="px-4 py-3 border-t border-white/10 text-[11px] text-neutral-400">
+          Buckets are ISO calendar weeks. A "rep" is a unique person_id; a "trade" is a row in congressional_trades. Tickers like "--" or empty are excluded.
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ First movers ============ -->
+    <div x-show="signalsTab === 'first-movers'" class="space-y-4">
+      <div class="text-sm text-neutral-400">
+        For each ticker bought by ≥4 representatives, who got there <span class="text-white font-semibold">first</span>? The follower lag is computed in days from the first congressional buy. This is chronology, not causation — but it's the closest you can get to "who tipped off whom" using public disclosures alone.
+      </div>
+      <div x-show="firstMovers.length === 0" class="text-neutral-400 text-sm text-center py-12">No first-mover data</div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <template x-for="fm in firstMovers" :key="fm.ticker">
+          <div class="bg-surface-1 rounded-xl border border-white/10 p-4">
+            <div class="flex items-center gap-3 mb-3">
+              <span class="font-mono text-lg font-bold text-white" x-text="fm.ticker"></span>
+              <span class="text-[10px] uppercase tracking-wider text-neutral-400" x-text="fm.total_buyers + ' buyers'"></span>
+              <span class="ml-auto text-[10px] text-neutral-400" x-text="new Date(fm.first_date).toISOString().slice(0,10)"></span>
             </div>
-            <div class="grid grid-cols-3 gap-4 text-sm">
-              <div>
-                <div class="text-xs text-neutral-500">Expected Lag</div>
-                <div class="text-neutral-300" x-text="s.expected_lag"></div>
+            <div class="space-y-1.5">
+              <!-- First mover -->
+              <div class="flex items-center gap-2 text-sm">
+                <span class="text-[10px] font-bold text-accent w-12 shrink-0">FIRST</span>
+                <span class="text-white font-medium truncate" x-text="fm.first_buyer"></span>
+                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0"
+                  :class="fm.first_party === 'R' ? 'bg-red-500/15 text-red-300' : fm.first_party === 'D' ? 'bg-blue-500/15 text-blue-300' : 'bg-neutral-500/15 text-neutral-300'"
+                  x-text="fm.first_party || '—'"></span>
               </div>
-              <div>
-                <div class="text-xs text-neutral-500">Last Poll</div>
-                <div class="text-neutral-300" x-text="s.last_successful_poll ? new Date(s.last_successful_poll).toLocaleString() : 'Never'"></div>
-              </div>
-              <div>
-                <div class="text-xs text-neutral-500">Poll Interval</div>
-                <div class="text-neutral-300" x-text="formatDuration(s.poll_interval_seconds)"></div>
-              </div>
+              <!-- Followers -->
+              <template x-for="(f, fi) in (fm.followers || [])" :key="fi">
+                <div class="flex items-center gap-2 text-xs pl-2 border-l border-white/10">
+                  <span class="text-[10px] font-mono text-neutral-400 w-12 shrink-0" x-text="'+' + f.lag_days + 'd'"></span>
+                  <span class="text-neutral-300 truncate" x-text="f.name"></span>
+                  <span class="text-[9px] font-bold px-1 py-0.5 rounded shrink-0"
+                    :class="f.party === 'R' ? 'bg-red-500/15 text-red-300' : f.party === 'D' ? 'bg-blue-500/15 text-blue-300' : 'bg-neutral-500/15 text-neutral-300'"
+                    x-text="f.party || '—'"></span>
+                </div>
+              </template>
             </div>
           </div>
         </template>
+      </div>
+    </div>
+
+    <!-- ============ Round trips ============ -->
+    <div x-show="signalsTab === 'round-trips'" class="space-y-4">
+      <div class="text-sm text-neutral-400">
+        <span class="text-white font-semibold">Fast flips</span> — purchases sold within a short window. Each row pairs a buy with the very next sale of the same ticker by the same rep. No inference of intent — just the calendar gap and the disclosed dollar amounts. Short holds with large dollars are the ones worth reading twice.
+      </div>
+      <div class="bg-surface-1 rounded-xl border border-white/10 overflow-hidden">
+        <div x-show="roundTrips.length === 0" class="text-neutral-400 text-sm text-center py-12">Loading…</div>
+        <div x-show="roundTrips.length > 0" class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-surface-2 text-[10px] uppercase tracking-wider text-neutral-400">
+              <tr>
+                <th class="text-left px-4 py-2">Representative</th>
+                <th class="text-left px-4 py-2">Ticker</th>
+                <th class="text-right px-4 py-2">Held</th>
+                <th class="text-right px-4 py-2">Bought</th>
+                <th class="text-right px-4 py-2">Sold</th>
+                <th class="text-right px-4 py-2">Buy $</th>
+                <th class="text-right px-4 py-2">Sell $</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="(rt, i) in roundTrips" :key="i">
+                <tr class="border-t border-white/10 hover:bg-surface-2/50 cursor-pointer" @click="openPerson(rt.slug)">
+                  <td class="px-4 py-2">
+                    <span class="text-white font-medium" x-text="rt.name"></span>
+                    <span class="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded"
+                      :class="rt.party === 'R' ? 'bg-red-500/15 text-red-300' : rt.party === 'D' ? 'bg-blue-500/15 text-blue-300' : 'bg-neutral-500/15 text-neutral-300'"
+                      x-text="rt.party || '—'"></span>
+                  </td>
+                  <td class="px-4 py-2 font-mono font-semibold text-accent-light cursor-pointer hover:underline"
+                      @click.stop="openTicker(rt.ticker)" x-text="rt.ticker"></td>
+                  <td class="px-4 py-2 text-right tabular-nums"
+                      :class="rt.hold_days <= 7 ? 'text-red-300 font-semibold' : rt.hold_days <= 30 ? 'text-yellow-300' : 'text-neutral-300'">
+                    <span x-text="rt.hold_days"></span><span class="text-neutral-500 text-xs ml-0.5">d</span>
+                  </td>
+                  <td class="px-4 py-2 text-right tabular-nums text-neutral-400 text-xs" x-text="rt.buy_date"></td>
+                  <td class="px-4 py-2 text-right tabular-nums text-neutral-400 text-xs" x-text="rt.sell_date"></td>
+                  <td class="px-4 py-2 text-right tabular-nums text-green-400" x-text="fmtMoney(rt.buy_amount)"></td>
+                  <td class="px-4 py-2 text-right tabular-nums text-red-400" x-text="fmtMoney(rt.sell_amount)"></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+        <div class="px-4 py-3 border-t border-white/10 text-[11px] text-neutral-400">
+          Showing buys ≥ $15K with the next sale within 60 days. Buy/sell dollar amounts are midpoints of the disclosed STOCK Act ranges — actual amounts may be higher or lower within the disclosed bracket.
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ Partisan: consensus + contrarian ============ -->
+    <template x-for="m in ['consensus','contrarian']" :key="m">
+      <div x-show="signalsTab === m" class="space-y-4">
+        <div class="text-sm text-neutral-400">
+          <template x-if="m === 'consensus'">
+            <span><span class="text-white font-semibold">Consensus tickers</span> — both parties have ≥2 active reps and they're trading the same direction. The closer the score is to zero, the more bipartisan the activity.</span>
+          </template>
+          <template x-if="m === 'contrarian'">
+            <span><span class="text-white font-semibold">Contrarian splits</span> — both parties active, but on opposite sides. Republicans buying while Democrats sell, or vice versa. These are the rare moments where the parties literally bet against each other.</span>
+          </template>
+        </div>
+        <div class="bg-surface-1 rounded-xl border border-white/10 overflow-hidden">
+          <div x-show="partisan.length === 0" class="text-neutral-400 text-sm text-center py-12">Nothing here</div>
+          <div x-show="partisan.length > 0" class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-surface-2 text-[10px] uppercase tracking-wider text-neutral-400">
+                <tr>
+                  <th class="text-left px-4 py-2">Ticker</th>
+                  <th class="text-right px-4 py-2">Total reps</th>
+                  <th class="text-right px-4 py-2 text-red-300">R buy</th>
+                  <th class="text-right px-4 py-2 text-red-300">R sell</th>
+                  <th class="text-right px-4 py-2 text-blue-300">D buy</th>
+                  <th class="text-right px-4 py-2 text-blue-300">D sell</th>
+                  <th class="text-right px-4 py-2 tip" data-tip="-1 = all D activity, +1 = all R activity, 0 = perfectly split">Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="p in partisan" :key="p.ticker">
+                  <tr class="border-t border-white/10 hover:bg-surface-2/50">
+                    <td class="px-4 py-2 font-mono font-semibold text-white" x-text="p.ticker"></td>
+                    <td class="px-4 py-2 text-right tabular-nums text-neutral-300" x-text="p.total_reps"></td>
+                    <td class="px-4 py-2 text-right tabular-nums text-red-300" x-text="p.r_buyers"></td>
+                    <td class="px-4 py-2 text-right tabular-nums text-red-300/60" x-text="p.r_sellers"></td>
+                    <td class="px-4 py-2 text-right tabular-nums text-blue-300" x-text="p.d_buyers"></td>
+                    <td class="px-4 py-2 text-right tabular-nums text-blue-300/60" x-text="p.d_sellers"></td>
+                    <td class="px-4 py-2 text-right tabular-nums font-mono text-xs"
+                      :class="p.score > 0.3 ? 'text-red-300' : p.score < -0.3 ? 'text-blue-300' : 'text-neutral-400'"
+                      x-text="(p.score >= 0 ? '+' : '') + p.score.toFixed(2)"></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+          <div class="px-4 py-3 border-t border-white/10 text-[11px] text-neutral-400">
+            Counts are distinct representatives, not trade rows — one rep buying NVDA ten times counts as one buyer. Independents and reps with no party flag are excluded. Minimum 4 reps total.
+          </div>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <!-- Person detail (deep profile) -->
+  <div x-show="view === 'person'" x-transition class="space-y-4 fade-in">
+    <button @click="navigate('persons')" class="text-neutral-400 hover:text-white text-sm">&larr; Back to persons</button>
+
+    <div x-show="!personProfile" class="text-neutral-400 text-sm text-center py-12">Loading profile…</div>
+
+    <template x-if="personProfile">
+      <div class="space-y-4">
+        <!-- Header -->
+        <div class="bg-surface-1 rounded-xl border border-white/10 p-5">
+          <div class="flex items-start gap-4">
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-3 flex-wrap">
+                <h1 class="text-2xl font-bold text-white" x-text="personProfile.name"></h1>
+                <span class="text-[10px] font-bold px-2 py-1 rounded"
+                  :class="personProfile.party === 'R' ? 'bg-red-500/15 text-red-300' : personProfile.party === 'D' ? 'bg-blue-500/15 text-blue-300' : 'bg-neutral-500/15 text-neutral-300'"
+                  x-text="personProfile.party || '—'"></span>
+                <span x-show="personProfile.state" class="text-xs text-neutral-400" x-text="personProfile.state"></span>
+                <span class="text-[10px] px-2 py-0.5 rounded-full bg-accent/15 text-accent-light" x-text="'Tier ' + personProfile.tier"></span>
+              </div>
+              <div class="text-sm text-neutral-400 mt-1">
+                Active <span class="text-neutral-300" x-text="personProfile.first_trade ? new Date(personProfile.first_trade).toISOString().slice(0,10) : '—'"></span>
+                → <span class="text-neutral-300" x-text="personProfile.last_trade ? new Date(personProfile.last_trade).toISOString().slice(0,10) : '—'"></span>
+              </div>
+              <!-- Party history (only shown for switchers) -->
+              <div x-show="personProfile.party_history && personProfile.party_history.length > 0"
+                   class="mt-3 pt-3 border-t border-white/10">
+                <div class="text-[10px] uppercase tracking-wider text-neutral-400 mb-1.5">Party history</div>
+                <div class="flex items-center gap-2 flex-wrap text-xs">
+                  <template x-for="(ph, i) in (personProfile.party_history || [])" :key="i">
+                    <div class="flex items-center gap-2">
+                      <span class="text-[10px] font-bold px-2 py-0.5 rounded"
+                        :class="ph.party === 'R' ? 'bg-red-500/15 text-red-300' : ph.party === 'D' ? 'bg-blue-500/15 text-blue-300' : ph.party === 'L' ? 'bg-yellow-500/15 text-yellow-300' : 'bg-neutral-500/15 text-neutral-300'"
+                        x-text="ph.party"></span>
+                      <span class="text-neutral-400 tabular-nums" x-text="(ph.started_at || '…') + ' → ' + (ph.ended_at || 'present')"></span>
+                      <span x-show="i < personProfile.party_history.length - 1" class="text-neutral-700">›</span>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Headline tiles -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div class="bg-surface-1 rounded-xl border border-white/10 p-4">
+            <div class="text-[10px] uppercase tracking-wider text-neutral-400">Estimated volume</div>
+            <div class="text-2xl font-bold text-accent-light tabular-nums mt-1" x-text="fmtMoney(personProfile.est_volume_usd)"></div>
+            <div class="text-[10px] text-neutral-400 mt-0.5">midpoint of disclosed ranges</div>
+          </div>
+          <div class="bg-surface-1 rounded-xl border border-white/10 p-4">
+            <div class="text-[10px] uppercase tracking-wider text-neutral-400">Trades · tickers</div>
+            <div class="text-2xl font-bold text-white tabular-nums mt-1">
+              <span x-text="personProfile.trades.toLocaleString()"></span>
+              <span class="text-neutral-500 text-base mx-1">·</span>
+              <span x-text="personProfile.tickers.toLocaleString()"></span>
+            </div>
+            <div class="text-[10px] text-neutral-400 mt-0.5">
+              <span class="text-green-400" x-text="personProfile.buys + ' buys'"></span>
+              <span class="text-neutral-500 mx-1">/</span>
+              <span class="text-red-400" x-text="personProfile.sells + ' sells'"></span>
+            </div>
+          </div>
+          <div class="bg-surface-1 rounded-xl border border-white/10 p-4">
+            <div class="text-[10px] uppercase tracking-wider text-neutral-400">Median STOCK Act lag</div>
+            <div class="text-2xl font-bold tabular-nums mt-1"
+              :class="personProfile.median_latency_days > 90 ? 'text-red-400' : personProfile.median_latency_days > 45 ? 'text-yellow-400' : 'text-white'">
+              <span x-text="personProfile.median_latency_days"></span><span class="text-sm text-neutral-400 ml-1">days</span>
+            </div>
+            <div class="text-[10px] text-neutral-400 mt-0.5"><span x-text="Math.round(personProfile.late_pct * 100)"></span>% past the 45-day deadline</div>
+          </div>
+          <div class="bg-surface-1 rounded-xl border border-white/10 p-4">
+            <div class="text-[10px] uppercase tracking-wider text-neutral-400">Swarm appearances</div>
+            <div class="text-2xl font-bold text-white tabular-nums mt-1" x-text="personProfile.swarm_count"></div>
+            <div class="text-[10px] text-neutral-400 mt-0.5">weeks where ≥4 reps clustered on the same ticker</div>
+          </div>
+        </div>
+
+        <!-- Concentration + ownership -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div class="bg-surface-1 rounded-xl border border-white/10 p-5">
+            <div class="text-xs uppercase tracking-wider text-neutral-400 mb-2">Net flow</div>
+            <div class="text-2xl font-bold tabular-nums"
+              :class="(personProfile.net_flow_usd || 0) > 0 ? 'text-green-400' : (personProfile.net_flow_usd || 0) < 0 ? 'text-red-400' : 'text-neutral-300'">
+              <span x-text="(personProfile.net_flow_usd || 0) >= 0 ? '+' : '−'"></span><span x-text="fmtMoney(Math.abs(personProfile.net_flow_usd || 0))"></span>
+            </div>
+            <div class="text-[11px] text-neutral-400 mt-1"
+              x-text="(personProfile.net_flow_usd || 0) > 0 ? 'Net accumulator (more buying than selling)' : (personProfile.net_flow_usd || 0) < 0 ? 'Net seller (more dumping than buying)' : 'Balanced'"></div>
+          </div>
+          <div class="bg-surface-1 rounded-xl border border-white/10 p-5">
+            <div class="text-xs uppercase tracking-wider text-neutral-400 mb-2">Portfolio concentration</div>
+            <div class="text-2xl font-bold tabular-nums"
+              :class="(personProfile.concentration_hhi || 0) > 0.5 ? 'text-yellow-300' : 'text-white'">
+              <span x-text="Math.round((personProfile.top_holding_pct || 0) * 100)"></span><span class="text-sm text-neutral-400 ml-1">% in top ticker</span>
+            </div>
+            <div class="text-[11px] text-neutral-400 mt-1">
+              HHI <span class="tabular-nums" x-text="(personProfile.concentration_hhi || 0).toFixed(2)"></span> — <span x-text="(personProfile.concentration_hhi || 0) > 0.5 ? 'highly concentrated' : (personProfile.concentration_hhi || 0) > 0.15 ? 'moderate' : 'diversified'"></span>
+            </div>
+          </div>
+          <div class="bg-surface-1 rounded-xl border border-white/10 p-5">
+            <div class="text-xs uppercase tracking-wider text-neutral-400 mb-2">Owner</div>
+            <div x-show="!personProfile.owner_breakdown?.length" class="text-neutral-400 text-sm">Unknown</div>
+            <div x-show="personProfile.owner_breakdown?.length" class="space-y-1.5 mt-1">
+              <template x-for="o in (personProfile.owner_breakdown || [])" :key="o.owner_type">
+                <div class="flex items-center gap-2 text-xs">
+                  <span class="capitalize text-neutral-300 w-20 shrink-0" x-text="o.owner_type"></span>
+                  <div class="flex-1 h-1.5 bg-surface-3 rounded overflow-hidden">
+                    <div class="h-full bg-accent" :style="'width:' + Math.round((o.trades / personProfile.trades) * 100) + '%'"></div>
+                  </div>
+                  <span class="text-neutral-400 tabular-nums w-10 text-right" x-text="Math.round((o.trades / personProfile.trades) * 100) + '%'"></span>
+                </div>
+              </template>
+            </div>
+            <div class="text-[11px] text-neutral-400 mt-2">Joint = jointly held with spouse. Dependent = held by a dependent child.</div>
+          </div>
+        </div>
+
+        <!-- Volume timeline chart -->
+        <div class="bg-surface-1 rounded-xl border border-white/10 p-5">
+          <div class="text-xs uppercase tracking-wider text-neutral-400 mb-2">Monthly disclosed volume</div>
+          <div class="text-[11px] text-neutral-400 mb-3">Bars colored green when buys dominate the month, red when sells dominate, gray when balanced.</div>
+          <div id="person-volume-chart" style="height: 260px;"></div>
+        </div>
+
+        <!-- Biggest single trade -->
+        <div x-show="personProfile.biggest_trade" class="bg-surface-1 rounded-xl border border-white/10 p-5">
+          <div class="text-xs uppercase tracking-wider text-neutral-400 mb-2">Biggest single disclosed trade</div>
+          <div class="flex items-baseline gap-4 flex-wrap">
+            <span class="font-mono text-2xl font-bold text-accent-light cursor-pointer hover:underline"
+                  @click="openTicker(personProfile.biggest_trade?.ticker)"
+                  x-text="personProfile.biggest_trade?.ticker"></span>
+            <span class="text-2xl font-bold text-accent-light tabular-nums" x-text="fmtMoney(personProfile.biggest_trade?.est_amount)"></span>
+            <span class="text-sm uppercase tracking-wider"
+              :class="personProfile.biggest_trade?.trade_type === 'purchase' ? 'text-green-400' : 'text-red-400'"
+              x-text="personProfile.biggest_trade?.trade_type?.replace('_', ' ')"></span>
+            <span class="text-sm text-neutral-400 ml-auto" x-text="personProfile.biggest_trade?.traded_at ? new Date(personProfile.biggest_trade.traded_at).toISOString().slice(0,10) : ''"></span>
+          </div>
+        </div>
+
+        <!-- Top tickers + solo plays side by side -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div class="bg-surface-1 rounded-xl border border-white/10 p-5">
+            <div class="text-xs uppercase tracking-wider text-neutral-400 mb-3">Most-traded tickers</div>
+            <div x-show="!personProfile.top_tickers?.length" class="text-neutral-400 text-sm text-center py-6">None</div>
+            <div class="space-y-1.5">
+              <template x-for="t in (personProfile.top_tickers || [])" :key="t.ticker">
+                <div class="flex items-center gap-3 text-sm hover:bg-surface-2/40 px-1 -mx-1 rounded cursor-pointer" @click="openTicker(t.ticker)">
+                  <span class="font-mono font-semibold text-accent-light w-16 shrink-0 hover:underline" x-text="t.ticker"></span>
+                  <span class="text-neutral-400 tabular-nums w-12 shrink-0" x-text="t.trades + 'x'"></span>
+                  <span class="text-[10px] text-green-400 tabular-nums w-10 shrink-0" x-text="t.buys ? '+' + t.buys : ''"></span>
+                  <span class="text-[10px] text-red-400 tabular-nums w-10 shrink-0" x-text="t.sells ? '−' + t.sells : ''"></span>
+                  <span class="text-accent-light tabular-nums ml-auto" x-text="fmtMoney(t.est_volume)"></span>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <div class="bg-surface-1 rounded-xl border border-white/10 p-5">
+            <div class="text-xs uppercase tracking-wider text-neutral-400 mb-1">Solo plays</div>
+            <div class="text-[11px] text-neutral-400 mb-3">Tickers no other tracked rep ever touched. The lonelier the trade, the more interesting the question.</div>
+            <div x-show="!personProfile.solo_tickers?.length" class="text-neutral-400 text-sm text-center py-6">None — every ticker this rep touched was also touched by someone else</div>
+            <div class="space-y-1.5">
+              <template x-for="t in (personProfile.solo_tickers || [])" :key="t.ticker">
+                <div class="flex items-center gap-3 text-sm hover:bg-surface-2/40 px-1 -mx-1 rounded cursor-pointer" @click="openTicker(t.ticker)">
+                  <span class="font-mono font-semibold text-accent-light w-16 shrink-0 hover:underline" x-text="t.ticker"></span>
+                  <span class="text-neutral-400 tabular-nums w-12 shrink-0" x-text="t.trades + 'x'"></span>
+                  <span class="text-accent-light tabular-nums ml-auto" x-text="fmtMoney(t.est_volume)"></span>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+
+        <!-- Co-traders — reps whose trades cluster in time on the same tickers -->
+        <div class="bg-surface-1 rounded-xl border border-white/10 p-4">
+          <div class="flex items-center justify-between mb-3">
+            <div>
+              <h3 class="text-sm font-semibold text-white">Trading neighbors</h3>
+              <p class="text-[11px] text-neutral-400 mt-0.5">Other representatives whose trades landed on the same ticker within 14 days of this rep's. Pure time proximity — no inference of coordination.</p>
+            </div>
+            <button x-show="!coTraders.length" @click="fetchCoTraders(personProfile.slug)" class="text-xs px-3 py-1.5 bg-accent/15 text-accent-light hover:bg-accent/25 rounded transition">Compute</button>
+          </div>
+          <div x-show="coTraders.length > 0" class="overflow-x-auto">
+            <table class="w-full text-xs">
+              <thead class="text-[10px] uppercase tracking-wider text-neutral-400">
+                <tr>
+                  <th class="text-left py-1.5">Rep</th>
+                  <th class="text-left py-1.5">Party</th>
+                  <th class="text-left py-1.5">State</th>
+                  <th class="text-right py-1.5 tip" data-tip="Distinct tickers both reps traded within the window">Shared</th>
+                  <th class="text-right py-1.5 tip" data-tip="Total overlapping (ticker, pair) observations">Overlaps</th>
+                  <th class="text-left py-1.5">Sample</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="c in coTraders" :key="c.person_id">
+                  <tr class="border-t border-white/10 hover:bg-surface-2/40 cursor-pointer" @click="openPerson(c.slug)">
+                    <td class="py-1.5 text-white font-medium" x-text="c.name"></td>
+                    <td class="py-1.5">
+                      <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                            :class="c.party === 'R' ? 'bg-red-500/15 text-red-300' : c.party === 'D' ? 'bg-blue-500/15 text-blue-300' : 'bg-neutral-500/15 text-neutral-300'"
+                            x-text="c.party || '—'"></span>
+                    </td>
+                    <td class="py-1.5 text-neutral-400" x-text="c.state || '—'"></td>
+                    <td class="py-1.5 text-right tabular-nums text-accent-light font-semibold" x-text="c.shared_tickers"></td>
+                    <td class="py-1.5 text-right tabular-nums text-neutral-300" x-text="c.overlaps"></td>
+                    <td class="py-1.5 font-mono text-accent-light/80 hover:underline" @click.stop="openTicker(c.sample_ticker)" x-text="c.sample_ticker"></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="text-[11px] text-neutral-400 px-2">
+          Dollar amounts are estimates. Federal disclosure requires only an amount range (e.g. $1,001–$15,000); we use the midpoint of the disclosed range. Where only one bound is reported, we use that bound. Where neither is reported, the trade contributes $0 to volume.
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <!-- Tickers (most-traded leaderboard) -->
+  <div x-show="view === 'tickers'" x-transition class="space-y-4 fade-in">
+    <div class="border-l-2 border-accent pl-4 py-1">
+      <h1 class="text-xl font-bold text-white">Which stocks does Congress actually trade?</h1>
+      <p class="text-sm text-neutral-400 mt-1">Every public company touched by a House Clerk PTR filing, ranked by how many distinct representatives have bought or sold it. Click any ticker to see who, when, and how much. Bipartisan crowd-favorites at the top.</p>
+    </div>
+    <div class="bg-surface-1 rounded-xl border border-white/10 overflow-hidden">
+      <div x-show="topTickers.length === 0" class="text-neutral-400 text-sm text-center py-12">Loading…</div>
+      <div x-show="topTickers.length > 0" class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-surface-2 text-[10px] uppercase tracking-wider text-neutral-400">
+            <tr>
+              <th class="text-left px-4 py-2">Ticker</th>
+              <th class="text-left px-4 py-2 text-neutral-400">Sector</th>
+              <th class="text-right px-4 py-2 tip" data-tip="Distinct representatives who bought or sold this ticker">Reps</th>
+              <th class="text-right px-4 py-2">Trades</th>
+              <th class="text-right px-4 py-2 text-green-400">Buy $</th>
+              <th class="text-right px-4 py-2 text-red-400">Sell $</th>
+              <th class="text-right px-4 py-2 text-red-300">R buyers</th>
+              <th class="text-right px-4 py-2 text-blue-300">D buyers</th>
+              <th class="text-right px-4 py-2 text-neutral-400">Last trade</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="t in topTickers" :key="t.ticker">
+              <tr class="border-t border-white/10 hover:bg-surface-2/50 cursor-pointer" @click="openTicker(t.ticker)">
+                <td class="px-4 py-2 font-mono font-semibold text-accent-light hover:underline" x-text="t.ticker"></td>
+                <td class="px-4 py-2 text-neutral-400 text-xs" x-text="t.sector || '—'"></td>
+                <td class="px-4 py-2 text-right tabular-nums text-white font-semibold" x-text="t.distinct_reps"></td>
+                <td class="px-4 py-2 text-right tabular-nums text-neutral-300" x-text="t.trades"></td>
+                <td class="px-4 py-2 text-right tabular-nums text-green-400" x-text="fmtMoney(t.buy_volume_usd)"></td>
+                <td class="px-4 py-2 text-right tabular-nums text-red-400" x-text="fmtMoney(t.sell_volume_usd)"></td>
+                <td class="px-4 py-2 text-right tabular-nums text-red-300" x-text="t.r_buyers"></td>
+                <td class="px-4 py-2 text-right tabular-nums text-blue-300" x-text="t.d_buyers"></td>
+                <td class="px-4 py-2 text-right tabular-nums text-neutral-400 text-xs" x-text="t.last_trade"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+      <div class="px-4 py-3 border-t border-white/10 text-[11px] text-neutral-400">
+        Buy/sell dollar amounts are midpoints of the disclosed STOCK Act ranges. R/D columns count distinct buyers per party — Independents and unflagged reps are excluded from those columns only.
+      </div>
+    </div>
+  </div>
+
+  <!-- Ticker detail (drilldown) -->
+  <div x-show="view === 'ticker'" x-transition class="space-y-4 fade-in">
+    <button @click="navigate('tickers')" class="text-neutral-400 hover:text-white text-sm">&larr; Back to tickers</button>
+
+    <div x-show="!tickerDetail" class="text-neutral-400 text-sm text-center py-12">Loading…</div>
+
+    <template x-if="tickerDetail">
+      <div class="space-y-4">
+        <!-- Header -->
+        <div class="bg-surface-1 rounded-xl border border-white/10 p-5">
+          <div class="flex items-baseline gap-4 flex-wrap">
+            <h1 class="text-3xl font-mono font-bold text-white" x-text="tickerDetail.ticker"></h1>
+            <span class="text-xs text-neutral-400" x-text="tickerDetail.summary.first_trade + ' → ' + tickerDetail.summary.last_trade"></span>
+          </div>
+        </div>
+
+        <!-- Headline tiles -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div class="bg-surface-1 rounded-xl border border-white/10 p-4">
+            <div class="text-[10px] uppercase tracking-wider text-neutral-400">Total disclosed volume</div>
+            <div class="text-2xl font-bold text-accent-light tabular-nums mt-1" x-text="fmtMoney(tickerDetail.summary.est_volume_usd)"></div>
+            <div class="text-[10px] text-neutral-400 mt-0.5"><span x-text="tickerDetail.summary.trades.toLocaleString()"></span> trades</div>
+          </div>
+          <div class="bg-surface-1 rounded-xl border border-white/10 p-4">
+            <div class="text-[10px] uppercase tracking-wider text-neutral-400">Distinct reps</div>
+            <div class="text-2xl font-bold text-white tabular-nums mt-1" x-text="tickerDetail.summary.distinct_reps"></div>
+            <div class="text-[10px] text-neutral-400 mt-0.5">
+              <span class="text-green-400" x-text="tickerDetail.summary.buyers + ' buyers'"></span>
+              <span class="text-neutral-500 mx-1">/</span>
+              <span class="text-red-400" x-text="tickerDetail.summary.sellers + ' sellers'"></span>
+            </div>
+          </div>
+          <div class="bg-surface-1 rounded-xl border border-white/10 p-4">
+            <div class="text-[10px] uppercase tracking-wider text-neutral-400">Buy / Sell $</div>
+            <div class="text-lg font-bold tabular-nums mt-1">
+              <span class="text-green-400" x-text="fmtMoney(tickerDetail.summary.buy_volume_usd)"></span>
+              <span class="text-neutral-500 mx-1">/</span>
+              <span class="text-red-400" x-text="fmtMoney(tickerDetail.summary.sell_volume_usd)"></span>
+            </div>
+          </div>
+          <div class="bg-surface-1 rounded-xl border border-white/10 p-4">
+            <div class="text-[10px] uppercase tracking-wider text-neutral-400">Partisan split (buyers)</div>
+            <div class="text-lg font-bold tabular-nums mt-1">
+              <span class="text-red-300" x-text="tickerDetail.summary.r_buyers + ' R'"></span>
+              <span class="text-neutral-500 mx-1">/</span>
+              <span class="text-blue-300" x-text="tickerDetail.summary.d_buyers + ' D'"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- By rep -->
+        <div class="bg-surface-1 rounded-xl border border-white/10 overflow-hidden">
+          <div class="px-5 pt-4 pb-2">
+            <div class="text-xs uppercase tracking-wider text-neutral-400">Activity by representative</div>
+            <div class="text-[11px] text-neutral-400 mt-0.5">Sorted by total dollar volume on this ticker. Click any name for the full profile.</div>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-surface-2/50 text-[10px] uppercase tracking-wider text-neutral-400">
+                <tr>
+                  <th class="text-left px-4 py-2">Representative</th>
+                  <th class="text-right px-4 py-2">Trades</th>
+                  <th class="text-right px-4 py-2 text-green-400">Buys</th>
+                  <th class="text-right px-4 py-2 text-red-400">Sells</th>
+                  <th class="text-right px-4 py-2">$ Volume</th>
+                  <th class="text-right px-4 py-2 text-neutral-400">First → Last</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="r in (tickerDetail.by_rep || [])" :key="r.person_id">
+                  <tr class="border-t border-white/10 hover:bg-surface-2/50 cursor-pointer" @click="openPerson(r.slug)">
+                    <td class="px-4 py-2">
+                      <span class="text-white font-medium hover:underline" x-text="r.name"></span>
+                      <span class="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded"
+                        :class="r.party === 'R' ? 'bg-red-500/15 text-red-300' : r.party === 'D' ? 'bg-blue-500/15 text-blue-300' : 'bg-neutral-500/15 text-neutral-300'"
+                        x-text="r.party || '—'"></span>
+                      <span x-show="r.state" class="text-[10px] text-neutral-400 ml-1" x-text="r.state"></span>
+                    </td>
+                    <td class="px-4 py-2 text-right tabular-nums text-neutral-300" x-text="r.trades"></td>
+                    <td class="px-4 py-2 text-right tabular-nums text-green-400" x-text="r.buys || ''"></td>
+                    <td class="px-4 py-2 text-right tabular-nums text-red-400" x-text="r.sells || ''"></td>
+                    <td class="px-4 py-2 text-right tabular-nums text-accent-light font-semibold" x-text="fmtMoney(r.est_volume)"></td>
+                    <td class="px-4 py-2 text-right tabular-nums text-neutral-400 text-xs" x-text="r.first_trade + ' → ' + r.last_trade"></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Recent feed -->
+        <div class="bg-surface-1 rounded-xl border border-white/10 p-5">
+          <div class="text-xs uppercase tracking-wider text-neutral-400 mb-3">Recent trades</div>
+          <div class="space-y-2">
+            <template x-for="(e, i) in (tickerDetail.recent || [])" :key="i">
+              <div class="flex items-center gap-3 text-sm border-b border-white/10 last:border-0 pb-2">
+                <span class="text-[10px] tabular-nums text-neutral-400 w-20 shrink-0" x-text="e.traded_at"></span>
+                <span class="text-[10px] uppercase font-bold w-12 shrink-0"
+                  :class="e.trade_type === 'purchase' ? 'text-green-400' : 'text-red-400'"
+                  x-text="e.trade_type === 'purchase' ? 'BUY' : 'SELL'"></span>
+                <span class="text-white hover:underline cursor-pointer" @click="openPerson(e.slug)" x-text="e.name"></span>
+                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                  :class="e.party === 'R' ? 'bg-red-500/15 text-red-300' : e.party === 'D' ? 'bg-blue-500/15 text-blue-300' : 'bg-neutral-500/15 text-neutral-300'"
+                  x-text="e.party || '—'"></span>
+                <span x-show="e.owner_type && e.owner_type !== '--'" class="text-[10px] text-neutral-400 capitalize" x-text="e.owner_type"></span>
+                <span class="ml-auto tabular-nums text-accent-light" x-text="fmtMoney(e.est_amount)"></span>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <!-- Sources -->
+  <div x-show="view === 'status'" x-transition class="fade-in space-y-4">
+    <div class="border-l-2 border-accent pl-4 py-1">
+      <h1 class="text-xl font-bold text-white">Is the data fresh, stale, or broken?</h1>
+      <p class="text-sm text-neutral-400 mt-1">Every ingestion source MRDN runs — recency, latency, HTTP error codes, and last-error details. Down or degraded sources show in red; stale sources in yellow. Individual dashboard cards also reflect their own freshness.</p>
+    </div>
+    <div class="bg-surface-1 rounded-xl border border-white/10 p-5">
+      <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider mb-4">Ingestion Sources</h2>
+      <div class="space-y-3">
+        <template x-for="s in sources" :key="s.source_name">
+          <div class="bg-surface-2 rounded-lg p-4 border border-white/10">
+            <div class="flex items-center justify-between mb-2">
+              <span class="font-mono font-bold text-white" x-text="s.source_name"></span>
+              <span class="text-xs px-2 py-0.5 rounded font-semibold"
+                :class="s.status === 'healthy' ? 'bg-up/20 text-up' : (s.status === 'down' ? 'bg-down/20 text-down' : 'bg-yellow-500/20 text-yellow-400')"
+                x-text="s.status"></span>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-6 gap-4 text-sm">
+              <div>
+                <div class="text-xs text-neutral-400">Expected Lag</div>
+                <div class="text-neutral-300" x-text="s.expected_lag"></div>
+              </div>
+              <div>
+                <div class="text-xs text-neutral-400">Last Attempt</div>
+                <div class="text-neutral-300" x-text="s.last_attempt_at ? new Date(s.last_attempt_at).toLocaleString() : (s.last_successful_poll ? new Date(s.last_successful_poll).toLocaleString() : 'Never')"></div>
+              </div>
+              <div>
+                <div class="text-xs text-neutral-400">Last New Data</div>
+                <div class="text-neutral-300" x-text="s.last_new_data_at ? new Date(s.last_new_data_at).toLocaleString() : '—'"></div>
+              </div>
+              <div>
+                <div class="text-xs text-neutral-400">HTTP</div>
+                <div class="text-neutral-300 font-mono"
+                  :class="s.last_http_code && s.last_http_code >= 400 ? 'text-down' : ''"
+                  x-text="s.last_http_code || '—'"></div>
+              </div>
+              <div>
+                <div class="text-xs text-neutral-400">Records</div>
+                <div class="text-neutral-300 font-mono" x-text="s.last_records != null ? s.last_records.toLocaleString() : '—'"></div>
+              </div>
+              <div>
+                <div class="text-xs text-neutral-400">Duration</div>
+                <div class="text-neutral-300 font-mono" x-text="s.last_duration_ms != null ? (s.last_duration_ms + ' ms') : '—'"></div>
+              </div>
+            </div>
+            <div x-show="s.last_error" class="mt-3 text-xs font-mono text-down/90 bg-down/10 border border-down/20 rounded px-3 py-2 break-all" x-text="s.last_error"></div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  <!-- Drill-down modal -->
+  <div x-show="drillOpen" x-cloak @keydown.escape.window="closeDrill()"
+       class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+       @click.self="closeDrill()">
+    <div class="bg-surface-1 border border-white/10 rounded-xl w-full max-w-5xl max-h-[85vh] flex flex-col shadow-2xl">
+      <div class="flex items-start justify-between p-5 border-b border-white/10">
+        <div>
+          <h3 class="text-lg font-semibold text-white" x-text="drillTitle"></h3>
+          <p class="text-xs text-neutral-400 mt-0.5" x-text="drillSubtitle"></p>
+        </div>
+        <button @click="closeDrill()" class="text-neutral-400 hover:text-white text-2xl leading-none px-2">&times;</button>
+      </div>
+      <div class="overflow-y-auto flex-1">
+        <div x-show="drillLoading" class="p-8 text-center text-neutral-400 text-sm">Loading trades…</div>
+        <div x-show="!drillLoading && drillRows.length === 0" class="p-8 text-center text-neutral-400 text-sm">No trades in this bucket.</div>
+        <!-- Trades mode -->
+        <table x-show="!drillLoading && drillRows.length > 0 && drillMode === 'trades'" class="w-full text-sm">
+          <thead class="bg-surface-2 sticky top-0">
+            <tr class="text-left text-[11px] uppercase tracking-wider text-neutral-400">
+              <th class="px-4 py-2">Traded</th>
+              <th class="px-4 py-2">Rep</th>
+              <th class="px-4 py-2">Ticker</th>
+              <th class="px-4 py-2">Side</th>
+              <th class="px-4 py-2 text-right">Amount</th>
+              <th class="px-4 py-2">Filed</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="t in drillRows" :key="t.id">
+              <tr class="border-t border-white/10 hover:bg-surface-2/50">
+                <td class="px-4 py-2 text-neutral-400 tabular-nums" x-text="t.traded_at"></td>
+                <td class="px-4 py-2">
+                  <span class="text-white hover:underline cursor-pointer" @click="closeDrill(); openPerson(t.person_slug)" x-text="t.person_name"></span>
+                  <span class="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded"
+                        :class="t.party === 'R' ? 'bg-red-500/15 text-red-300' : t.party === 'D' ? 'bg-blue-500/15 text-blue-300' : 'bg-neutral-500/15 text-neutral-300'"
+                        x-text="t.party || '—'"></span>
+                  <span x-show="t.state" class="text-[10px] text-neutral-400 ml-1" x-text="t.state"></span>
+                </td>
+                <td class="px-4 py-2 font-mono">
+                  <span x-show="t.ticker" class="text-accent-light hover:underline cursor-pointer" @click="closeDrill(); openTicker(t.ticker)" x-text="t.ticker"></span>
+                  <span x-show="!t.ticker" class="text-neutral-500">—</span>
+                </td>
+                <td class="px-4 py-2">
+                  <span :class="(t.trade_type || '').startsWith('sale') ? 'text-red-400' : 'text-green-400'" x-text="t.trade_type || '—'"></span>
+                </td>
+                <td class="px-4 py-2 text-right tabular-nums text-neutral-300" x-text="fmtAmount(t)"></td>
+                <td class="px-4 py-2 text-neutral-400 tabular-nums text-xs" x-text="t.filed_at || '—'"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+
+        <!-- Companies mode -->
+        <table x-show="!drillLoading && drillRows.length > 0 && drillMode === 'companies'" class="w-full text-sm">
+          <thead class="bg-surface-2 sticky top-0">
+            <tr class="text-left text-[11px] uppercase tracking-wider text-neutral-400">
+              <th class="px-4 py-2">Ticker</th>
+              <th class="px-4 py-2">Name</th>
+              <th class="px-4 py-2">Subsector</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="c in drillRows" :key="c.ticker">
+              <tr class="border-t border-white/10 hover:bg-surface-2/50 cursor-pointer" @click="closeDrill(); openCompany(c.ticker)">
+                <td class="px-4 py-2 font-mono text-accent-light" x-text="c.ticker"></td>
+                <td class="px-4 py-2 text-white" x-text="c.name"></td>
+                <td class="px-4 py-2 text-neutral-400 text-xs" x-text="c.subsector || c.sector || '—'"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -357,7 +1294,19 @@ function app() {
     rankings: [],
     latestEvents: [],
     sources: [],
-    heatmapData: [],
+    partySectorHeatmap: [],
+    repMonthHeatmap: [],
+    heatmapMode: localStorage.getItem('mrdn_heatmap_mode') || 'party', // 'party' | 'repmonth'
+    activityHeatmap: [],
+    stats: null,
+
+    // Drill-down modal (generic trade list)
+    drillOpen: false,
+    drillMode: 'trades', // 'trades' | 'companies'
+    drillTitle: '',
+    drillSubtitle: '',
+    drillLoading: false,
+    drillRows: [],
 
     // Companies list
     companies: [],
@@ -373,6 +1322,23 @@ function app() {
     // Persons
     persons: [],
     personBranch: '',
+
+    // Signals — STOCK Act latency, swarms, partisan tickers, first movers
+    signalsTab: 'compliance',
+    compliance: [],
+    complianceSummary: null,
+    swarms: [],
+    partisan: [],
+    firstMovers: [],
+
+    // Person profile (deep view)
+    personProfile: null,
+
+    // Tickers
+    topTickers: [],
+    tickerDetail: null,
+    roundTrips: [],
+    coTraders: [],
 
     // Rankings
     rankSort: 'composite',
@@ -399,21 +1365,92 @@ function app() {
     },
 
     async loadDashboard() {
-      const [moversRes, rankRes, eventsRes, sourcesRes, heatmapRes] = await Promise.all([
+      const [moversRes, rankRes, eventsRes, sourcesRes, statsRes, activityHeatRes, partySectorRes, repMonthRes] = await Promise.all([
         this.api('/scores/movers?hours=24&limit=10'),
         this.api('/scores/rankings?limit=50'),
         this.api('/events/latest?limit=20'),
         this.api('/sources'),
-        this.api('/scores/heatmap'),
+        this.api('/stats/activity'),
+        this.api('/stats/activity/heatmap?days=3650'),
+        this.api('/stats/party-sector-heatmap'),
+        this.api('/stats/rep-month-heatmap?limit=15'),
       ]);
 
       this.movers = moversRes?.data || [];
       this.rankings = rankRes?.data || [];
       this.latestEvents = eventsRes?.data || [];
       this.sources = sourcesRes?.data || [];
-      this.heatmapData = heatmapRes?.data || [];
+      this.stats = statsRes?.data || null;
+      this.activityHeatmap = activityHeatRes?.data || [];
+      this.partySectorHeatmap = partySectorRes?.data || [];
+      this.repMonthHeatmap = repMonthRes?.data || [];
 
+      this.$nextTick(() => {
+        this.renderHeatmap();
+        this.renderActivityHeatmap();
+      });
+    },
+
+    setHeatmapMode(mode) {
+      this.heatmapMode = mode;
+      localStorage.setItem('mrdn_heatmap_mode', mode);
       this.$nextTick(() => this.renderHeatmap());
+    },
+
+    renderActivityHeatmap() {
+      const el = document.getElementById('activity-heatmap');
+      if (!el) return;
+      const chart = echarts.init(el, 'dark');
+      if (!this.activityHeatmap.length) {
+        chart.setOption({ backgroundColor: 'transparent', graphic: { type: 'text', left: 'center', top: 'middle', style: { text: 'No trade activity yet', fill: '#525252', fontSize: 14 }}});
+        return;
+      }
+      const dows = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const data = this.activityHeatmap.map(c => [c.month - 1, c.dow, c.count]);
+      const max = data.reduce((m, d) => Math.max(m, d[2]), 0);
+      chart.setOption({
+        backgroundColor: 'transparent',
+        tooltip: { formatter: p => `${dows[p.data[1]]} · ${months[p.data[0]]}<br/><b>${p.data[2]}</b> trades` },
+        grid: { left: 50, right: 20, top: 10, bottom: 30 },
+        xAxis: { type: 'category', data: months, axisLabel: { color: '#a3a3a3', fontSize: 11 }, splitArea: { show: true } },
+        yAxis: { type: 'category', data: dows, axisLabel: { color: '#a3a3a3', fontSize: 11 }, splitArea: { show: true } },
+        visualMap: { min: 0, max: max || 1, calculable: false, orient: 'horizontal', left: 'center', bottom: 0, textStyle: { color: '#737373', fontSize: 10 }, inRange: { color: ['#1a1a1a','#1e3a8a','#2563eb','#f59e0b','#ef4444'] } },
+        series: [{ type: 'heatmap', data, label: { show: false }, itemStyle: { borderColor: '#0a0a0a', borderWidth: 1 } }]
+      });
+      chart.off('click');
+      chart.on('click', (p) => {
+        if (!p || !p.data) return;
+        const [monthIdx, dow, count] = p.data;
+        if (!count) return;
+        this.openDrillDowMonth(dow, monthIdx + 1, `${dows[dow]} in ${months[monthIdx]}`, `${count} trades · click row for ticker or trader`);
+      });
+      window.addEventListener('resize', () => chart.resize());
+    },
+
+    async openDrillDowMonth(dow, month, title, subtitle) {
+      this.drillMode = 'trades';
+      this.drillOpen = true;
+      this.drillTitle = title;
+      this.drillSubtitle = subtitle;
+      this.drillLoading = true;
+      this.drillRows = [];
+      const res = await this.api(`/stats/activity/heatmap/drill?dow=${dow}&month=${month}&limit=200`);
+      this.drillRows = res?.data || [];
+      this.drillLoading = false;
+    },
+
+    closeDrill() { this.drillOpen = false; this.drillRows = []; },
+
+    fmtAmount(r) {
+      if (r.amount_low && r.amount_high) return '$' + this.fmtNum(r.amount_low) + '–' + this.fmtNum(r.amount_high);
+      if (r.amount_mid) return '$' + this.fmtNum(r.amount_mid);
+      return '—';
+    },
+    fmtNum(n) {
+      if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+      if (n >= 1e3) return (n / 1e3).toFixed(0) + 'K';
+      return String(n);
     },
 
     async fetchRankings() {
@@ -434,6 +1471,123 @@ function app() {
       this.persons = res?.data || [];
     },
 
+    async fetchCompliance() {
+      const res = await this.api(`/compliance/latency?limit=50&min_trades=10`);
+      this.compliance = res?.data || [];
+      this.complianceSummary = res?.summary || null;
+    },
+
+    async fetchSwarms() {
+      const res = await this.api(`/signals/swarms?limit=100&min_reps=4`);
+      this.swarms = res?.data || [];
+    },
+
+    async fetchPartisan(mode) {
+      const res = await this.api(`/signals/partisan?limit=50&min_reps=4&mode=${mode}`);
+      this.partisan = res?.data || [];
+    },
+
+    async fetchFirstMovers() {
+      const res = await this.api(`/signals/first-movers?limit=40&min_buyers=4`);
+      this.firstMovers = res?.data || [];
+    },
+
+    selectSignalsTab(tab) {
+      this.signalsTab = tab;
+      if (tab === 'compliance' && this.compliance.length === 0) this.fetchCompliance();
+      if (tab === 'swarms' && this.swarms.length === 0) this.fetchSwarms();
+      if (tab === 'first-movers' && this.firstMovers.length === 0) this.fetchFirstMovers();
+      if (tab === 'consensus') this.fetchPartisan('consensus');
+      if (tab === 'contrarian') this.fetchPartisan('contrarian');
+      if (tab === 'round-trips' && this.roundTrips.length === 0) this.fetchRoundTrips();
+    },
+
+    async fetchTopTickers() {
+      const res = await this.api(`/tickers/top?limit=100`);
+      this.topTickers = res?.data || [];
+    },
+
+    async fetchRoundTrips() {
+      const res = await this.api(`/signals/round-trips?limit=100&max_hold_days=60&min_amount=15000`);
+      this.roundTrips = res?.data || [];
+    },
+
+    async openTicker(symbol) {
+      if (!symbol) return;
+      this.view = 'ticker';
+      this.tickerDetail = null;
+      const res = await this.api(`/tickers/${encodeURIComponent(symbol)}`);
+      this.tickerDetail = res?.data || null;
+    },
+
+    async openPerson(slug) {
+      this.view = 'person';
+      this.personProfile = null;
+      this.coTraders = [];
+      const res = await this.api(`/persons/${slug}/profile`);
+      this.personProfile = res?.data || null;
+      this.$nextTick(() => this.renderPersonChart());
+    },
+
+    async fetchCoTraders(slug) {
+      if (!slug) return;
+      const res = await this.api(`/persons/${slug}/co-traders?limit=25&window_days=14`);
+      this.coTraders = res?.data || [];
+    },
+
+    renderPersonChart() {
+      const el = document.getElementById('person-volume-chart');
+      if (!el || !this.personProfile?.monthly_volume?.length) return;
+      const months = this.personProfile.monthly_volume;
+      const chart = echarts.init(el, 'dark');
+      chart.setOption({
+        backgroundColor: 'transparent',
+        grid: { left: 50, right: 20, top: 20, bottom: 30 },
+        tooltip: {
+          trigger: 'axis',
+          formatter: (params) => {
+            const p = params[0];
+            return `${p.axisValue}<br/>$${p.value.toLocaleString()}`;
+          }
+        },
+        xAxis: {
+          type: 'category',
+          data: months.map(m => m.month),
+          axisLabel: { color: '#737373', fontSize: 10 },
+          axisLine: { lineStyle: { color: '#262626' } }
+        },
+        yAxis: {
+          type: 'value',
+          axisLabel: {
+            color: '#737373', fontSize: 10,
+            formatter: (v) => v >= 1e6 ? `$${(v/1e6).toFixed(1)}M` : v >= 1e3 ? `$${(v/1e3).toFixed(0)}K` : `$${v}`
+          },
+          splitLine: { lineStyle: { color: '#1f1f1f' } }
+        },
+        series: [{
+          type: 'bar',
+          data: months.map(m => m.volume),
+          itemStyle: {
+            color: (params) => {
+              const buyVol = months[params.dataIndex].buy_volume;
+              const total = months[params.dataIndex].volume;
+              const pct = total > 0 ? buyVol / total : 0.5;
+              // Lerp green→red based on buy vs sell dominance
+              return pct > 0.6 ? '#22c55e' : pct < 0.4 ? '#ef4444' : '#a3a3a3';
+            }
+          }
+        }]
+      });
+    },
+
+    fmtMoney(n) {
+      if (n == null || n === 0) return '—';
+      if (n >= 1e9) return '$' + (n/1e9).toFixed(2) + 'B';
+      if (n >= 1e6) return '$' + (n/1e6).toFixed(2) + 'M';
+      if (n >= 1e3) return '$' + (n/1e3).toFixed(0) + 'K';
+      return '$' + n.toLocaleString();
+    },
+
     async openCompany(ticker) {
       this.view = 'company';
       this.detail = {};
@@ -444,7 +1598,7 @@ function app() {
         this.api(`/companies/${ticker}`),
         this.api(`/companies/${ticker}/timeline?limit=50`),
         this.api(`/companies/${ticker}/scores?limit=50`),
-        this.api(`/connections/${ticker}?depth=2`),
+        this.api(`/connections/company/${ticker}?depth=2`),
       ]);
 
       this.detail = detailRes?.data || {};
@@ -463,39 +1617,174 @@ function app() {
       if (to === 'companies') this.fetchCompanies();
       if (to === 'persons') this.fetchPersons();
       if (to === 'rankings') this.fetchRankings();
+      if (to === 'signals') this.selectSignalsTab(this.signalsTab);
+      if (to === 'tickers') this.fetchTopTickers();
       if (to === 'sources') { /* already loaded */ }
     },
 
     // --- Charts ---
     renderHeatmap() {
       const el = document.getElementById('heatmap-chart');
-      if (!el || this.heatmapData.length === 0) {
-        if (el) {
-          const chart = echarts.init(el, 'dark');
-          chart.setOption({ graphic: { type: 'text', left: 'center', top: 'middle', style: { text: 'No heatmap data — run ingestion to generate scores', fill: '#525252', fontSize: 14 }}});
-        }
+      if (!el) return;
+      echarts.dispose(el);
+      if (this.heatmapMode === 'repmonth') {
+        this.renderRepMonthHeatmap(el);
+      } else {
+        this.renderPartySectorHeatmap(el);
+      }
+    },
+
+    renderPartySectorHeatmap(el) {
+      const chart = echarts.init(el, 'dark');
+      if (!this.partySectorHeatmap.length) {
+        chart.setOption({ backgroundColor: 'transparent', graphic: { type: 'text', left: 'center', top: 'middle', style: { text: 'No congressional trades yet — run ingest-house-trades', fill: '#525252', fontSize: 14 }}});
         return;
       }
-      const chart = echarts.init(el, 'dark');
-      const sectors = [...new Set(this.heatmapData.map(d => d.sector))];
-      const metrics = ['market', 'policy', 'insider', 'composite'];
-      const data = [];
-      sectors.forEach((s, si) => {
-        metrics.forEach((m, mi) => {
-          const row = this.heatmapData.find(d => d.sector === s);
-          if (row) data.push([mi, si, row[`avg_${m}`] || row[m] || 0]);
-        });
-      });
+      // Canonical GICS-11 + Other column order
+      const sectorOrder = ['Information Technology','Health Care','Financials','Consumer Discretionary','Communication Services','Industrials','Consumer Staples','Energy','Utilities','Real Estate','Materials','Other'];
+      const partyLabel = { D: 'Democrat', R: 'Republican', I: 'Independent', '?': 'Unknown' };
+      // Parties as rows — sorted by total desc
+      const partyTotals = {};
+      this.partySectorHeatmap.forEach(c => { partyTotals[c.party] = (partyTotals[c.party] || 0) + c.trade_count; });
+      const parties = Object.keys(partyTotals).sort((a, b) => partyTotals[b] - partyTotals[a]);
+      const sectorsPresent = new Set(this.partySectorHeatmap.map(c => c.sector));
+      const sectors = sectorOrder.filter(s => sectorsPresent.has(s));
+      const partyIdx = Object.fromEntries(parties.map((p, i) => [p, i]));
+      const sectorIdx = Object.fromEntries(sectors.map((s, i) => [s, i]));
+      const data = this.partySectorHeatmap
+        .filter(c => sectorIdx[c.sector] !== undefined)
+        .map(c => [sectorIdx[c.sector], partyIdx[c.party], c.trade_count, c.volume_mid]);
+      const counts = data.map(d => d[2]);
+      const minCount = Math.min(...counts);
+      const maxCount = Math.max(...counts);
       chart.setOption({
         backgroundColor: 'transparent',
-        tooltip: { formatter: p => `${sectors[p.value[1]]}<br>${metrics[p.value[0]]}: ${p.value[2].toFixed(1)}` },
-        grid: { top: 10, right: 10, bottom: 30, left: 120 },
-        xAxis: { type: 'category', data: metrics, axisLabel: { color: '#737373' }, splitArea: { show: true, areaStyle: { color: ['transparent'] }}},
-        yAxis: { type: 'category', data: sectors, axisLabel: { color: '#a3a3a3', fontSize: 11 }},
-        visualMap: { min: 0, max: 100, show: false, inRange: { color: ['#1e3a5f', '#3b82f6', '#f59e0b', '#ef4444'] }},
-        series: [{ type: 'heatmap', data: data, itemStyle: { borderRadius: 3 }, emphasis: { itemStyle: { borderColor: '#fff', borderWidth: 1 }}}]
+        tooltip: {
+          backgroundColor: '#1f1f1f', borderColor: '#292929', textStyle: { color: '#e5e5e5', fontSize: 12 },
+          formatter: p => {
+            const party = parties[p.value[1]];
+            const label = partyLabel[party] || party;
+            const vol = p.value[3] ? ' · ~$' + this.fmtNum(p.value[3]) : '';
+            return `<div style="font-weight:600;margin-bottom:2px">${label} — ${sectors[p.value[0]]}</div><div style="color:#a3a3a3"><span style="color:#fff;font-weight:600">${p.value[2]}</span> trades${vol}</div>`;
+          }
+        },
+        grid: { top: 60, right: 8, bottom: 8, left: 130, containLabel: false },
+        xAxis: {
+          type: 'category', data: sectors, position: 'top',
+          axisLine: { show: false }, axisTick: { show: false },
+          axisLabel: { color: '#a3a3a3', fontSize: 10, rotate: 40, interval: 0 }
+        },
+        yAxis: {
+          type: 'category', data: parties.map(p => partyLabel[p] || p),
+          axisLine: { show: false }, axisTick: { show: false },
+          axisLabel: { color: '#a3a3a3', fontSize: 11 }
+        },
+        visualMap: {
+          min: minCount, max: maxCount || 1, show: false,
+          inRange: { color: ['#1a1a1a','#1e3a8a','#2563eb','#f59e0b','#ef4444'] }
+        },
+        series: [{
+          type: 'heatmap', data: data,
+          label: { show: true, color: '#f5f5f5', fontSize: 10, fontWeight: 600, formatter: p => p.value[2] || '' },
+          itemStyle: { borderRadius: 3, borderColor: '#0f0f0f', borderWidth: 2 },
+          emphasis: { itemStyle: { borderColor: '#fff', borderWidth: 1.5 }}
+        }]
+      });
+      chart.off('click');
+      chart.on('click', (p) => {
+        if (!p || !p.value) return;
+        this.openDrillPartySector(parties[p.value[1]], sectors[p.value[0]]);
       });
       window.addEventListener('resize', () => chart.resize());
+    },
+
+    renderRepMonthHeatmap(el) {
+      const chart = echarts.init(el, 'dark');
+      if (!this.repMonthHeatmap.length) {
+        chart.setOption({ backgroundColor: 'transparent', graphic: { type: 'text', left: 'center', top: 'middle', style: { text: 'No congressional trades yet — run ingest-house-trades', fill: '#525252', fontSize: 14 }}});
+        return;
+      }
+      const repTotals = {}, nameBySlug = {}, partyBySlug = {};
+      this.repMonthHeatmap.forEach(c => {
+        repTotals[c.person_slug] = (repTotals[c.person_slug] || 0) + c.trade_count;
+        nameBySlug[c.person_slug] = c.person_name;
+        partyBySlug[c.person_slug] = c.party;
+      });
+      const reps = Object.keys(repTotals).sort((a, b) => repTotals[b] - repTotals[a]);
+      // Build last-12-month axis from max month in data
+      const months = [...new Set(this.repMonthHeatmap.map(c => c.month))].sort();
+      const repIdx = Object.fromEntries(reps.map((r, i) => [r, i]));
+      const monthIdx = Object.fromEntries(months.map((m, i) => [m, i]));
+      const data = this.repMonthHeatmap.map(c => [monthIdx[c.month], repIdx[c.person_slug], c.trade_count, c.volume_mid]);
+      const counts = data.map(d => d[2]);
+      const minCount = Math.min(...counts);
+      const maxCount = Math.max(...counts);
+      const shortName = n => n.length > 20 ? n.slice(0, 19) + '…' : n;
+      const partyTag = p => p === 'D' ? ' (D)' : p === 'R' ? ' (R)' : p === 'I' ? ' (I)' : '';
+      chart.setOption({
+        backgroundColor: 'transparent',
+        tooltip: {
+          backgroundColor: '#1f1f1f', borderColor: '#292929', textStyle: { color: '#e5e5e5', fontSize: 12 },
+          formatter: p => {
+            const slug = reps[p.value[1]];
+            const vol = p.value[3] ? ' · ~$' + this.fmtNum(p.value[3]) : '';
+            return `<div style="font-weight:600;margin-bottom:2px">${nameBySlug[slug]}${partyTag(partyBySlug[slug])}</div><div style="color:#a3a3a3">${months[p.value[0]]}: <span style="color:#fff;font-weight:600">${p.value[2]}</span> trades${vol}</div>`;
+          }
+        },
+        grid: { top: 40, right: 8, bottom: 8, left: 160, containLabel: false },
+        xAxis: {
+          type: 'category', data: months, position: 'top',
+          axisLine: { show: false }, axisTick: { show: false },
+          axisLabel: { color: '#a3a3a3', fontSize: 10, fontFamily: 'ui-monospace, monospace' }
+        },
+        yAxis: {
+          type: 'category', data: reps.map(r => shortName(nameBySlug[r]) + partyTag(partyBySlug[r])),
+          axisLine: { show: false }, axisTick: { show: false },
+          axisLabel: { color: '#a3a3a3', fontSize: 10 }
+        },
+        visualMap: {
+          min: minCount, max: maxCount || 1, show: false,
+          inRange: { color: ['#1a1a1a','#1e3a5f','#1e6091','#f59e0b','#ef4444'] }
+        },
+        series: [{
+          type: 'heatmap', data: data,
+          label: { show: true, color: '#f5f5f5', fontSize: 9, fontWeight: 600, formatter: p => p.value[2] >= 2 ? p.value[2] : '' },
+          itemStyle: { borderRadius: 2, borderColor: '#0f0f0f', borderWidth: 1 },
+          emphasis: { itemStyle: { borderColor: '#fff', borderWidth: 1.5 }}
+        }]
+      });
+      chart.off('click');
+      chart.on('click', (p) => {
+        if (!p || !p.value) return;
+        const slug = reps[p.value[1]];
+        this.openDrillRepMonth(slug, nameBySlug[slug], months[p.value[0]]);
+      });
+      window.addEventListener('resize', () => chart.resize());
+    },
+
+    async openDrillPartySector(party, sector) {
+      const partyLabel = { D: 'Democrat', R: 'Republican', I: 'Independent', '?': 'Unknown' }[party] || party;
+      this.drillMode = 'trades';
+      this.drillOpen = true;
+      this.drillTitle = `${partyLabel} — ${sector}`;
+      this.drillSubtitle = 'Congressional trades by party × sector';
+      this.drillLoading = true;
+      this.drillRows = [];
+      const res = await this.api(`/stats/party-sector-heatmap/drill?party=${encodeURIComponent(party)}&sector=${encodeURIComponent(sector)}&limit=200`);
+      this.drillRows = res?.data || [];
+      this.drillLoading = false;
+    },
+
+    async openDrillRepMonth(slug, name, month) {
+      this.drillMode = 'trades';
+      this.drillOpen = true;
+      this.drillTitle = `${name} — ${month}`;
+      this.drillSubtitle = 'Congressional trades for this rep + month';
+      this.drillLoading = true;
+      this.drillRows = [];
+      const res = await this.api(`/stats/rep-month-heatmap/drill?slug=${encodeURIComponent(slug)}&month=${encodeURIComponent(month)}&limit=200`);
+      this.drillRows = res?.data || [];
+      this.drillLoading = false;
     },
 
     renderScoreHistory() {
@@ -569,14 +1858,67 @@ function app() {
       return '#22c55e';
     },
 
+    eventCategory(type) {
+      const map = {
+        congressional_trade: 'Politics', insider_trade: 'Insider',
+        contract_award: 'Contract', spending: 'Contract',
+        sanction: 'Sanction', sanction_designation: 'Sanction', sanction_removal: 'Sanction',
+        market_data: 'Market', donation: 'Politics', fec_donation: 'Politics',
+        score_change: 'Score', regulation: 'Regulator', regulatory_action: 'Regulator',
+        sec_filing: 'Filing', edgar_filing: 'Filing', lobbying: 'Politics',
+      };
+      return map[type] || 'Event';
+    },
+
+    eventBadge(type) {
+      const cat = this.eventCategory(type);
+      const map = {
+        Politics:  'bg-pink-500/15 text-pink-300',
+        Insider:   'bg-purple-500/15 text-purple-300',
+        Contract:  'bg-yellow-500/15 text-yellow-300',
+        Sanction:  'bg-red-500/15 text-red-300',
+        Market:    'bg-blue-500/15 text-blue-300',
+        Regulator: 'bg-orange-500/15 text-orange-300',
+        Filing:    'bg-cyan-500/15 text-cyan-300',
+        Score:     'bg-indigo-500/15 text-indigo-300',
+        Event:     'bg-neutral-500/15 text-neutral-400',
+      };
+      return map[cat] || map.Event;
+    },
+
     eventColor(type) {
       const map = {
         congressional_trade: 'bg-blue-500', insider_trade: 'bg-purple-500',
         contract_award: 'bg-yellow-500', sanction: 'bg-red-500',
+        sanction_designation: 'bg-red-500', sanction_removal: 'bg-green-500',
         market_data: 'bg-green-500', donation: 'bg-pink-500',
         score_change: 'bg-accent', regulation: 'bg-orange-500',
+        sec_filing: 'bg-purple-500', lobbying: 'bg-pink-500',
+        edgar_filing: 'bg-purple-500', fec_donation: 'bg-pink-500',
       };
       return map[type] || 'bg-neutral-500';
+    },
+
+    prettyEventType(type) {
+      const map = {
+        congressional_trade: 'Politician traded stock',
+        insider_trade: 'Company insider traded stock',
+        contract_award: 'Government contract awarded',
+        sanction: 'Sanction imposed',
+        sanction_designation: 'Added to sanctions list',
+        sanction_removal: 'Removed from sanctions list',
+        market_data: 'Unusual market activity',
+        donation: 'Political donation',
+        fec_donation: 'Political donation',
+        score_change: 'Risk score updated',
+        regulation: 'New regulation',
+        regulatory_action: 'Regulatory action',
+        sec_filing: 'SEC filing',
+        edgar_filing: 'SEC filing',
+        lobbying: 'Lobbying disclosure',
+        spending: 'Federal spending',
+      };
+      return map[type] || type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     },
 
     timeAgo(dateStr) {

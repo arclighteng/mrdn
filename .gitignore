@@ -1,8 +1,31 @@
+# Env / secrets
 .env
-.env.local
+.env.*
+!.env.example
+
+# Binaries
 /mrdn
 /mrdn.exe
+*.exe
 *.exe~
 *.test
+*.out
 coverage.out
+
+# Local build/tooling
+tmp/*
+!tmp/hsw.json
+dist/
+bin/
 .worktrees/
+.air.toml
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Agent / tooling caches
+.claude/
+.serena/

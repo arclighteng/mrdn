@@ -14,14 +14,34 @@ type SourceMeta struct {
 	LastNewDataAt       *time.Time `json:"last_new_data_at"`
 	PollIntervalSeconds int        `json:"poll_interval_seconds"`
 	Status              string     `json:"status"`
+	LastAttemptAt       *time.Time `json:"last_attempt_at"`
+	LastHTTPCode        *int       `json:"last_http_code"`
+	LastError           *string    `json:"last_error"`
+	LastRecords         *int       `json:"last_records"`
+	LastDurationMs      *int       `json:"last_duration_ms"`
+}
+
+const sourceSelect = `
+	SELECT id, source_name, expected_lag, last_successful_poll,
+	       last_new_data_at, poll_interval_seconds, status,
+	       last_attempt_at, last_http_code, last_error,
+	       last_records, last_duration_ms
+	FROM source_meta`
+
+func scanSource(row interface {
+	Scan(dest ...any) error
+}) (SourceMeta, error) {
+	var sm SourceMeta
+	err := row.Scan(&sm.ID, &sm.SourceName, &sm.ExpectedLag,
+		&sm.LastSuccessfulPoll, &sm.LastNewDataAt,
+		&sm.PollIntervalSeconds, &sm.Status,
+		&sm.LastAttemptAt, &sm.LastHTTPCode, &sm.LastError,
+		&sm.LastRecords, &sm.LastDurationMs)
+	return sm, err
 }
 
 func (s *Store) ListSourceMeta(ctx context.Context) ([]SourceMeta, error) {
-	rows, err := s.db.Query(ctx, `
-		SELECT id, source_name, expected_lag, last_successful_poll,
-			   last_new_data_at, poll_interval_seconds, status
-		FROM source_meta ORDER BY source_name
-	`)
+	rows, err := s.db.Query(ctx, sourceSelect+" ORDER BY source_name")
 	if err != nil {
 		return nil, fmt.Errorf("listing source meta: %w", err)
 	}
@@ -29,10 +49,8 @@ func (s *Store) ListSourceMeta(ctx context.Context) ([]SourceMeta, error) {
 
 	sources := make([]SourceMeta, 0)
 	for rows.Next() {
-		var sm SourceMeta
-		if err := rows.Scan(&sm.ID, &sm.SourceName, &sm.ExpectedLag,
-			&sm.LastSuccessfulPoll, &sm.LastNewDataAt,
-			&sm.PollIntervalSeconds, &sm.Status); err != nil {
+		sm, err := scanSource(rows)
+		if err != nil {
 			return nil, fmt.Errorf("scanning source meta: %w", err)
 		}
 		sources = append(sources, sm)
@@ -41,14 +59,8 @@ func (s *Store) ListSourceMeta(ctx context.Context) ([]SourceMeta, error) {
 }
 
 func (s *Store) GetSourceMeta(ctx context.Context, name string) (SourceMeta, error) {
-	var sm SourceMeta
-	err := s.db.QueryRow(ctx, `
-		SELECT id, source_name, expected_lag, last_successful_poll,
-			   last_new_data_at, poll_interval_seconds, status
-		FROM source_meta WHERE source_name = $1
-	`, name).Scan(&sm.ID, &sm.SourceName, &sm.ExpectedLag,
-		&sm.LastSuccessfulPoll, &sm.LastNewDataAt,
-		&sm.PollIntervalSeconds, &sm.Status)
+	row := s.db.QueryRow(ctx, sourceSelect+" WHERE source_name = $1", name)
+	sm, err := scanSource(row)
 	if err != nil {
 		return SourceMeta{}, fmt.Errorf("getting source %s: %w", name, err)
 	}
@@ -80,4 +92,96 @@ func (s *Store) SetSourceStatus(ctx context.Context, sourceName, status string) 
 		"UPDATE source_meta SET status = $2 WHERE source_name = $1",
 		sourceName, status)
 	return err
+}
+
+// IngestAttempt captures one invocation of an ingest command so the /status
+// endpoint can display recency, latency, HTTP error codes, and last error.
+type IngestAttempt struct {
+	Source     string
+	Success    bool
+	HTTPCode   int    // 0 when not an HTTP-bounded failure
+	Error      string // empty on success
+	Records    int    // rows processed
+	DurationMs int
+	HasNewData bool
+}
+
+// RecordIngestAttempt upserts the per-attempt fields on source_meta. On
+// success it also advances last_successful_poll (and last_new_data_at when
+// HasNewData is true). Status is derived: ok → healthy, http_code >= 500 →
+// down, other errors → degraded.
+func (s *Store) RecordIngestAttempt(ctx context.Context, a IngestAttempt) error {
+	now := time.Now().UTC()
+
+	status := "degraded"
+	var httpPtr *int
+	var errPtr *string
+	var recPtr *int
+	var durPtr *int
+	if a.HTTPCode != 0 {
+		c := a.HTTPCode
+		httpPtr = &c
+	}
+	if a.Error != "" {
+		e := a.Error
+		errPtr = &e
+	}
+	if a.Records != 0 || a.Success {
+		r := a.Records
+		recPtr = &r
+	}
+	if a.DurationMs != 0 {
+		d := a.DurationMs
+		durPtr = &d
+	}
+
+	if a.Success {
+		status = "healthy"
+	} else if a.HTTPCode >= 500 {
+		status = "down"
+	}
+
+	// Ensure the row exists so this helper works for sources that weren't
+	// seeded by migration 001.
+	if _, err := s.db.Exec(ctx, `
+		INSERT INTO source_meta (source_name, status)
+		VALUES ($1, $2)
+		ON CONFLICT (source_name) DO NOTHING
+	`, a.Source, status); err != nil {
+		return fmt.Errorf("upserting source_meta row for %s: %w", a.Source, err)
+	}
+
+	if a.Success {
+		_, err := s.db.Exec(ctx, `
+			UPDATE source_meta
+			SET status = $2,
+			    last_attempt_at = $3,
+			    last_successful_poll = $3,
+			    last_new_data_at = CASE WHEN $4 THEN $3 ELSE last_new_data_at END,
+			    last_http_code = $5,
+			    last_error = NULL,
+			    last_records = $6,
+			    last_duration_ms = $7
+			WHERE source_name = $1
+		`, a.Source, status, now, a.HasNewData, httpPtr, recPtr, durPtr)
+		if err != nil {
+			return fmt.Errorf("recording success for %s: %w", a.Source, err)
+		}
+		return nil
+	}
+
+	_, err := s.db.Exec(ctx, `
+		UPDATE source_meta
+		SET status = $2,
+		    last_attempt_at = $3,
+		    last_http_code = $4,
+		    last_error = $5,
+		    last_records = $6,
+		    last_duration_ms = $7
+		WHERE source_name = $1
+	`, a.Source, status, now, httpPtr, errPtr, recPtr, durPtr)
+	if err != nil {
+		return fmt.Errorf("recording failure for %s: %w", a.Source, err)
+	}
+	return nil
 }

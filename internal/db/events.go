@@ -19,6 +19,7 @@ type Event struct {
 	Source     string          `json:"source"`
 	SourceID   *string         `json:"source_id,omitempty"`
 	CompanyID  *int            `json:"company_id,omitempty"`
+	Ticker     *string         `json:"ticker,omitempty"`
 	EventType  string          `json:"event_type"`
 	EventData  json.RawMessage `json:"event_data"`
 	OccurredAt time.Time       `json:"occurred_at"`
@@ -79,32 +80,34 @@ func (s *Store) GetEvent(ctx context.Context, id int) (Event, error) {
 }
 
 func (s *Store) ListEvents(ctx context.Context, f EventFilter) ([]Event, error) {
-	query := "SELECT id, source, source_id, company_id, event_type, event_data, occurred_at, ingested_at FROM events WHERE 1=1"
+	query := `SELECT e.id, e.source, e.source_id, e.company_id, c.ticker,
+		e.event_type, e.event_data, e.occurred_at, e.ingested_at
+		FROM events e LEFT JOIN companies c ON c.id = e.company_id WHERE 1=1`
 	args := []any{}
 	argN := 1
 
 	if f.Source != "" {
-		query += fmt.Sprintf(" AND source = $%d", argN)
+		query += fmt.Sprintf(" AND e.source = $%d", argN)
 		args = append(args, f.Source)
 		argN++
 	}
 	if f.EventType != "" {
-		query += fmt.Sprintf(" AND event_type = $%d", argN)
+		query += fmt.Sprintf(" AND e.event_type = $%d", argN)
 		args = append(args, f.EventType)
 		argN++
 	}
 	if f.CompanyID != nil {
-		query += fmt.Sprintf(" AND company_id = $%d", argN)
+		query += fmt.Sprintf(" AND e.company_id = $%d", argN)
 		args = append(args, *f.CompanyID)
 		argN++
 	}
 	if f.Since != nil {
-		query += fmt.Sprintf(" AND occurred_at >= $%d", argN)
+		query += fmt.Sprintf(" AND e.occurred_at >= $%d", argN)
 		args = append(args, *f.Since)
 		argN++
 	}
 
-	query += " ORDER BY occurred_at DESC"
+	query += " ORDER BY e.occurred_at DESC"
 
 	limit := f.Limit
 	if limit <= 0 {
@@ -128,8 +131,8 @@ func (s *Store) ListEvents(ctx context.Context, f EventFilter) ([]Event, error) 
 	events := make([]Event, 0)
 	for rows.Next() {
 		var e Event
-		if err := rows.Scan(&e.ID, &e.Source, &e.SourceID, &e.CompanyID, &e.EventType,
-			&e.EventData, &e.OccurredAt, &e.IngestedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.Source, &e.SourceID, &e.CompanyID, &e.Ticker,
+			&e.EventType, &e.EventData, &e.OccurredAt, &e.IngestedAt); err != nil {
 			return nil, fmt.Errorf("scanning event: %w", err)
 		}
 		events = append(events, e)

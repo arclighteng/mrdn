@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"log"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -12,6 +13,7 @@ import (
 func (s *Server) handleListSources(w http.ResponseWriter, r *http.Request) {
 	sources, err := s.store.ListSourceMeta(r.Context())
 	if err != nil {
+		log.Printf("handleListSources: %v", err)
 		writeError(w, 500, "INTERNAL_ERROR", "failed to list sources")
 		return
 	}

@@ -14,12 +14,20 @@ var migration001 string
 //go:embed migrations/002_persons_graph.sql
 var migration002 string
 
+//go:embed migrations/003_party_history.sql
+var migration003 string
+
+//go:embed migrations/004_source_status.sql
+var migration004 string
+
 var migrations = []struct {
 	version int
 	sql     string
 }{
 	{1, migration001},
 	{2, migration002},
+	{3, migration003},
+	{4, migration004},
 }
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {

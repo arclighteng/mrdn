@@ -7,13 +7,17 @@ import (
 	"time"
 )
 
-// TimelineEntry is a unified view of events and score snapshots for a company,
-// ordered by timestamp descending. The Data field holds the underlying Event or
-// Score value depending on EntryType.
+// TimelineEntry is a flattened view of events and score snapshots for a
+// company, ordered by timestamp descending. Fields are selectively populated
+// depending on the entry type.
 type TimelineEntry struct {
-	Timestamp time.Time `json:"timestamp"`
-	EntryType string    `json:"entry_type"` // "event" or "score"
-	Data      any       `json:"data"`
+	Timestamp      time.Time `json:"timestamp"`
+	Type           string    `json:"type"` // "event" or "score"
+	EventID        *int      `json:"event_id,omitempty"`
+	Source         *string   `json:"source,omitempty"`
+	EventType      *string   `json:"event_type,omitempty"`
+	ScoreID        *int      `json:"score_id,omitempty"`
+	CompositeScore *float64  `json:"composite_score,omitempty"`
 }
 
 // GetCompanyTimeline returns the most recent limit timeline entries for the
@@ -39,20 +43,23 @@ func (s *Store) GetCompanyTimeline(ctx context.Context, companyID int, limit int
 		return nil, fmt.Errorf("fetching scores for timeline (company %d): %w", companyID, err)
 	}
 
-	// Merge into a single slice.
+	// Merge into a single flattened slice.
 	entries := make([]TimelineEntry, 0, len(events)+len(scores))
 	for _, e := range events {
 		entries = append(entries, TimelineEntry{
 			Timestamp: e.OccurredAt,
-			EntryType: "event",
-			Data:      e,
+			Type:      "event",
+			EventID:   &e.ID,
+			Source:    &e.Source,
+			EventType: &e.EventType,
 		})
 	}
 	for _, sc := range scores {
 		entries = append(entries, TimelineEntry{
-			Timestamp: sc.ComputedAt,
-			EntryType: "score",
-			Data:      sc,
+			Timestamp:      sc.ComputedAt,
+			Type:           "score",
+			ScoreID:        &sc.ID,
+			CompositeScore: &sc.CompositeScore,
 		})
 	}
 

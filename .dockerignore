@@ -1,0 +1,33 @@
+# Build artifacts
+mrdn
+mrdn.exe
+**/*.exe
+**/*.exe~
+**/*.test
+**/coverage.out
+
+# Env & secrets
+.env
+.env.*
+**/.env
+**/.env.local
+
+# Worktrees & tool caches
+.worktrees/
+.serena/
+.claude/
+.air.toml
+tmp/*
+!tmp/hsw.json
+
+# VCS & editor
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# Fly leftovers
+fly.toml
+
+# Docs & plans (not needed in image)
+docs/

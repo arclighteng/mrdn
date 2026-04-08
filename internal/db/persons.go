@@ -19,6 +19,9 @@ type Person struct {
 	LinkedPersonID     *int    `json:"linked_person_id,omitempty"`
 	LinkedRelationship *string `json:"linked_relationship,omitempty"`
 	DisclosureSource   *string `json:"disclosure_source,omitempty"`
+	TradeCount         int     `json:"trade_count"`
+	TickersTouched     int     `json:"tickers_touched"`
+	EstVolumeUSD       int64   `json:"est_volume_usd"`
 }
 
 // PersonFilter controls which persons are returned by ListPersons and CountPersons.
@@ -28,6 +31,7 @@ type PersonFilter struct {
 	Role   string
 	State  string
 	Party  string
+	Sort   string
 	Limit  int
 	Offset int
 }
@@ -116,13 +120,47 @@ func buildPersonWhere(f PersonFilter) (conditions string, args []any, argN int) 
 	return conditions, args, argN
 }
 
-// ListPersons returns persons matching the filter, ordered by name.
+// ListPersons returns persons matching the filter. When f.Sort == "influence",
+// results are ordered by trade activity descending (most active first); otherwise
+// by name ascending.
 func (s *Store) ListPersons(ctx context.Context, f PersonFilter) ([]Person, error) {
 	conditions, args, argN := buildPersonWhere(f)
 
+	orderBy := " ORDER BY p.name"
+	if f.Sort == "influence" {
+		// Rank by estimated dollar volume first, then trade count, then tier.
+		// Persons who never trade fall to the bottom.
+		orderBy = ` ORDER BY (
+			SELECT COALESCE(SUM(
+				COALESCE(
+					CASE
+						WHEN ct.amount_range_low IS NOT NULL AND ct.amount_range_high IS NOT NULL
+							THEN (ct.amount_range_low + ct.amount_range_high) / 2
+						WHEN ct.amount_range_low IS NOT NULL THEN ct.amount_range_low
+						WHEN ct.amount_range_high IS NOT NULL THEN ct.amount_range_high
+						ELSE 0
+					END, 0)
+			), 0) FROM congressional_trades ct WHERE ct.person_id = p.id
+		) DESC, (
+			SELECT COUNT(*) FROM congressional_trades ct WHERE ct.person_id = p.id
+		) DESC, p.tier ASC, p.name ASC`
+	}
+
 	query := `SELECT p.id, p.slug, p.name, p.role, p.tier, p.branch, p.state, p.party,
-		p.bioguide_id, p.linked_person_id, p.linked_relationship, p.disclosure_source
-		FROM persons p ` + conditions + " ORDER BY p.name"
+		p.bioguide_id, p.linked_person_id, p.linked_relationship, p.disclosure_source,
+		COALESCE((SELECT COUNT(*) FROM congressional_trades ct WHERE ct.person_id = p.id), 0),
+		COALESCE((SELECT COUNT(DISTINCT ct.ticker) FROM congressional_trades ct WHERE ct.person_id = p.id AND ct.ticker IS NOT NULL AND ct.ticker <> '' AND ct.ticker <> '--'), 0),
+		COALESCE((SELECT SUM(
+			COALESCE(
+				CASE
+					WHEN ct.amount_range_low IS NOT NULL AND ct.amount_range_high IS NOT NULL
+						THEN (ct.amount_range_low + ct.amount_range_high) / 2
+					WHEN ct.amount_range_low IS NOT NULL THEN ct.amount_range_low
+					WHEN ct.amount_range_high IS NOT NULL THEN ct.amount_range_high
+					ELSE 0
+				END, 0)::BIGINT
+		) FROM congressional_trades ct WHERE ct.person_id = p.id), 0)
+		FROM persons p ` + conditions + orderBy
 
 	if f.Limit > 0 {
 		query += fmt.Sprintf(" LIMIT $%d", argN)
@@ -147,6 +185,7 @@ func (s *Store) ListPersons(ctx context.Context, f PersonFilter) ([]Person, erro
 			&p.ID, &p.Slug, &p.Name, &p.Role, &p.Tier,
 			&p.Branch, &p.State, &p.Party, &p.BioguideID,
 			&p.LinkedPersonID, &p.LinkedRelationship, &p.DisclosureSource,
+			&p.TradeCount, &p.TickersTouched, &p.EstVolumeUSD,
 		); err != nil {
 			return nil, fmt.Errorf("scanning person: %w", err)
 		}
