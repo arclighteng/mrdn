@@ -166,7 +166,7 @@ tailwind.config = {
             </div>
           </div>
         </div>
-        <div id="heatmap-chart" class="w-full mt-2" style="height:280px"></div>
+        <div id="heatmap-chart" class="w-full mt-2" :style="heatmapMode === 'party' ? 'height:200px' : 'height:280px'"></div>
       </div>
       <!-- Top Movers -->
       <div class="bg-surface-1 rounded-xl border border-white/10 p-5">
@@ -1661,6 +1661,21 @@ function app() {
       }
       // Canonical GICS-11 + Other column order
       const sectorOrder = ['Information Technology','Health Care','Financials','Consumer Discretionary','Communication Services','Industrials','Consumer Staples','Energy','Utilities','Real Estate','Materials','Other'];
+      // Compact labels so the x-axis fits without getting clipped.
+      const sectorShort = {
+        'Information Technology': 'Info Tech',
+        'Health Care': 'Health',
+        'Financials': 'Financials',
+        'Consumer Discretionary': 'Cons. Disc.',
+        'Communication Services': 'Comms',
+        'Industrials': 'Industrials',
+        'Consumer Staples': 'Cons. Staples',
+        'Energy': 'Energy',
+        'Utilities': 'Utilities',
+        'Real Estate': 'Real Estate',
+        'Materials': 'Materials',
+        'Other': 'Other',
+      };
       const partyLabel = { D: 'Democrat', R: 'Republican', I: 'Independent', '?': 'Unknown' };
       // Parties as rows — sorted by total desc
       const partyTotals = {};
@@ -1700,11 +1715,14 @@ function app() {
             return `<div style="font-weight:600;margin-bottom:2px">${label} — ${sectors[p.value[0]]}</div><div style="color:#a3a3a3"><span style="color:#fff;font-weight:600">${p.value[2]}</span> trades${vol}</div>`;
           }
         },
-        grid: { top: 60, right: 8, bottom: 8, left: 130, containLabel: false },
+        grid: { top: 46, right: 10, bottom: 6, left: 92, containLabel: false },
         xAxis: {
           type: 'category', data: sectors, position: 'top',
           axisLine: { show: false }, axisTick: { show: false },
-          axisLabel: { color: '#a3a3a3', fontSize: 10, rotate: 40, interval: 0 }
+          axisLabel: {
+            color: '#a3a3a3', fontSize: 10, rotate: 28, interval: 0, margin: 10,
+            formatter: (v) => sectorShort[v] || v,
+          }
         },
         yAxis: {
           type: 'category', data: parties.map(p => partyLabel[p] || p),
