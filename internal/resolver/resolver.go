@@ -138,7 +138,7 @@ func (r *Resolver) Resolve(ctx context.Context, evt db.Event) int {
 	switch evt.Source {
 	case "polygon":
 		companyID, err = r.resolvePolygon(ctx, evt)
-	case "sec_edgar":
+	case "edgar_form4":
 		companyID, err = r.resolveEdgar(ctx, evt)
 	case "fec":
 		companyID, err = r.resolveFEC(ctx, evt)

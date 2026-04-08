@@ -329,7 +329,7 @@ func TestResolveEdgar(t *testing.T) {
 			FormType:     "4",
 			FileDate:     "2025-03-01",
 		})
-		cid, err := r.resolveEdgar(context.Background(), makeEvent("sec_edgar", 1, data))
+		cid, err := r.resolveEdgar(context.Background(), makeEvent("edgar_form4", 1, data))
 
 		require.NoError(t, err)
 		assert.Equal(t, 10, cid)
@@ -350,7 +350,7 @@ func TestResolveEdgar(t *testing.T) {
 			EntityName:   "Apple Inc",
 			FormType:     "4",
 		})
-		cid, err := r.resolveEdgar(context.Background(), makeEvent("sec_edgar", 2, data))
+		cid, err := r.resolveEdgar(context.Background(), makeEvent("edgar_form4", 2, data))
 
 		require.NoError(t, err)
 		assert.Equal(t, 10, cid)
@@ -366,7 +366,7 @@ func TestResolveEdgar(t *testing.T) {
 			DisplayNames: []string{},
 			EntityName:   "Apple Inc",
 		})
-		cid, err := r.resolveEdgar(context.Background(), makeEvent("sec_edgar", 3, data))
+		cid, err := r.resolveEdgar(context.Background(), makeEvent("edgar_form4", 3, data))
 
 		require.NoError(t, err)
 		assert.Equal(t, 10, cid)
@@ -382,7 +382,7 @@ func TestResolveEdgar(t *testing.T) {
 		data := mustMarshal(edgarFiling{
 			DisplayNames: []string{"Filer", "Apple Inc"},
 		})
-		cid, err := r.resolveEdgar(context.Background(), makeEvent("sec_edgar", 4, data))
+		cid, err := r.resolveEdgar(context.Background(), makeEvent("edgar_form4", 4, data))
 
 		require.NoError(t, err)
 		assert.Equal(t, 10, cid)
@@ -400,7 +400,7 @@ func TestResolveEdgar(t *testing.T) {
 		data := mustMarshal(edgarFiling{
 			DisplayNames: []string{"Person", "Microsoft Corp"},
 		})
-		cid, err := r.resolveEdgar(context.Background(), makeEvent("sec_edgar", 5, data))
+		cid, err := r.resolveEdgar(context.Background(), makeEvent("edgar_form4", 5, data))
 
 		require.NoError(t, err)
 		assert.Equal(t, 42, cid)
@@ -417,7 +417,7 @@ func TestResolveEdgar(t *testing.T) {
 		data := mustMarshal(edgarFiling{
 			DisplayNames: []string{"NoMatch Corp"},
 		})
-		cid, err := r.resolveEdgar(context.Background(), makeEvent("sec_edgar", 6, data))
+		cid, err := r.resolveEdgar(context.Background(), makeEvent("edgar_form4", 6, data))
 
 		require.NoError(t, err)
 		assert.Equal(t, 0, cid)

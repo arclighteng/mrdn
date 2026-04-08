@@ -19,7 +19,7 @@ func TestParseEFDS_ValidFiling(t *testing.T) {
 	require.Len(t, events, 2)
 
 	e := events[0]
-	assert.Equal(t, "senate_efds", e.Source)
+	assert.Equal(t, "efds_senate", e.Source)
 	assert.NotNil(t, e.SourceID)
 	assert.NotEmpty(t, *e.SourceID)
 	assert.Equal(t, "congressional_disclosure", e.EventType)
@@ -45,7 +45,7 @@ func TestParseEFDS_PartialFiling(t *testing.T) {
 	require.Len(t, events, 1)
 
 	e := events[0]
-	assert.Equal(t, "senate_efds", e.Source)
+	assert.Equal(t, "efds_senate", e.Source)
 	assert.Equal(t, "congressional_disclosure", e.EventType)
 	assert.Equal(t, time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), e.OccurredAt)
 	require.NoError(t, parser.ValidateEventData(e.EventData))

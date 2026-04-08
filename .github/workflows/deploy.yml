@@ -34,21 +34,35 @@ jobs:
       - name: Install Railway CLI
         run: npm i -g @railway/cli
 
-      - name: Point Railway at SHA-tagged image (forces fresh pull)
+      - name: Point Railway services at SHA-tagged image (forces fresh pull)
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
+          API_SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
+          INGEST_SERVICE_ID: ${{ secrets.RAILWAY_INGEST_SERVICE_ID }}
           ENV_ID: ${{ secrets.RAILWAY_ENVIRONMENT_ID }}
           SHA: ${{ github.sha }}
         run: |
-          curl -sS -X POST https://backboard.railway.app/graphql/v2 \
-            -H "Project-Access-Token: $RAILWAY_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "{\"query\":\"mutation(\$serviceId: String!, \$environmentId: String, \$input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: \$serviceId, environmentId: \$environmentId, input: \$input) }\",\"variables\":{\"serviceId\":\"$SERVICE_ID\",\"environmentId\":\"$ENV_ID\",\"input\":{\"source\":{\"image\":\"adamreed/mrdn:$SHA\"}}}}" | tee /tmp/railway-update.json
-          grep -q '"errors"' /tmp/railway-update.json && { echo "Update error"; exit 1; } || true
+          deploy_service() {
+            local name="$1"
+            local service_id="$2"
+            if [ -z "$service_id" ]; then
+              echo "Skipping $name — no service id set"
+              return 0
+            fi
+            echo "=== Updating $name ($service_id) to adamreed/mrdn:$SHA ==="
+            curl -sS -X POST https://backboard.railway.app/graphql/v2 \
+              -H "Project-Access-Token: $RAILWAY_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"query\":\"mutation(\$serviceId: String!, \$environmentId: String, \$input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: \$serviceId, environmentId: \$environmentId, input: \$input) }\",\"variables\":{\"serviceId\":\"$service_id\",\"environmentId\":\"$ENV_ID\",\"input\":{\"source\":{\"image\":\"adamreed/mrdn:$SHA\"}}}}" | tee /tmp/railway-update-$name.json
+            grep -q '"errors"' /tmp/railway-update-$name.json && { echo "$name update error"; exit 1; } || true
 
-          curl -sS -X POST https://backboard.railway.app/graphql/v2 \
-            -H "Project-Access-Token: $RAILWAY_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "{\"query\":\"mutation(\$serviceId: String!, \$environmentId: String!) { serviceInstanceDeployV2(serviceId: \$serviceId, environmentId: \$environmentId) }\",\"variables\":{\"serviceId\":\"$SERVICE_ID\",\"environmentId\":\"$ENV_ID\"}}" | tee /tmp/railway-deploy.json
-          grep -q '"errors"' /tmp/railway-deploy.json && { echo "Deploy error"; exit 1; } || true
+            echo "=== Deploying $name ==="
+            curl -sS -X POST https://backboard.railway.app/graphql/v2 \
+              -H "Project-Access-Token: $RAILWAY_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"query\":\"mutation(\$serviceId: String!, \$environmentId: String!) { serviceInstanceDeployV2(serviceId: \$serviceId, environmentId: \$environmentId) }\",\"variables\":{\"serviceId\":\"$service_id\",\"environmentId\":\"$ENV_ID\"}}" | tee /tmp/railway-deploy-$name.json
+            grep -q '"errors"' /tmp/railway-deploy-$name.json && { echo "$name deploy error"; exit 1; } || true
+          }
+
+          deploy_service "mrdn-api" "$API_SERVICE_ID"
+          deploy_service "mrdn-ingest" "$INGEST_SERVICE_ID"
