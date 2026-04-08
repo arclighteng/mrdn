@@ -44,5 +44,11 @@ jobs:
           curl -sS -X POST https://backboard.railway.app/graphql/v2 \
             -H "Project-Access-Token: $RAILWAY_TOKEN" \
             -H "Content-Type: application/json" \
-            -d "{\"query\":\"mutation(\$serviceId: String!, \$environmentId: String, \$input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: \$serviceId, environmentId: \$environmentId, input: \$input) }\",\"variables\":{\"serviceId\":\"$SERVICE_ID\",\"environmentId\":\"$ENV_ID\",\"input\":{\"source\":{\"image\":\"adamreed/mrdn:$SHA\"}}}}" | tee /tmp/railway.json
-          grep -q '"errors"' /tmp/railway.json && { echo "Railway API error"; exit 1; } || true
+            -d "{\"query\":\"mutation(\$serviceId: String!, \$environmentId: String, \$input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: \$serviceId, environmentId: \$environmentId, input: \$input) }\",\"variables\":{\"serviceId\":\"$SERVICE_ID\",\"environmentId\":\"$ENV_ID\",\"input\":{\"source\":{\"image\":\"adamreed/mrdn:$SHA\"}}}}" | tee /tmp/railway-update.json
+          grep -q '"errors"' /tmp/railway-update.json && { echo "Update error"; exit 1; } || true
+
+          curl -sS -X POST https://backboard.railway.app/graphql/v2 \
+            -H "Project-Access-Token: $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"query\":\"mutation(\$serviceId: String!, \$environmentId: String!) { serviceInstanceDeployV2(serviceId: \$serviceId, environmentId: \$environmentId) }\",\"variables\":{\"serviceId\":\"$SERVICE_ID\",\"environmentId\":\"$ENV_ID\"}}" | tee /tmp/railway-deploy.json
+          grep -q '"errors"' /tmp/railway-deploy.json && { echo "Deploy error"; exit 1; } || true
