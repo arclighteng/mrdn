@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -64,6 +66,117 @@ func (s *Store) InsertEvent(ctx context.Context, e Event) (int, error) {
 		return 0, fmt.Errorf("inserting event: %w", err)
 	}
 	return id, nil
+}
+
+// batchInsertChunkSize bounds the number of events per multi-row INSERT.
+// Postgres' max bind parameter count is 65535; at 6 params/event this caps
+// around 10_000. 500 keeps each round-trip fast and memory bounded.
+const batchInsertChunkSize = 500
+
+// validateEventData applies the same size/shape checks as InsertEvent.
+func validateEventData(data json.RawMessage) error {
+	if len(data) > maxEventDataSize {
+		return fmt.Errorf("event_data exceeds %d bytes", maxEventDataSize)
+	}
+	if !json.Valid(data) {
+		return fmt.Errorf("event_data is not valid JSON")
+	}
+	depth, err := jsonDepth(data)
+	if err != nil {
+		return fmt.Errorf("checking event_data depth: %w", err)
+	}
+	if depth > maxEventDataDepth {
+		return fmt.Errorf("event_data nesting exceeds %d levels", maxEventDataDepth)
+	}
+	return nil
+}
+
+// InsertEventsBatch inserts many events in a small number of round trips
+// using multi-row INSERTs with ON CONFLICT DO UPDATE ... RETURNING id.
+// It returns ids in the same order as the input. Events that fail validation
+// are skipped; the returned ids slice has 0 at their position.
+//
+// This is a drop-in fast path for bulk sources (polygon, ofac_sdn) where the
+// sequential per-row InsertEvent loop otherwise takes tens of minutes per poll.
+func (s *Store) InsertEventsBatch(ctx context.Context, events []Event) ([]int, error) {
+	ids := make([]int, len(events))
+	if len(events) == 0 {
+		return ids, nil
+	}
+
+	// Filter valid events but remember original positions.
+	type slot struct {
+		origIdx int
+		evt     Event
+	}
+	valid := make([]slot, 0, len(events))
+	for i, e := range events {
+		if err := validateEventData(e.EventData); err != nil {
+			// Mirror per-row behavior: skip and continue.
+			continue
+		}
+		valid = append(valid, slot{origIdx: i, evt: e})
+	}
+
+	for start := 0; start < len(valid); start += batchInsertChunkSize {
+		end := start + batchInsertChunkSize
+		if end > len(valid) {
+			end = len(valid)
+		}
+		chunk := valid[start:end]
+
+		var sb strings.Builder
+		sb.WriteString("INSERT INTO events (source, source_id, company_id, event_type, event_data, occurred_at) VALUES ")
+		args := make([]any, 0, len(chunk)*6)
+		for i, s := range chunk {
+			if i > 0 {
+				sb.WriteByte(',')
+			}
+			base := i * 6
+			sb.WriteByte('(')
+			sb.WriteByte('$')
+			sb.WriteString(strconv.Itoa(base + 1))
+			sb.WriteString(",$")
+			sb.WriteString(strconv.Itoa(base + 2))
+			sb.WriteString(",$")
+			sb.WriteString(strconv.Itoa(base + 3))
+			sb.WriteString(",$")
+			sb.WriteString(strconv.Itoa(base + 4))
+			sb.WriteString(",$")
+			sb.WriteString(strconv.Itoa(base + 5))
+			sb.WriteString(",$")
+			sb.WriteString(strconv.Itoa(base + 6))
+			sb.WriteByte(')')
+			args = append(args,
+				s.evt.Source, s.evt.SourceID, s.evt.CompanyID,
+				s.evt.EventType, s.evt.EventData, s.evt.OccurredAt,
+			)
+		}
+		// DO UPDATE (not DO NOTHING) so RETURNING yields a row for every
+		// VALUES tuple, in input order — matching InsertEvent's semantics.
+		sb.WriteString(" ON CONFLICT (source, source_id) DO UPDATE SET source = EXCLUDED.source RETURNING id")
+
+		rows, err := s.db.Query(ctx, sb.String(), args...)
+		if err != nil {
+			return ids, fmt.Errorf("batch inserting events: %w", err)
+		}
+		i := 0
+		for rows.Next() {
+			var id int
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return ids, fmt.Errorf("scanning batch insert id: %w", err)
+			}
+			if i < len(chunk) {
+				ids[chunk[i].origIdx] = id
+			}
+			i++
+		}
+		if err := rows.Err(); err != nil {
+			return ids, fmt.Errorf("iterating batch insert ids: %w", err)
+		}
+	}
+	return ids, nil
 }
 
 func (s *Store) GetEvent(ctx context.Context, id int) (Event, error) {

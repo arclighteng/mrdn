@@ -85,11 +85,17 @@ func (w *PollWorker) Run(ctx context.Context) {
 		hasNewData := len(events) > 0
 
 		if w.store != nil {
-			for _, evt := range events {
-				id, ierr := w.store.InsertEvent(ctx, evt)
-				if ierr != nil {
-					log.Printf("[%s] insert error: %v", w.source.Name(), ierr)
-					continue // skip this event, don't fail the whole batch
+			ids, berr := w.store.InsertEventsBatch(ctx, events)
+			if berr != nil {
+				log.Printf("[%s] batch insert error: %v", w.source.Name(), berr)
+			}
+			for i, evt := range events {
+				id := 0
+				if i < len(ids) {
+					id = ids[i]
+				}
+				if id == 0 {
+					continue // skipped (validation failure) or batch aborted
 				}
 				evt.ID = id
 				if w.resolver != nil {
