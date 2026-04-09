@@ -3,6 +3,7 @@ package api
 import (
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -126,4 +127,58 @@ func TestParsePagination(t *testing.T) {
 	r = httptest.NewRequest("GET", "/?limit=abc", nil)
 	_, _, err = parsePagination(r)
 	assert.Error(t, err)
+}
+
+func TestParseTimeRange(t *testing.T) {
+	t0 := "2025-01-01T00:00:00Z"
+	t1 := "2025-01-02T00:00:00Z"
+	tBad := "not-a-time"
+	tFarFuture := "2030-01-01T00:00:00Z"
+
+	tests := []struct {
+		name         string
+		query        string
+		wantErr      bool
+		wantSinceNil bool
+		wantUntilNil bool
+	}{
+		{"both absent", "", false, true, true},
+		{"only since", "since=" + t0, false, false, true},
+		{"only until", "until=" + t1, false, true, false},
+		{"happy range", "since=" + t0 + "&until=" + t1, false, false, false},
+		{"until equals since", "since=" + t0 + "&until=" + t0, true, false, false},
+		{"until before since", "since=" + t1 + "&until=" + t0, true, false, false},
+		{"malformed since", "since=" + tBad, true, false, false},
+		{"malformed until", "until=" + tBad, true, false, false},
+		{"range too large", "since=" + t0 + "&until=" + tFarFuture, true, false, false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest("GET", "/?"+tc.query, nil)
+			since, until, err := parseTimeRange(r)
+			if tc.wantErr {
+				assert.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantSinceNil, since == nil, "since nil mismatch")
+			assert.Equal(t, tc.wantUntilNil, until == nil, "until nil mismatch")
+		})
+	}
+}
+
+func TestParseTimeRange_maxSpan(t *testing.T) {
+	since := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	// Exactly 1y allowed.
+	until := since.Add(maxTimeRange)
+	r := httptest.NewRequest("GET", "/?since="+since.Format(time.RFC3339)+"&until="+until.Format(time.RFC3339), nil)
+	_, _, err := parseTimeRange(r)
+	assert.NoError(t, err, "1y span should be allowed")
+
+	// 1y + 1s rejected.
+	until2 := until.Add(time.Second)
+	r2 := httptest.NewRequest("GET", "/?since="+since.Format(time.RFC3339)+"&until="+until2.Format(time.RFC3339), nil)
+	_, _, err = parseTimeRange(r2)
+	assert.Error(t, err, "1y+1s span should be rejected")
 }

@@ -43,6 +43,33 @@ func parseTime(r *http.Request, key string) (*time.Time, error) {
 	return &t, nil
 }
 
+// maxTimeRange is the maximum allowed span for parseTimeRange (1 year).
+const maxTimeRange = 365 * 24 * time.Hour
+
+// parseTimeRange parses the optional `since` and `until` query parameters
+// as RFC3339 timestamps. Either, both, or neither may be present. If both
+// are set, until must be strictly after since, and the span must not
+// exceed maxTimeRange (1 year). Returns (nil, nil, nil) when neither is set.
+func parseTimeRange(r *http.Request) (since, until *time.Time, err error) {
+	since, err = parseTime(r, "since")
+	if err != nil {
+		return nil, nil, err
+	}
+	until, err = parseTime(r, "until")
+	if err != nil {
+		return nil, nil, err
+	}
+	if since != nil && until != nil {
+		if !until.After(*since) {
+			return nil, nil, fmt.Errorf("invalid range: until must be after since")
+		}
+		if until.Sub(*since) > maxTimeRange {
+			return nil, nil, fmt.Errorf("invalid range: span must not exceed 1 year")
+		}
+	}
+	return since, until, nil
+}
+
 func parseString(r *http.Request, key, defaultVal string) string {
 	s := r.URL.Query().Get(key)
 	if s == "" {
