@@ -12,6 +12,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var sourcesVerbose bool
+
 var sourcesCmd = &cobra.Command{
 	Use:   "sources",
 	Short: "Show data source health and freshness",
@@ -49,10 +51,35 @@ var sourcesCmd = &cobra.Command{
 				s.SourceName, s.Status, s.ExpectedLag, lastPoll, lastData)
 		}
 		w.Flush()
+
+		if sourcesVerbose {
+			fmt.Fprintln(os.Stdout)
+			vw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			fmt.Fprintln(vw, "SOURCE\tLAST ATTEMPT\tHTTP\tLAST ERROR")
+			for _, s := range sources {
+				lastAttempt := "never"
+				if s.LastAttemptAt != nil {
+					lastAttempt = time.Since(*s.LastAttemptAt).Truncate(time.Second).String() + " ago"
+				}
+				httpCode := "-"
+				if s.LastHTTPCode != nil {
+					httpCode = fmt.Sprintf("%d", *s.LastHTTPCode)
+				}
+				lastError := "-"
+				if s.LastError != nil && *s.LastError != "" {
+					lastError = *s.LastError
+				}
+				fmt.Fprintf(vw, "%s\t%s\t%s\t%s\n",
+					s.SourceName, lastAttempt, httpCode, lastError)
+			}
+			vw.Flush()
+		}
 		return nil
 	},
 }
 
 func init() {
+	sourcesCmd.Flags().BoolVarP(&sourcesVerbose, "verbose", "v", false,
+		"show last attempt timestamp, HTTP code, and last error per source")
 	rootCmd.AddCommand(sourcesCmd)
 }

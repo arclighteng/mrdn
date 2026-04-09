@@ -1,14 +1,14 @@
 package db
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/arclighteng/mrdn/internal/jsonutil"
 )
 
 const (
@@ -49,7 +49,7 @@ func (s *Store) InsertEvent(ctx context.Context, e Event) (int, error) {
 	if !json.Valid(e.EventData) {
 		return 0, fmt.Errorf("event_data is not valid JSON")
 	}
-	if depth, err := jsonDepth(e.EventData); err != nil {
+	if depth, err := jsonutil.Depth(e.EventData); err != nil {
 		return 0, fmt.Errorf("checking event_data depth: %w", err)
 	} else if depth > maxEventDataDepth {
 		return 0, fmt.Errorf("event_data nesting exceeds %d levels", maxEventDataDepth)
@@ -82,7 +82,7 @@ func validateEventData(data json.RawMessage) error {
 	if !json.Valid(data) {
 		return fmt.Errorf("event_data is not valid JSON")
 	}
-	depth, err := jsonDepth(data)
+	depth, err := jsonutil.Depth(data)
 	if err != nil {
 		return fmt.Errorf("checking event_data depth: %w", err)
 	}
@@ -302,29 +302,3 @@ func (s *Store) CountEvents(ctx context.Context, f EventFilter) (int, error) {
 	return count, nil
 }
 
-// jsonDepth returns the maximum nesting depth of the JSON value in raw.
-// An empty object or array at the top level has depth 1; a scalar has depth 0.
-func jsonDepth(raw json.RawMessage) (int, error) {
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	maxDepth := 0
-	currentDepth := 0
-	for {
-		t, err := dec.Token()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return 0, err
-		}
-		switch t {
-		case json.Delim('{'), json.Delim('['):
-			currentDepth++
-			if currentDepth > maxDepth {
-				maxDepth = currentDepth
-			}
-		case json.Delim('}'), json.Delim(']'):
-			currentDepth--
-		}
-	}
-	return maxDepth, nil
-}
