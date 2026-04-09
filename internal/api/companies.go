@@ -107,11 +107,14 @@ func (s *Server) handleGetCompany(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := map[string]any{
-		"id":      company.ID,
-		"ticker":  company.Ticker,
-		"name":    company.Name,
-		"sector":  company.Sector,
-		"scores":  scoreData,
+		"id":               company.ID,
+		"ticker":           company.Ticker,
+		"name":             company.Name,
+		"sector":           company.Sector,
+		"subsector":        company.Subsector,
+		"naics_code":       company.NAICSCode,
+		"market_cap_bucket": company.MarketCapBucket,
+		"scores":           scoreData,
 	}
 	if score.ID != 0 {
 		data["weight_version"] = score.WeightVersion
