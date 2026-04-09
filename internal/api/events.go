@@ -18,7 +18,7 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	since, err := parseTime(r, "since")
+	since, until, err := parseTimeRange(r)
 	if err != nil {
 		writeError(w, 400, "BAD_REQUEST", err.Error())
 		return
@@ -28,6 +28,7 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 		Source:    parseString(r, "source", ""),
 		EventType: parseString(r, "type", ""),
 		Since:     since,
+		Until:     until,
 		Limit:     limit,
 		Offset:    offset,
 	}
@@ -87,7 +88,17 @@ func (s *Server) handleLatestEvents(w http.ResponseWriter, r *http.Request) {
 		limit = 100
 	}
 
-	events, err := s.store.ListEvents(r.Context(), db.EventFilter{Limit: limit})
+	since, until, err := parseTimeRange(r)
+	if err != nil {
+		writeError(w, 400, "BAD_REQUEST", err.Error())
+		return
+	}
+
+	events, err := s.store.ListEvents(r.Context(), db.EventFilter{
+		Limit: limit,
+		Since: since,
+		Until: until,
+	})
 	if err != nil {
 		writeError(w, 500, "INTERNAL_ERROR", "failed to list events")
 		return
