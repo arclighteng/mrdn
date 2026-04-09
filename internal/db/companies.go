@@ -45,6 +45,30 @@ type CompanyFilter struct {
 // StrPtr is a helper for creating *string values in test code and seed data.
 func StrPtr(s string) *string { return &s }
 
+// EnsureCompany inserts the company if it doesn't exist yet, but never
+// overwrites an existing row. Use this from the resolver, which only knows the
+// ticker (and uses it as a name fallback) — it must not clobber real names
+// written by the seeder or other authoritative sources.
+func (s *Store) EnsureCompany(ctx context.Context, c Company) (Company, error) {
+	var result Company
+	err := s.db.QueryRow(ctx, `
+		INSERT INTO companies (ticker, name, sector, subsector, naics_code, market_cap_bucket)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (ticker) DO NOTHING
+		RETURNING id, ticker, name, sector, subsector, naics_code, market_cap_bucket
+	`, c.Ticker, c.Name, c.Sector, c.Subsector, c.NAICSCode, c.MarketCapBucket,
+	).Scan(&result.ID, &result.Ticker, &result.Name, &result.Sector,
+		&result.Subsector, &result.NAICSCode, &result.MarketCapBucket)
+	if err == pgx.ErrNoRows {
+		// Row already existed — fetch it.
+		return s.GetCompanyByTicker(ctx, c.Ticker)
+	}
+	if err != nil {
+		return Company{}, fmt.Errorf("ensuring company %s: %w", c.Ticker, err)
+	}
+	return result, nil
+}
+
 func (s *Store) UpsertCompany(ctx context.Context, c Company) (Company, error) {
 	var result Company
 	err := s.db.QueryRow(ctx, `

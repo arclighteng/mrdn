@@ -19,6 +19,7 @@ import (
 type ResolverStore interface {
 	ListAllCompanyLookups(ctx context.Context) ([]db.CompanyLookup, error)
 	UpsertCompany(ctx context.Context, c db.Company) (db.Company, error)
+	EnsureCompany(ctx context.Context, c db.Company) (db.Company, error)
 	UpdateEventCompanyID(ctx context.Context, eventID int, companyID int) error
 	SearchCompanyByName(ctx context.Context, name string) (*db.CompanyLookup, error)
 	InsertMarketData(ctx context.Context, m db.MarketDataRow) error
@@ -106,11 +107,12 @@ func (r *Resolver) ensureCompany(ctx context.Context, ticker, name string) (int,
 		return id, nil
 	}
 
-	// Not in cache — upsert into DB.
+	// Not in cache — insert if not exists. Never overwrite an existing row:
+	// the resolver's name is a ticker fallback, not an authoritative source.
 	if name == "" {
 		name = ticker
 	}
-	company, err := r.store.UpsertCompany(ctx, db.Company{
+	company, err := r.store.EnsureCompany(ctx, db.Company{
 		Ticker: ticker,
 		Name:   name,
 	})
