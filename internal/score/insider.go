@@ -7,8 +7,8 @@ import (
 	"github.com/arclighteng/mrdn/internal/db"
 )
 
-// insiderWindow is the lookback period used for all insider sub-score inputs.
-const insiderWindow = 90 * 24 * time.Hour
+// InsiderWindow is the lookback period used for all insider sub-score inputs.
+const InsiderWindow = 90 * 24 * time.Hour
 
 // Insider trade score thresholds (SEC Form 4 filing count within the insider window).
 const (
@@ -46,7 +46,7 @@ func NewInsiderScorer(store ScoreStore) *InsiderScorer {
 // Score returns an insider sub-score in [0, 100] for the given company at now.
 // Returns 50.0 (neutral) when no data is available in either category.
 func (is *InsiderScorer) Score(ctx context.Context, companyID int, now time.Time) (float64, error) {
-	since := now.Add(-insiderWindow)
+	since := now.Add(-InsiderWindow)
 
 	trades, err := is.store.GetInsiderTradesRange(ctx, companyID, since, now)
 	if err != nil {
