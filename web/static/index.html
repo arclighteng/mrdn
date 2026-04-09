@@ -2191,12 +2191,16 @@ function app() {
       for (const s of this.sources) {
         if (s.status === 'healthy' && !s.last_error) continue;
 
-        let explain = this.sourceOutageCopy[s.source_name]
-          || 'Upstream provider is temporarily unavailable. Retrying automatically.';
-
         const code = s.last_http_code;
-        if (code && code >= 400) {
-          explain += ' (HTTP ' + code + ')';
+        let explain;
+        if (code === 403) {
+          explain = 'API credentials rejected — the API key for this source is invalid or expired. Data will not update until the key is fixed.';
+        } else {
+          explain = this.sourceOutageCopy[s.source_name]
+            || 'Upstream provider is temporarily unavailable. Retrying automatically.';
+          if (code && code >= 400) {
+            explain += ' (HTTP ' + code + ')';
+          }
         }
         out.push({ source_name: s.source_name, message: explain });
       }
