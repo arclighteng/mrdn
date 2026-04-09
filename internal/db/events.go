@@ -37,6 +37,7 @@ type EventFilter struct {
 	EventType string
 	CompanyID *int
 	Since     *time.Time
+	Until     *time.Time
 	Limit     int
 	Offset    int
 }
@@ -219,6 +220,11 @@ func (s *Store) ListEvents(ctx context.Context, f EventFilter) ([]Event, error) 
 		args = append(args, *f.Since)
 		argN++
 	}
+	if f.Until != nil {
+		query += fmt.Sprintf(" AND e.occurred_at < $%d", argN)
+		args = append(args, *f.Until)
+		argN++
+	}
 
 	query += " ORDER BY e.occurred_at DESC"
 
@@ -281,6 +287,11 @@ func (s *Store) CountEvents(ctx context.Context, f EventFilter) (int, error) {
 	if f.Since != nil {
 		query += fmt.Sprintf(" AND occurred_at >= $%d", argN)
 		args = append(args, *f.Since)
+		argN++
+	}
+	if f.Until != nil {
+		query += fmt.Sprintf(" AND occurred_at < $%d", argN)
+		args = append(args, *f.Until)
 		argN++
 	}
 

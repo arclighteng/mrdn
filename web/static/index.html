@@ -206,8 +206,21 @@ tailwind.config = {
     <!-- Latest Events + Rankings side by side -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <div class="bg-surface-1 rounded-xl border border-white/15 p-5">
-        <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Latest Events</h2>
-        <p class="text-xs text-neutral-400 mt-0.5 mb-3">Live feed of things happening right now: politicians trading stocks, governments handing out contracts, sanctions, lawsuits, big stock moves. The colored dot shows the type.</p>
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Latest Events</h2>
+            <p class="text-xs text-neutral-400 mt-0.5 mb-3">Live feed of things happening right now: politicians trading stocks, governments handing out contracts, sanctions, lawsuits, big stock moves. The colored dot shows the type.</p>
+          </div>
+          <div class="shrink-0 flex gap-1" role="group" aria-label="Time range">
+            <template x-for="r in timeRangeOptions" :key="r.key">
+              <button @click="setLatestRange(r.key)"
+                :class="latestRange === r.key ? 'bg-surface-3 text-white border-white/30' : 'bg-surface-2 text-neutral-300 border-white/15 hover:bg-surface-3'"
+                class="text-[11px] font-mono px-2 py-1 rounded border transition-colors"
+                :aria-pressed="latestRange === r.key"
+                x-text="r.label"></button>
+            </template>
+          </div>
+        </div>
         <div class="space-y-1.5 max-h-80 overflow-y-auto">
           <template x-for="e in latestEvents" :key="e.id">
             <div @click="eventTicker(e) && openCompany(eventTicker(e))"
@@ -1411,6 +1424,14 @@ function app() {
     movers: [],
     rankings: [],
     latestEvents: [],
+    latestRange: (localStorage.getItem('mrdn_latest_range') || '7d'),
+    timeRangeOptions: [
+      { key: '24h', label: '24h', hours: 24 },
+      { key: '7d',  label: '7d',  hours: 24 * 7 },
+      { key: '30d', label: '30d', hours: 24 * 30 },
+      { key: '90d', label: '90d', hours: 24 * 90 },
+      { key: 'all', label: 'All', hours: 0 },
+    ],
     sources: [],
     partySectorHeatmap: [],
     repMonthHeatmap: [],
@@ -1487,7 +1508,7 @@ function app() {
       const [moversRes, rankRes, eventsRes, sourcesRes, statsRes, activityHeatRes, partySectorRes, repMonthRes] = await Promise.all([
         this.api('/scores/movers?hours=24&limit=10'),
         this.api('/scores/rankings?limit=50'),
-        this.api('/events/latest?limit=100'),
+        this.api('/events/latest?limit=100' + this.latestRangeQuery()),
         this.api('/sources'),
         this.api('/stats/activity'),
         this.api('/stats/activity/heatmap?days=3650'),
@@ -1508,6 +1529,20 @@ function app() {
         this.renderHeatmap();
         this.renderActivityHeatmap();
       });
+    },
+
+    latestRangeQuery() {
+      const opt = this.timeRangeOptions.find(o => o.key === this.latestRange);
+      if (!opt || opt.hours === 0) return '';
+      const since = new Date(Date.now() - opt.hours * 3600 * 1000).toISOString();
+      return '&since=' + encodeURIComponent(since);
+    },
+
+    async setLatestRange(key) {
+      this.latestRange = key;
+      localStorage.setItem('mrdn_latest_range', key);
+      const res = await this.api('/events/latest?limit=100' + this.latestRangeQuery());
+      this.latestEvents = this.dedupeEvents(res?.data || []);
     },
 
     setHeatmapMode(mode) {

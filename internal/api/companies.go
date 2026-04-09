@@ -344,7 +344,7 @@ func (s *Server) handleCompanyEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	since, err := parseTime(r, "since")
+	since, until, err := parseTimeRange(r)
 	if err != nil {
 		writeError(w, 400, "BAD_REQUEST", err.Error())
 		return
@@ -355,6 +355,7 @@ func (s *Server) handleCompanyEvents(w http.ResponseWriter, r *http.Request) {
 		EventType: parseString(r, "type", ""),
 		CompanyID: &company.ID,
 		Since:     since,
+		Until:     until,
 		Limit:     limit,
 		Offset:    offset,
 	}
