@@ -66,6 +66,19 @@ func (m *mockStore) UpsertCompany(_ context.Context, c db.Company) (db.Company, 
 	return m.upsertResult, nil
 }
 
+func (m *mockStore) EnsureCompany(_ context.Context, c db.Company) (db.Company, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.upsertCalls++
+	if m.upsertErr != nil {
+		return db.Company{}, m.upsertErr
+	}
+	if m.upsertResult.ID == 0 {
+		return db.Company{ID: 99, Ticker: c.Ticker, Name: c.Name}, nil
+	}
+	return m.upsertResult, nil
+}
+
 func (m *mockStore) UpdateEventCompanyID(_ context.Context, _ int, _ int) error {
 	m.mu.Lock()
 	m.updateCalls++
@@ -995,6 +1008,9 @@ func (c *cancellingStore) ListAllCompanyLookups(ctx context.Context) ([]db.Compa
 }
 func (c *cancellingStore) UpsertCompany(ctx context.Context, co db.Company) (db.Company, error) {
 	return c.inner.UpsertCompany(ctx, co)
+}
+func (c *cancellingStore) EnsureCompany(ctx context.Context, co db.Company) (db.Company, error) {
+	return c.inner.EnsureCompany(ctx, co)
 }
 func (c *cancellingStore) UpdateEventCompanyID(ctx context.Context, eventID, companyID int) error {
 	return c.inner.UpdateEventCompanyID(ctx, eventID, companyID)
