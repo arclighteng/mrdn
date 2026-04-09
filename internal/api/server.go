@@ -85,6 +85,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/companies/{ticker}", s.handleGetCompany)
 		r.Get("/companies/{ticker}/scores", s.handleCompanyScores)
 		r.Get("/companies/{ticker}/events", s.handleCompanyEvents)
+		r.Get("/companies/{ticker}/score-breakdown", s.handleCompanyScoreBreakdown)
 
 		r.Get("/events", s.handleListEvents)
 		r.Get("/events/latest", s.handleLatestEvents)

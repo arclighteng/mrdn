@@ -7,8 +7,8 @@ import (
 	"github.com/arclighteng/mrdn/internal/db"
 )
 
-// policyWindow is the lookback period used for all policy sub-score inputs.
-const policyWindow = 90 * 24 * time.Hour
+// PolicyWindow is the lookback period used for all policy sub-score inputs.
+const PolicyWindow = 90 * 24 * time.Hour
 
 // Sanctions score thresholds (count within the policy window).
 const (
@@ -53,7 +53,7 @@ func NewPolicyScorer(store ScoreStore) *PolicyScorer {
 // Score returns a policy sub-score in [0, 100] for the given company at now.
 // Each category independently returns 50.0 (neutral) when no data is available.
 func (ps *PolicyScorer) Score(ctx context.Context, companyID int, now time.Time) (float64, error) {
-	since := now.Add(-policyWindow)
+	since := now.Add(-PolicyWindow)
 
 	sanctions, err := ps.store.GetSanctionsRange(ctx, companyID, since, now)
 	if err != nil {

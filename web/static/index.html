@@ -409,6 +409,81 @@ tailwind.config = {
       </template>
     </div>
 
+    <!-- Score Breakdown: Top Contributing Events -->
+    <div x-show="scoreBreakdown" class="bg-surface-1 rounded-xl border border-white/15 p-5">
+      <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider mb-1">What's driving the score</h2>
+      <p class="text-xs text-neutral-400 mb-4">Top 5 contributors in each category within the current scoring window.</p>
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <!-- Insider trades -->
+        <div>
+          <h3 class="text-xs font-semibold text-neutral-300 mb-2">Insider trades</h3>
+          <template x-for="(t, i) in (scoreBreakdown?.insider_trades || [])" :key="'it'+i">
+            <div class="text-xs py-1 border-b border-white/10">
+              <div class="text-neutral-200" x-text="(t.filer_name || 'Unknown') + ' — ' + (t.trade_type || '')"></div>
+              <div class="text-neutral-400 font-mono">
+                <span x-show="t.shares != null && t.price_cents != null" x-text="'$' + ((t.shares * t.price_cents / 100) / 1000).toFixed(1) + 'K'"></span>
+                <span x-show="t.traded_at" x-text="' · ' + timeAgo(t.traded_at)"></span>
+              </div>
+            </div>
+          </template>
+          <div x-show="!(scoreBreakdown?.insider_trades?.length)" class="text-xs text-neutral-500 italic">None in window</div>
+        </div>
+        <!-- Contracts -->
+        <div>
+          <h3 class="text-xs font-semibold text-neutral-300 mb-2">Government contracts</h3>
+          <template x-for="(c, i) in (scoreBreakdown?.contracts || [])" :key="'ct'+i">
+            <div class="text-xs py-1 border-b border-white/10">
+              <div class="text-neutral-200 truncate" x-text="c.agency || 'Unknown agency'"></div>
+              <div class="text-neutral-400 font-mono">
+                <span x-show="c.amount_cents != null" x-text="'$' + ((c.amount_cents / 100) / 1e6).toFixed(2) + 'M'"></span>
+                <span x-show="c.awarded_at" x-text="' · ' + timeAgo(c.awarded_at)"></span>
+              </div>
+            </div>
+          </template>
+          <div x-show="!(scoreBreakdown?.contracts?.length)" class="text-xs text-neutral-500 italic">None in window</div>
+        </div>
+        <!-- Sanctions -->
+        <div>
+          <h3 class="text-xs font-semibold text-neutral-300 mb-2">Sanctions</h3>
+          <template x-for="(s, i) in (scoreBreakdown?.sanctions || [])" :key="'sn'+i">
+            <div class="text-xs py-1 border-b border-white/10">
+              <div class="text-neutral-200 truncate" x-text="(s.entity_name || 'Unknown') + ' · ' + (s.program || '')"></div>
+              <div class="text-neutral-400" x-show="s.added_at" x-text="timeAgo(s.added_at)"></div>
+            </div>
+          </template>
+          <div x-show="!(scoreBreakdown?.sanctions?.length)" class="text-xs text-neutral-500 italic">None in window</div>
+        </div>
+        <!-- Donations -->
+        <div>
+          <h3 class="text-xs font-semibold text-neutral-300 mb-2">Political donations</h3>
+          <template x-for="(d, i) in (scoreBreakdown?.donations || [])" :key="'dn'+i">
+            <div class="text-xs py-1 border-b border-white/10">
+              <div class="text-neutral-200 truncate" x-text="(d.donor_name || 'Unknown') + ' → ' + (d.recipient || '')"></div>
+              <div class="text-neutral-400 font-mono">
+                <span x-show="d.amount_cents != null" x-text="'$' + ((d.amount_cents / 100)).toLocaleString()"></span>
+                <span x-show="d.donated_at" x-text="' · ' + timeAgo(d.donated_at)"></span>
+              </div>
+            </div>
+          </template>
+          <div x-show="!(scoreBreakdown?.donations?.length)" class="text-xs text-neutral-500 italic">None in window</div>
+        </div>
+        <!-- Market moves -->
+        <div>
+          <h3 class="text-xs font-semibold text-neutral-300 mb-2">Market moves</h3>
+          <template x-for="(m, i) in (scoreBreakdown?.market_data || [])" :key="'md'+i">
+            <div class="text-xs py-1 border-b border-white/10">
+              <div class="text-neutral-200" x-text="(m.source || '') + ' · ' + (m.data_type || '')"></div>
+              <div class="font-mono" :class="(m.change_pct || 0) >= 0 ? 'text-up' : 'text-down'">
+                <span x-show="m.change_pct != null" x-text="((m.change_pct >= 0 ? '+' : '') + (m.change_pct * 100).toFixed(2) + '%')"></span>
+                <span class="text-neutral-400" x-show="m.recorded_at" x-text="' · ' + timeAgo(m.recorded_at)"></span>
+              </div>
+            </div>
+          </template>
+          <div x-show="!(scoreBreakdown?.market_data?.length)" class="text-xs text-neutral-500 italic">None in window</div>
+        </div>
+      </div>
+    </div>
+
     <!-- Score History Chart + Timeline -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <div class="bg-surface-1 rounded-xl border border-white/15 p-5">
@@ -1361,6 +1436,7 @@ function app() {
     detail: {},
     timeline: [],
     scoreHistory: [],
+    scoreBreakdown: null,
 
     // Persons
     persons: [],
@@ -1637,16 +1713,18 @@ function app() {
       this.timeline = [];
       this.scoreHistory = [];
 
-      const [detailRes, timelineRes, scoresRes, connRes] = await Promise.all([
+      const [detailRes, timelineRes, scoresRes, connRes, breakdownRes] = await Promise.all([
         this.api(`/companies/${ticker}`),
         this.api(`/companies/${ticker}/timeline?limit=50`),
         this.api(`/companies/${ticker}/scores?limit=50`),
         this.api(`/connections/company/${ticker}?depth=2`),
+        this.api(`/companies/${ticker}/score-breakdown?limit=5`),
       ]);
 
       this.detail = detailRes?.data || {};
       this.timeline = timelineRes?.data || [];
       this.scoreHistory = scoresRes?.data || [];
+      this.scoreBreakdown = breakdownRes?.data?.contributors || null;
 
       this.$nextTick(() => {
         this.renderScoreHistory();

@@ -7,8 +7,8 @@ import (
 	"github.com/arclighteng/mrdn/internal/db"
 )
 
-// marketWindow is the lookback period used for all market sub-score inputs.
-const marketWindow = 30 * 24 * time.Hour
+// MarketWindow is the lookback period used for all market sub-score inputs.
+const MarketWindow = 30 * 24 * time.Hour
 
 // Price trend normalization constants.
 // The trend is computed as the percentage change from the first to the last of
@@ -62,7 +62,7 @@ func NewMarketScorer(store ScoreStore) *MarketScorer {
 // Score returns a market sub-score in [0, 100] for the given company at now.
 // Returns 50.0 (neutral) when no market data is available.
 func (ms *MarketScorer) Score(ctx context.Context, companyID int, now time.Time) (float64, error) {
-	since := now.Add(-marketWindow)
+	since := now.Add(-MarketWindow)
 
 	mktData, err := ms.store.GetMarketDataRange(ctx, companyID, since, now)
 	if err != nil {
