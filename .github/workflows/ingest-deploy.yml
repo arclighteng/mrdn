@@ -1,0 +1,52 @@
+name: Ingest & Deploy to Cloudflare Pages
+
+on:
+  schedule:
+    # Every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  ingest-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: go build -o mrdn ./cmd/mrdn
+
+      - name: Ingest (one-shot poll all sources)
+        run: ./mrdn ingest-once
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MRDN_POLYGON_API_KEY: ${{ secrets.MRDN_POLYGON_API_KEY }}
+          MRDN_FEC_API_KEY: ${{ secrets.MRDN_FEC_API_KEY }}
+
+      - name: Compute scores
+        run: ./mrdn score-backfill --workers 4
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Export static JSON
+        run: ./mrdn export --out dist/data
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Copy frontend assets
+        run: cp web/static/* dist/
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          command: pages deploy dist --project-name=mrdn
+
+      - name: Prune old data
+        run: ./mrdn prune --keep-days 90
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
