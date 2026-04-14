@@ -61,7 +61,6 @@ func TestLoad_SSEOverrides(t *testing.T) {
 
 func TestValidateIngestion_MissingKeys(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgresql://localhost/mrdn")
-	os.Unsetenv("MRDN_FINNHUB_API_KEY")
 	os.Unsetenv("MRDN_POLYGON_API_KEY")
 	os.Unsetenv("MRDN_FEC_API_KEY")
 
@@ -70,14 +69,12 @@ func TestValidateIngestion_MissingKeys(t *testing.T) {
 
 	err = cfg.ValidateIngestion()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "MRDN_FINNHUB_API_KEY")
 	assert.Contains(t, err.Error(), "MRDN_POLYGON_API_KEY")
 	assert.Contains(t, err.Error(), "MRDN_FEC_API_KEY")
 }
 
 func TestValidateIngestion_AllPresent(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgresql://localhost/mrdn")
-	t.Setenv("MRDN_FINNHUB_API_KEY", "fh-key")
 	t.Setenv("MRDN_POLYGON_API_KEY", "poly-key")
 	t.Setenv("MRDN_FEC_API_KEY", "fec-key")
 

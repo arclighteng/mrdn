@@ -76,9 +76,6 @@ func Load() (*Config, error) {
 // missing. Call this from the mrdn ingest command before starting work.
 func (c *Config) ValidateIngestion() error {
 	var missing []string
-	if c.FinnhubAPIKey == "" {
-		missing = append(missing, "MRDN_FINNHUB_API_KEY")
-	}
 	if c.PolygonAPIKey == "" {
 		missing = append(missing, "MRDN_POLYGON_API_KEY")
 	}
