@@ -1424,7 +1424,6 @@ tailwind.config = {
 function app() {
   return {
     view: 'dashboard',
-    apiKey: localStorage.getItem('mrdn_api_key') || '',
     connected: false,
 
     // Dashboard data
@@ -1455,6 +1454,7 @@ function app() {
     drillRows: [],
 
     // Companies list
+    allCompanies: [],
     companies: [],
     companySearch: '',
     companyPage: 0,
@@ -1491,17 +1491,13 @@ function app() {
     rankSort: 'composite',
 
     init() {
-      this.$watch('apiKey', (val) => {
-        localStorage.setItem('mrdn_api_key', val);
-      });
       this.loadDashboard();
     },
 
     async api(path) {
       try {
-        const resp = await fetch('/api/v1' + path, {
-          headers: { 'X-API-Key': this.apiKey }
-        });
+        const file = this.apiPathToFile(path);
+        const resp = await fetch('/data/' + file);
         if (!resp.ok) return null;
         this.connected = true;
         return await resp.json();
@@ -1509,6 +1505,56 @@ function app() {
         this.connected = false;
         return null;
       }
+    },
+
+    apiPathToFile(path) {
+      // Strip leading slash
+      path = path.replace(/^\//, '');
+
+      // Static dashboard endpoints
+      const staticMap = {
+        'scores/movers': 'scores-movers.json',
+        'scores/rankings': 'scores-rankings.json',
+        'scores/heatmap': 'scores-heatmap.json',
+        'events/latest': 'events-latest.json',
+        'sources': 'sources.json',
+        'stats/activity': 'stats-activity.json',
+        'stats/activity/heatmap': 'stats-activity-heatmap.json',
+        'stats/party-sector-heatmap': 'stats-party-sector.json',
+        'stats/rep-month-heatmap': 'stats-rep-month.json',
+        'compliance/latency': 'signals/latency.json',
+        'signals/swarms': 'signals/swarms.json',
+        'signals/first-movers': 'signals/first-movers.json',
+        'signals/round-trips': 'signals/round-trips.json',
+        'tickers/top': 'tickers/_top.json',
+      };
+
+      // Strip query params for mapping
+      const bare = path.split('?')[0];
+
+      if (staticMap[bare]) return staticMap[bare];
+
+      // Partisan: map mode param to file
+      if (bare === 'signals/partisan') {
+        const mode = new URLSearchParams(path.split('?')[1] || '').get('mode') || 'consensus';
+        return 'signals/partisan-' + mode + '.json';
+      }
+
+      // Per-entity detail
+      const companyMatch = bare.match(/^companies\/([A-Z0-9]+)$/);
+      if (companyMatch) return 'companies/' + companyMatch[1] + '.json';
+
+      const personMatch = bare.match(/^persons\/([a-z0-9-]+)\/profile$/);
+      if (personMatch) return 'persons/' + personMatch[1] + '.json';
+
+      const coTradersMatch = bare.match(/^persons\/([a-z0-9-]+)\/co-traders$/);
+      if (coTradersMatch) return 'persons/' + coTradersMatch[1] + '.json';
+
+      const tickerMatch = bare.match(/^tickers\/([A-Z0-9]+)$/);
+      if (tickerMatch) return 'tickers/' + tickerMatch[1] + '.json';
+
+      // Fallback: try the path as-is
+      return bare.replace(/\//g, '-') + '.json';
     },
 
     async loadDashboard() {
@@ -1579,13 +1625,6 @@ function app() {
         visualMap: { min: 0, max: max || 1, calculable: false, orient: 'horizontal', left: 'center', bottom: 0, textStyle: { color: '#737373', fontSize: 10 }, inRange: { color: ['#1a1a1a','#1e3a8a','#2563eb','#f59e0b','#ef4444'] } },
         series: [{ type: 'heatmap', data, label: { show: false }, itemStyle: { borderColor: '#0a0a0a', borderWidth: 1 } }]
       });
-      chart.off('click');
-      chart.on('click', (p) => {
-        if (!p || !p.data) return;
-        const [monthIdx, dow, count] = p.data;
-        if (!count) return;
-        this.openDrillDowMonth(dow, monthIdx + 1, `${dows[dow]} in ${months[monthIdx]}`, `${count} trades · click row for ticker or trader`);
-      });
       window.addEventListener('resize', () => chart.resize());
     },
 
@@ -1620,16 +1659,34 @@ function app() {
     },
 
     async fetchCompanies() {
-      const sector = this.companySearch ? `&sector=${encodeURIComponent(this.companySearch)}` : '';
-      const res = await this.api(`/companies?limit=30&offset=${this.companyPage * 30}${sector}`);
-      this.companies = res?.data || [];
-      this.companyTotal = res?.pagination?.total || 0;
+      if (this.allCompanies.length === 0) {
+        const res = await this.api('/companies');
+        this.allCompanies = res?.data || [];
+      }
+      let filtered = this.allCompanies;
+      if (this.companySearch) {
+        const q = this.companySearch.toLowerCase();
+        filtered = this.allCompanies.filter(c =>
+          (c.sector || '').toLowerCase().includes(q) ||
+          (c.ticker || '').toLowerCase().includes(q) ||
+          (c.name || '').toLowerCase().includes(q)
+        );
+      }
+      this.companyTotal = filtered.length;
+      const start = this.companyPage * 30;
+      this.companies = filtered.slice(start, start + 30);
     },
 
     async fetchPersons() {
-      const branch = this.personBranch ? `&branch=${this.personBranch}` : '';
-      const res = await this.api(`/persons?limit=50${branch}`);
-      this.persons = res?.data || [];
+      if (!this._allPersons) {
+        const res = await this.api('/persons');
+        this._allPersons = res?.data || [];
+      }
+      if (this.personBranch) {
+        this.persons = this._allPersons.filter(p => p.branch === this.personBranch);
+      } else {
+        this.persons = this._allPersons;
+      }
     },
 
     async fetchCompliance() {
@@ -1686,14 +1743,21 @@ function app() {
       this.personProfile = null;
       this.coTraders = [];
       const res = await this.api(`/persons/${slug}/profile`);
-      this.personProfile = res?.data || null;
+      if (res?.data?.profile) {
+        // Static mode: bundled {profile, coTraders}
+        this.personProfile = res.data.profile;
+        this.coTraders = res.data.coTraders || [];
+      } else {
+        // Fallback: live API mode
+        this.personProfile = res?.data || null;
+      }
       this.$nextTick(() => this.renderPersonChart());
     },
 
     async fetchCoTraders(slug) {
-      if (!slug) return;
-      const res = await this.api(`/persons/${slug}/co-traders?limit=25&window_days=14`);
-      this.coTraders = res?.data || [];
+      if (!slug || this.coTraders.length > 0) return;
+      const res = await this.api(`/persons/${slug}/co-traders`);
+      this.coTraders = res?.data?.coTraders || res?.data || [];
     },
 
     renderPersonChart() {
@@ -1755,23 +1819,36 @@ function app() {
       this.timeline = [];
       this.scoreHistory = [];
 
-      const [detailRes, timelineRes, scoresRes, connRes, breakdownRes] = await Promise.all([
-        this.api(`/companies/${ticker}`),
-        this.api(`/companies/${ticker}/timeline?limit=50`),
-        this.api(`/companies/${ticker}/scores?limit=50`),
-        this.api(`/connections/company/${ticker}?depth=2`),
-        this.api(`/companies/${ticker}/score-breakdown?limit=5`),
-      ]);
+      const res = await this.api(`/companies/${ticker}`);
+      const d = res?.data || {};
 
-      this.detail = detailRes?.data || {};
-      this.timeline = timelineRes?.data || [];
-      this.scoreHistory = scoresRes?.data || [];
-      this.scoreBreakdown = breakdownRes?.data?.contributors || null;
-
-      this.$nextTick(() => {
-        this.renderScoreHistory();
-        if (connRes?.data) this.renderConnections(connRes.data);
-      });
+      if (d.company) {
+        // Static mode: bundled {company, timeline, scoreHistory, connections, breakdown, events}
+        this.detail = d.company;
+        this.timeline = d.timeline || [];
+        this.scoreHistory = d.scoreHistory || [];
+        this.scoreBreakdown = d.breakdown || null;
+        this.$nextTick(() => {
+          this.renderScoreHistory();
+          if (d.connections) this.renderConnections(d.connections);
+        });
+      } else {
+        // Fallback: live API mode (5 parallel calls)
+        const [timelineRes, scoresRes, connRes, breakdownRes] = await Promise.all([
+          this.api(`/companies/${ticker}/timeline?limit=50`),
+          this.api(`/companies/${ticker}/scores?limit=50`),
+          this.api(`/connections/company/${ticker}?depth=2`),
+          this.api(`/companies/${ticker}/score-breakdown?limit=5`),
+        ]);
+        this.detail = d;
+        this.timeline = timelineRes?.data || [];
+        this.scoreHistory = scoresRes?.data || [];
+        this.scoreBreakdown = breakdownRes?.data?.contributors || null;
+        this.$nextTick(() => {
+          this.renderScoreHistory();
+          if (connRes?.data) this.renderConnections(connRes.data);
+        });
+      }
     },
 
     navigate(to) {
@@ -1864,11 +1941,6 @@ function app() {
           emphasis: { itemStyle: { borderColor: '#fff', borderWidth: 1.5 }}
         }]
       });
-      chart.off('click');
-      chart.on('click', (p) => {
-        if (!p || !p.value) return;
-        this.openDrillPartySector(parties[p.value[0]], sectors[p.value[1]]);
-      });
       window.addEventListener('resize', () => chart.resize());
     },
 
@@ -1934,12 +2006,6 @@ function app() {
           itemStyle: { borderRadius: 2, borderColor: '#0f0f0f', borderWidth: 1 },
           emphasis: { itemStyle: { borderColor: '#fff', borderWidth: 1.5 }}
         }]
-      });
-      chart.off('click');
-      chart.on('click', (p) => {
-        if (!p || !p.value) return;
-        const slug = reps[p.value[1]];
-        this.openDrillRepMonth(slug, nameBySlug[slug], months[p.value[0]]);
       });
       window.addEventListener('resize', () => chart.resize());
     },
