@@ -99,29 +99,6 @@ func (s *Supervisor) Start() {
 		go s.runWorkerLoop(src)
 	}
 
-	// Launch Finnhub stream worker if key is present (skip when sources are overridden in tests).
-	if !s.sourcesSet && s.cfg != nil && s.cfg.FinnhubAPIKey != "" {
-		finnhub := parser.NewFinnhubSource(s.cfg.FinnhubAPIKey, nil)
-		sw := NewStreamWorker(finnhub, s.store, s.broker, s.clock)
-		s.wg.Add(1)
-		go func() {
-			defer s.wg.Done()
-			log.Printf("[supervisor] starting stream worker for %q", finnhub.Name())
-			sw.Run(s.ctx)
-			log.Printf("[supervisor] stream worker for %q stopped", finnhub.Name())
-		}()
-
-		// Launch rebalancer to rotate Finnhub symbols based on score rankings.
-		rebalancer := NewRebalancer(s.store.GetScoreRankings, finnhub, s.clock, 5*time.Minute)
-		s.wg.Add(1)
-		go func() {
-			defer s.wg.Done()
-			log.Printf("[supervisor] starting rebalancer")
-			rebalancer.Run(s.ctx)
-			log.Printf("[supervisor] rebalancer stopped")
-		}()
-	}
-
 	// Launch score worker (skip when sources are overridden in tests).
 	if !s.sourcesSet {
 		sw := NewScoreWorker(s.store, s.broker, s.clock)
