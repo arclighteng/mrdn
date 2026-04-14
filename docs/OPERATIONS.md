@@ -130,6 +130,26 @@ All commands are run inside `railway ssh` against the production database.
 |---------|---------|
 | `mrdn serve` | Start the HTTP API server. This is the container's default entrypoint on Railway — operators should not need to invoke it manually. |
 
+### Static export & deployment
+
+| Command | Purpose |
+|---------|---------|
+| `mrdn ingest-once` | One-shot poll all sources, resolve entities, exit. For CI cron. |
+| `mrdn export --out dist/data` | Export all dashboard data as static JSON files. |
+| `mrdn prune --keep-days 90` | Delete data older than N days to keep Neon under budget. |
+
+### Cloudflare Pages deployment
+
+The dashboard is deployed as a static site to Cloudflare Pages via GitHub Actions cron (`.github/workflows/ingest-deploy.yml`). The pipeline runs every 6 hours:
+
+1. `mrdn ingest-once` — polls all data sources
+2. `mrdn score-backfill` — recomputes risk scores
+3. `mrdn export --out dist/data` — writes pre-computed JSON
+4. Deploy `dist/` to Cloudflare Pages
+5. `mrdn prune --keep-days 90` — keeps Neon under 0.5 GB
+
+Required GitHub secrets: `CF_API_TOKEN`, `DATABASE_URL`, `MRDN_POLYGON_API_KEY`, `MRDN_FEC_API_KEY`.
+
 ---
 
 ## Common ops recipes

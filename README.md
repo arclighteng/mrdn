@@ -23,13 +23,12 @@ money, policy, and the people moving them. Live at
 
 ## Stack
 
-- **Backend** — Go 1.25, [chi](https://github.com/go-chi/chi) router,
-  [pgx](https://github.com/jackc/pgx) for Postgres access.
-- **Database** — Neon Postgres (serverless).
+- **Backend** — Go 1.25, [pgx](https://github.com/jackc/pgx) for Postgres access.
+- **Database** — Neon Postgres (serverless, free tier) — used for ingestion only.
 - **Frontend** — Single-file dashboard: Alpine.js + Tailwind (CDN) + ECharts.
-  Served from Go via an embedded `fs.FS` (no separate build step).
-- **Deployment** — Docker image pushed to Docker Hub, deployed to Railway behind
-  a custom domain. Hands-off CI/CD via GitHub Actions.
+  Fetches pre-computed JSON from Cloudflare Pages.
+- **Hosting** — Cloudflare Pages (free). Static JSON + HTML, no server.
+- **Ingestion** — GitHub Actions cron (every 6 hours). One-shot poll + score + export.
 
 ## Repository layout
 
