@@ -30,7 +30,7 @@ type Supervisor struct {
 	resolver EventResolver
 	clock    Clock
 
-	// sources is the set of sources to supervise. Populated by registerSources
+	// sources is the set of sources to supervise. Populated by RegisterSources
 	// but can be overridden in tests via WithSources.
 	sources    []Source
 	sourcesSet bool // true if WithSources was called (even with nil)
@@ -61,8 +61,9 @@ func (s *Supervisor) WithSources(sources []Source) {
 	s.sourcesSet = true
 }
 
-// registerSources returns the set of poll-based Sources to supervise.
-func (s *Supervisor) registerSources() []Source {
+// RegisterSources returns the set of poll-based Sources to supervise.
+// Exported so that ingest-once can reuse the same source list.
+func (s *Supervisor) RegisterSources() []Source {
 	client := &http.Client{Timeout: 30 * time.Second}
 
 	sources := []Source{
@@ -85,13 +86,13 @@ func (s *Supervisor) registerSources() []Source {
 }
 
 // Start creates a child context and launches one supervised goroutine per
-// source. If WithSources was not called, registerSources is used.
+// source. If WithSources was not called, RegisterSources is used.
 func (s *Supervisor) Start() {
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 
 	srcs := s.sources
 	if !s.sourcesSet {
-		srcs = s.registerSources()
+		srcs = s.RegisterSources()
 	}
 
 	for _, src := range srcs {
