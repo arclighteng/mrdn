@@ -7,9 +7,12 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 
 	"github.com/arclighteng/mrdn/internal/db"
 )
+
+var safeFilename = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 // Run exports all dashboard data from the store as JSON files under outDir.
 func Run(ctx context.Context, store *db.Store, outDir string) error {
@@ -232,6 +235,10 @@ func exportTickers(ctx context.Context, store *db.Store, outDir string) error {
 
 	// Per-ticker detail for each top ticker.
 	for _, t := range top {
+		if !safeFilename.MatchString(t.Ticker) {
+			log.Printf("[export] ticker %q has unsafe characters, skipping", t.Ticker)
+			continue
+		}
 		detail, err := store.GetTickerDetail(ctx, t.Ticker, 100)
 		if err != nil {
 			log.Printf("[export] ticker %s detail error: %v", t.Ticker, err)
@@ -254,6 +261,10 @@ func exportCompanyDetails(ctx context.Context, store *db.Store, outDir string) e
 	}
 
 	for _, r := range rankings {
+		if !safeFilename.MatchString(r.Ticker) {
+			log.Printf("[export] company ticker %q has unsafe characters, skipping", r.Ticker)
+			continue
+		}
 		company, err := store.GetCompanyByTicker(ctx, r.Ticker)
 		if err != nil {
 			log.Printf("[export] company %s error: %v", r.Ticker, err)
@@ -272,14 +283,17 @@ func exportCompanyDetails(ctx context.Context, store *db.Store, outDir string) e
 		scoreHistory, err := store.GetScoreHistory(ctx, company.ID, 50)
 		if err != nil {
 			log.Printf("[export] company %s score history: %v", r.Ticker, err)
+			scoreHistory = nil
 		}
 		timeline, err := store.GetCompanyTimeline(ctx, company.ID, 50)
 		if err != nil {
 			log.Printf("[export] company %s timeline: %v", r.Ticker, err)
+			timeline = nil
 		}
 		graph, err := store.BFSGraph(ctx, company.ID, "company", 2, 200)
 		if err != nil {
 			log.Printf("[export] company %s connections: %v", r.Ticker, err)
+			graph = nil
 		}
 
 		// Score breakdown contributors.
@@ -322,17 +336,17 @@ func exportCompanyDetails(ctx context.Context, store *db.Store, outDir string) e
 				"subsector": company.Subsector,
 				"scores":    latestScore,
 			},
-			"timeline":     timeline,
-			"scoreHistory": scoreHistory,
+			"timeline":     emptyIfNil(timeline),
+			"scoreHistory": emptyIfNil(scoreHistory),
 			"connections":  graph,
 			"breakdown": map[string]any{
-				"insider_trades": insiderTrades,
-				"sanctions":      sanctions,
-				"contracts":      contracts,
-				"donations":      donations,
-				"market_data":    marketData,
+				"insider_trades": emptyIfNil(insiderTrades),
+				"sanctions":      emptyIfNil(sanctions),
+				"contracts":      emptyIfNil(contracts),
+				"donations":      emptyIfNil(donations),
+				"market_data":    emptyIfNil(marketData),
 			},
-			"events": events,
+			"events": emptyIfNil(events),
 		}
 
 		if err := writeJSON(filepath.Join(dir, r.Ticker+".json"), envelope(bundle)); err != nil {
@@ -354,6 +368,10 @@ func exportPersonDetails(ctx context.Context, store *db.Store, outDir string) er
 
 	exported := 0
 	for _, p := range persons {
+		if !safeFilename.MatchString(p.Slug) {
+			log.Printf("[export] person slug %q has unsafe characters, skipping", p.Slug)
+			continue
+		}
 		profile, err := store.GetPersonProfile(ctx, p.Slug)
 		if err != nil {
 			continue
@@ -380,6 +398,14 @@ func envelope(data any) map[string]any {
 	return map[string]any{"data": data}
 }
 
+// emptyIfNil returns an empty slice (marshals as []) if the input is nil.
+func emptyIfNil[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
+}
+
 // writeJSON marshals data to a JSON file, creating parent directories as needed.
 func writeJSON(path string, data any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -389,7 +415,9 @@ func writeJSON(path string, data any) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	enc := json.NewEncoder(f)
-	return enc.Encode(data)
+	if err := json.NewEncoder(f).Encode(data); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
