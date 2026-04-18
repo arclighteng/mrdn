@@ -20,12 +20,15 @@ type HeatmapEntry struct {
 // sector. Companies with no scores are excluded. Sectors are ordered by
 // average composite score descending.
 func (s *Store) GetScoreHeatmap(ctx context.Context) ([]HeatmapEntry, error) {
-	rows, err := s.db.Query(ctx, `
+	rows, err := s.db.QueryContext(ctx, `
 		WITH latest_scores AS (
-			SELECT DISTINCT ON (company_id)
-				company_id, market_score, policy_score, insider_score, composite_score
-			FROM scores
-			ORDER BY company_id, computed_at DESC
+			SELECT company_id, market_score, policy_score, insider_score, composite_score
+			FROM (
+				SELECT company_id, market_score, policy_score, insider_score, composite_score,
+				       ROW_NUMBER() OVER (PARTITION BY company_id ORDER BY computed_at DESC) AS rn
+				FROM scores
+			) ranked
+			WHERE rn = 1
 		)
 		SELECT
 			c.sector,

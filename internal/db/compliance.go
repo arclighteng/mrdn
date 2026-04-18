@@ -2,7 +2,10 @@ package db
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"math"
+	"sort"
 )
 
 // LatencyRow is one row of the STOCK Act disclosure-latency leaderboard.
@@ -22,8 +25,27 @@ type LatencyRow struct {
 	P90Days     int     `json:"p90_days"`
 	WorstDays   int     `json:"worst_days"`
 	WorstTicker *string `json:"worst_ticker,omitempty"`
-	LateCount   int     `json:"late_count"`     // trades disclosed > 45 days after the transaction
-	LatePct     float64 `json:"late_pct"`       // late_count / trades
+	LateCount   int     `json:"late_count"`  // trades disclosed > 45 days after the transaction
+	LatePct     float64 `json:"late_pct"`    // late_count / trades
+}
+
+// percentile computes the p-th percentile (0.0–1.0) of a pre-sorted slice
+// using linear interpolation, matching PERCENTILE_CONT behaviour.
+func percentile(sorted []float64, p float64) float64 {
+	if len(sorted) == 0 {
+		return 0
+	}
+	if len(sorted) == 1 {
+		return sorted[0]
+	}
+	idx := p * float64(len(sorted)-1)
+	lo := int(idx)
+	hi := lo + 1
+	if hi >= len(sorted) {
+		return sorted[len(sorted)-1]
+	}
+	frac := idx - float64(lo)
+	return sorted[lo]*(1-frac) + sorted[hi]*frac
 }
 
 // LatencyLeaderboard returns persons ranked by how badly they violate the
@@ -40,73 +62,117 @@ func (s *Store) LatencyLeaderboard(ctx context.Context, minTrades, limit int) ([
 		limit = 100
 	}
 
+	// Fetch per-person aggregate stats.  All latency values are collected as a
+	// JSON array so percentiles can be computed in Go (SQLite lacks
+	// PERCENTILE_CONT).  The worst-ticker correlated subquery avoids
+	// DISTINCT ON, which SQLite does not support.
 	const q = `
 WITH scored AS (
   SELECT
     ct.person_id,
     ct.ticker,
-    EXTRACT(EPOCH FROM (ct.filed_at - ct.traded_at)) / 86400.0 AS days
+    CAST(ROUND(julianday(ct.filed_at) - julianday(ct.traded_at)) AS INTEGER) AS days
   FROM congressional_trades ct
   WHERE ct.person_id IS NOT NULL
-    AND ct.filed_at IS NOT NULL
+    AND ct.filed_at  IS NOT NULL
     AND ct.traded_at IS NOT NULL
     AND ct.filed_at >= ct.traded_at
-    AND ct.traded_at >= '2000-01-01'::timestamptz
-    AND ct.filed_at  <  '2100-01-01'::timestamptz
+    AND ct.traded_at >= '2000-01-01'
+    AND ct.filed_at  <  '2100-01-01'
 ),
 agg AS (
   SELECT
     person_id,
-    COUNT(*)                                                  AS trades,
-    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY days)         AS median_days,
-    PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY days)         AS p90_days,
-    MAX(days)                                                 AS worst_days,
-    SUM(CASE WHEN days > 45 THEN 1 ELSE 0 END)                AS late_count
+    COUNT(*)                                                          AS trades,
+    MAX(days)                                                         AS worst_days,
+    SUM(CASE WHEN days > 45 THEN 1 ELSE 0 END)                        AS late_count,
+    '[' || GROUP_CONCAT(CAST(ROUND(days) AS INTEGER)) || ']'          AS days_json
   FROM scored
   GROUP BY person_id
-),
-worst AS (
-  SELECT DISTINCT ON (person_id) person_id, ticker, days
-  FROM scored
-  ORDER BY person_id, days DESC
 )
 SELECT
   p.id, p.slug, p.name, p.party, p.state,
   a.trades,
-  ROUND(a.median_days)::INT,
-  ROUND(a.p90_days)::INT,
-  ROUND(a.worst_days)::INT,
-  w.ticker,
+  a.worst_days,
   a.late_count,
-  (a.late_count::float / NULLIF(a.trades, 0))
+  a.days_json,
+  (SELECT s2.ticker
+   FROM scored s2
+   WHERE s2.person_id = a.person_id
+   ORDER BY s2.days DESC
+   LIMIT 1)                                                           AS worst_ticker
 FROM agg a
 JOIN persons p ON p.id = a.person_id
-LEFT JOIN worst w ON w.person_id = a.person_id
-WHERE a.trades >= $1
-ORDER BY a.median_days DESC, (a.late_count::float / NULLIF(a.trades, 0)) DESC, a.trades DESC
-LIMIT $2
+WHERE a.trades >= ?
 `
 
-	rows, err := s.db.Query(ctx, q, minTrades, limit)
+	rows, err := s.db.QueryContext(ctx, q, minTrades)
 	if err != nil {
 		return nil, fmt.Errorf("latency leaderboard query: %w", err)
 	}
 	defer rows.Close()
 
-	out := make([]LatencyRow, 0)
+	type rawRow struct {
+		r        LatencyRow
+		daysJSON string
+	}
+
+	var raw []rawRow
 	for rows.Next() {
-		var r LatencyRow
+		var rr rawRow
 		if err := rows.Scan(
-			&r.PersonID, &r.Slug, &r.Name, &r.Party, &r.State,
-			&r.Trades, &r.MedianDays, &r.P90Days, &r.WorstDays,
-			&r.WorstTicker, &r.LateCount, &r.LatePct,
+			&rr.r.PersonID, &rr.r.Slug, &rr.r.Name, &rr.r.Party, &rr.r.State,
+			&rr.r.Trades, &rr.r.WorstDays, &rr.r.LateCount,
+			&rr.daysJSON, &rr.r.WorstTicker,
 		); err != nil {
 			return nil, fmt.Errorf("scanning latency row: %w", err)
 		}
-		out = append(out, r)
+		raw = append(raw, rr)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating latency rows: %w", err)
+	}
+
+	out := make([]LatencyRow, 0, len(raw))
+	for _, rr := range raw {
+		r := rr.r
+
+		// Parse and sort the latency days, then compute percentiles.
+		var idays []int
+		if err := json.Unmarshal([]byte(rr.daysJSON), &idays); err != nil {
+			return nil, fmt.Errorf("parsing days JSON for person %d: %w", r.PersonID, err)
+		}
+		fdays := make([]float64, len(idays))
+		for i, d := range idays {
+			fdays[i] = float64(d)
+		}
+		sort.Float64s(fdays)
+
+		r.MedianDays = int(math.Round(percentile(fdays, 0.5)))
+		r.P90Days = int(math.Round(percentile(fdays, 0.9)))
+
+		if r.Trades > 0 {
+			r.LatePct = float64(r.LateCount) / float64(r.Trades)
+		}
+
+		out = append(out, r)
+	}
+
+	// Sort: median desc, then late_pct desc, then trades desc — matching the
+	// original ORDER BY clause.
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].MedianDays != out[j].MedianDays {
+			return out[i].MedianDays > out[j].MedianDays
+		}
+		if out[i].LatePct != out[j].LatePct {
+			return out[i].LatePct > out[j].LatePct
+		}
+		return out[i].Trades > out[j].Trades
+	})
+
+	// Apply limit in Go (after in-process sort).
+	if limit < len(out) {
+		out = out[:limit]
 	}
 	return out, nil
 }
@@ -122,27 +188,57 @@ type LatencySummary struct {
 
 // LatencySummaryAll returns dataset-wide STOCK Act compliance stats.
 func (s *Store) LatencySummaryAll(ctx context.Context) (LatencySummary, error) {
+	// Collect every scoreable latency value as a JSON array so the median can
+	// be computed in Go (SQLite lacks PERCENTILE_CONT).
 	const q = `
-WITH scored AS (
-  SELECT EXTRACT(EPOCH FROM (filed_at - traded_at)) / 86400.0 AS days
-  FROM congressional_trades
-  WHERE filed_at IS NOT NULL AND traded_at IS NOT NULL AND filed_at >= traded_at
-    AND traded_at >= '2000-01-01'::timestamptz
-    AND filed_at  <  '2100-01-01'::timestamptz
-)
 SELECT
   COUNT(*),
-  COALESCE(ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY days))::INT, 0),
   COALESCE(SUM(CASE WHEN days > 45 THEN 1 ELSE 0 END), 0),
-  COALESCE(SUM(CASE WHEN days > 45 THEN 1 ELSE 0 END)::float / NULLIF(COUNT(*), 0), 0),
-  COALESCE(ROUND(MAX(days))::INT, 0)
-FROM scored
+  COALESCE(CAST(ROUND(MAX(days)) AS INTEGER), 0),
+  '[' || GROUP_CONCAT(CAST(ROUND(days) AS INTEGER)) || ']'
+FROM (
+  SELECT
+    CAST(ROUND(julianday(filed_at) - julianday(traded_at)) AS INTEGER) AS days
+  FROM congressional_trades
+  WHERE filed_at  IS NOT NULL
+    AND traded_at IS NOT NULL
+    AND filed_at >= traded_at
+    AND traded_at >= '2000-01-01'
+    AND filed_at  <  '2100-01-01'
+)
 `
-	var s2 LatencySummary
-	if err := s.db.QueryRow(ctx, q).Scan(
-		&s2.TotalScoreable, &s2.MedianDays, &s2.LateCount, &s2.LatePct, &s2.WorstDays,
+	var (
+		total     int
+		lateCount int
+		worstDays int
+		daysJSON  string
+	)
+	if err := s.db.QueryRowContext(ctx, q).Scan(
+		&total, &lateCount, &worstDays, &daysJSON,
 	); err != nil {
 		return LatencySummary{}, fmt.Errorf("latency summary: %w", err)
 	}
-	return s2, nil
+
+	var idays []int
+	if err := json.Unmarshal([]byte(daysJSON), &idays); err != nil {
+		return LatencySummary{}, fmt.Errorf("parsing summary days JSON: %w", err)
+	}
+	fdays := make([]float64, len(idays))
+	for i, d := range idays {
+		fdays[i] = float64(d)
+	}
+	sort.Float64s(fdays)
+
+	var latePct float64
+	if total > 0 {
+		latePct = float64(lateCount) / float64(total)
+	}
+
+	return LatencySummary{
+		TotalScoreable: total,
+		MedianDays:     int(math.Round(percentile(fdays, 0.5))),
+		LateCount:      lateCount,
+		LatePct:        latePct,
+		WorstDays:      worstDays,
+	}, nil
 }

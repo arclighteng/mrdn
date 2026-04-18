@@ -3,7 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
-	"time"
+	"strings"
 )
 
 // SwarmRow is one cluster: a ticker traded by multiple reps in a tight window.
@@ -12,15 +12,15 @@ import (
 // any bucket with ≥minReps distinct persons. No prediction, no inference —
 // just real same-week activity from the House Clerk PTR feed.
 type SwarmRow struct {
-	Ticker      string   `json:"ticker"`
-	WeekStart   string   `json:"week_start"`
-	Reps        int      `json:"reps"`
-	Trades      int      `json:"trades"`
-	Buys        int      `json:"buys"`
-	Sells       int      `json:"sells"`
-	RCount      int      `json:"r_count"`
-	DCount      int      `json:"d_count"`
-	RepNames    []string `json:"rep_names"`
+	Ticker    string   `json:"ticker"`
+	WeekStart string   `json:"week_start"`
+	Reps      int      `json:"reps"`
+	Trades    int      `json:"trades"`
+	Buys      int      `json:"buys"`
+	Sells     int      `json:"sells"`
+	RCount    int      `json:"r_count"`
+	DCount    int      `json:"d_count"`
+	RepNames  []string `json:"rep_names"`
 }
 
 // SwarmDetector returns weekly clusters of same-ticker trading activity.
@@ -40,7 +40,7 @@ func (s *Store) SwarmDetector(ctx context.Context, minReps, limit int) ([]SwarmR
 WITH t AS (
   SELECT
     ct.ticker,
-    date_trunc('week', ct.traded_at)::date AS week_start,
+    date(ct.traded_at, 'weekday 0', '-6 days') AS week_start,
     ct.person_id,
     ct.trade_type,
     p.name,
@@ -51,8 +51,8 @@ WITH t AS (
     AND ct.ticker <> ''
     AND ct.ticker <> '--'
     AND ct.traded_at IS NOT NULL
-    AND ct.traded_at >= '2000-01-01'::timestamptz
-    AND ct.traded_at <  '2100-01-01'::timestamptz
+    AND ct.traded_at >= '2000-01-01'
+    AND ct.traded_at <  '2100-01-01'
 )
 SELECT
   ticker,
@@ -63,15 +63,15 @@ SELECT
   SUM(CASE WHEN trade_type LIKE 'sale%' THEN 1 ELSE 0 END)       AS sells,
   COUNT(DISTINCT CASE WHEN party = 'R' THEN person_id END)       AS r_count,
   COUNT(DISTINCT CASE WHEN party = 'D' THEN person_id END)       AS d_count,
-  ARRAY_AGG(DISTINCT name)                                       AS rep_names
+  GROUP_CONCAT(DISTINCT name)                                    AS rep_names
 FROM t
 GROUP BY ticker, week_start
-HAVING COUNT(DISTINCT person_id) >= $1
+HAVING COUNT(DISTINCT person_id) >= ?
 ORDER BY week_start DESC, reps DESC
-LIMIT $2
+LIMIT ?
 `
 
-	rows, err := s.db.Query(ctx, q, minReps, limit)
+	rows, err := s.db.QueryContext(ctx, q, minReps, limit)
 	if err != nil {
 		return nil, fmt.Errorf("swarm detector query: %w", err)
 	}
@@ -80,14 +80,16 @@ LIMIT $2
 	out := make([]SwarmRow, 0)
 	for rows.Next() {
 		var r SwarmRow
-		var ws time.Time
+		var repNamesStr string
 		if err := rows.Scan(
-			&r.Ticker, &ws, &r.Reps, &r.Trades,
-			&r.Buys, &r.Sells, &r.RCount, &r.DCount, &r.RepNames,
+			&r.Ticker, &r.WeekStart, &r.Reps, &r.Trades,
+			&r.Buys, &r.Sells, &r.RCount, &r.DCount, &repNamesStr,
 		); err != nil {
 			return nil, fmt.Errorf("scanning swarm row: %w", err)
 		}
-		r.WeekStart = ws.Format("2006-01-02")
+		if repNamesStr != "" {
+			r.RepNames = strings.Split(repNamesStr, ",")
+		}
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
@@ -102,14 +104,14 @@ LIMIT $2
 // counts as one buyer). Score is signed: positive = Republican-leaning,
 // negative = Democratic-leaning, zero = perfectly split.
 type PartisanRow struct {
-	Ticker  string  `json:"ticker"`
-	RBuyers int     `json:"r_buyers"`
-	DBuyers int     `json:"d_buyers"`
-	RSellers int    `json:"r_sellers"`
-	DSellers int    `json:"d_sellers"`
-	Total   int     `json:"total_reps"`
-	Score   float64 `json:"score"` // -1.0 (all D activity) → +1.0 (all R activity)
-	Mode    string  `json:"mode"`  // "consensus" | "contrarian" | "partisan_r" | "partisan_d"
+	Ticker   string  `json:"ticker"`
+	RBuyers  int     `json:"r_buyers"`
+	DBuyers  int     `json:"d_buyers"`
+	RSellers int     `json:"r_sellers"`
+	DSellers int     `json:"d_sellers"`
+	Total    int     `json:"total_reps"`
+	Score    float64 `json:"score"` // -1.0 (all D activity) → +1.0 (all R activity)
+	Mode     string  `json:"mode"`  // "consensus" | "contrarian" | "partisan_r" | "partisan_d"
 }
 
 // PartisanTickers returns tickers grouped by how the two parties trade them.
@@ -156,10 +158,10 @@ SELECT
   COUNT(DISTINCT person_id)                                                  AS total_reps
 FROM t
 GROUP BY ticker
-HAVING COUNT(DISTINCT person_id) >= $1
+HAVING COUNT(DISTINCT person_id) >= ?
 `
 
-	rows, err := s.db.Query(ctx, q, minReps)
+	rows, err := s.db.QueryContext(ctx, q, minReps)
 	if err != nil {
 		return nil, fmt.Errorf("partisan tickers query: %w", err)
 	}

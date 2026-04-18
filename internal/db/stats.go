@@ -1,6 +1,9 @@
 package db
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // EventCategoryCount is a per-category aggregate of recent events.
 type EventCategoryCount struct {
@@ -21,34 +24,37 @@ type ActivityStats struct {
 func (s *Store) GetActivityStats(ctx context.Context) (*ActivityStats, error) {
 	stats := &ActivityStats{}
 
-	if err := s.db.QueryRow(ctx,
-		`SELECT count(*) FROM events WHERE occurred_at >= NOW() - INTERVAL '24 hours'`).
+	cutoff24h := time.Now().UTC().Add(-24 * time.Hour).Format(time.RFC3339)
+	cutoff7d := time.Now().UTC().Add(-7 * 24 * time.Hour).Format(time.RFC3339)
+
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT count(*) FROM events WHERE occurred_at >= ?`, cutoff24h).
 		Scan(&stats.EventsLast24h); err != nil {
 		return nil, err
 	}
-	if err := s.db.QueryRow(ctx,
-		`SELECT count(*) FROM events WHERE occurred_at >= NOW() - INTERVAL '7 days'`).
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT count(*) FROM events WHERE occurred_at >= ?`, cutoff7d).
 		Scan(&stats.EventsLast7d); err != nil {
 		return nil, err
 	}
-	if err := s.db.QueryRow(ctx,
+	if err := s.db.QueryRowContext(ctx,
 		`SELECT count(DISTINCT company_id) FROM scores`).
 		Scan(&stats.CompaniesScored); err != nil {
 		return nil, err
 	}
-	if err := s.db.QueryRow(ctx,
+	if err := s.db.QueryRowContext(ctx,
 		`SELECT count(*) FROM companies`).
 		Scan(&stats.CompaniesTotal); err != nil {
 		return nil, err
 	}
 
-	rows, err := s.db.Query(ctx,
+	rows, err := s.db.QueryContext(ctx,
 		`SELECT event_type, count(*) AS c
 		 FROM events
-		 WHERE occurred_at >= NOW() - INTERVAL '24 hours'
+		 WHERE occurred_at >= ?
 		 GROUP BY event_type
 		 ORDER BY c DESC
-		 LIMIT 20`)
+		 LIMIT 20`, cutoff24h)
 	if err != nil {
 		return nil, err
 	}
@@ -79,17 +85,18 @@ func (s *Store) GetActivityHeatmap(ctx context.Context, days int) ([]ActivityHea
 	if days <= 0 || days > 3650 {
 		days = 365
 	}
-	rows, err := s.db.Query(ctx, `
-		SELECT EXTRACT(DOW   FROM traded_at)::int AS dow,
-		       EXTRACT(MONTH FROM traded_at)::int AS month,
-		       COUNT(*)::int
+	cutoff := time.Now().UTC().AddDate(0, 0, -days).Format(time.RFC3339)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT CAST(strftime('%w', traded_at) AS INTEGER) AS dow,
+		       CAST(strftime('%m', traded_at) AS INTEGER) AS month,
+		       COUNT(*)
 		FROM congressional_trades
-		WHERE traded_at >= NOW() - make_interval(days => $1)
-		  AND traded_at >= '2000-01-01'::timestamptz
-		  AND traded_at <  '2100-01-01'::timestamptz
+		WHERE traded_at >= ?
+		  AND traded_at >= '2000-01-01T00:00:00Z'
+		  AND traded_at <  '2100-01-01T00:00:00Z'
 		GROUP BY dow, month
 		ORDER BY dow, month
-	`, days)
+	`, cutoff)
 	if err != nil {
 		return nil, err
 	}
@@ -131,24 +138,25 @@ func (s *Store) TradesByDowMonth(ctx context.Context, dow, month, days, limit in
 	if days <= 0 || days > 3650 {
 		days = 3650
 	}
+	cutoff := time.Now().UTC().AddDate(0, 0, -days).Format(time.RFC3339)
 	q := `
 SELECT ct.id,
-       to_char(ct.traded_at, 'YYYY-MM-DD'),
-       to_char(ct.filed_at,  'YYYY-MM-DD'),
+       strftime('%Y-%m-%d', ct.traded_at),
+       strftime('%Y-%m-%d', ct.filed_at),
        p.slug, p.name, p.party, p.state,
        ct.ticker, ct.trade_type,
        ct.amount_range_low, ct.amount_range_high,
        ` + midpointExpr + `
 FROM congressional_trades ct
 JOIN persons p ON p.id = ct.person_id
-WHERE EXTRACT(DOW   FROM ct.traded_at)::int = $1
-  AND EXTRACT(MONTH FROM ct.traded_at)::int = $2
-  AND ct.traded_at >= NOW() - make_interval(days => $3)
-  AND ct.traded_at >= '2000-01-01'::timestamptz
-  AND ct.traded_at <  '2100-01-01'::timestamptz
+WHERE CAST(strftime('%w', ct.traded_at) AS INTEGER) = ?
+  AND CAST(strftime('%m', ct.traded_at) AS INTEGER) = ?
+  AND ct.traded_at >= ?
+  AND ct.traded_at >= '2000-01-01T00:00:00Z'
+  AND ct.traded_at <  '2100-01-01T00:00:00Z'
 ORDER BY ct.traded_at DESC, ct.id DESC
-LIMIT $4`
-	rows, err := s.db.Query(ctx, q, dow, month, days, limit)
+LIMIT ?`
+	rows, err := s.db.QueryContext(ctx, q, dow, month, cutoff, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -174,19 +182,19 @@ func (s *Store) TradesByPersonTicker(ctx context.Context, slug, ticker string, l
 	}
 	q := `
 SELECT ct.id,
-       to_char(ct.traded_at, 'YYYY-MM-DD'),
-       to_char(ct.filed_at,  'YYYY-MM-DD'),
+       strftime('%Y-%m-%d', ct.traded_at),
+       strftime('%Y-%m-%d', ct.filed_at),
        p.slug, p.name, p.party, p.state,
        ct.ticker, ct.trade_type,
        ct.amount_range_low, ct.amount_range_high,
        ` + midpointExpr + `
 FROM congressional_trades ct
 JOIN persons p ON p.id = ct.person_id
-WHERE p.slug = $1
-  AND ct.ticker = $2
+WHERE p.slug = ?
+  AND ct.ticker = ?
 ORDER BY ct.traded_at DESC, ct.id DESC
-LIMIT $3`
-	rows, err := s.db.Query(ctx, q, slug, ticker, limit)
+LIMIT ?`
+	rows, err := s.db.QueryContext(ctx, q, slug, ticker, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -217,11 +225,11 @@ type PartySectorCell struct {
 // (party × sector) combination. Unknown parties collapse to "?", companies
 // without a sector are excluded.
 func (s *Store) GetPartySectorHeatmap(ctx context.Context) ([]PartySectorCell, error) {
-	rows, err := s.db.Query(ctx, `
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT COALESCE(NULLIF(p.party,''), '?') AS party,
 		       c.sector,
 		       COUNT(*) AS trade_count,
-		       COALESCE(SUM(`+midpointExpr+`), 0)::bigint AS volume_mid
+		       COALESCE(SUM(`+midpointExpr+`), 0) AS volume_mid
 		FROM congressional_trades ct
 		JOIN persons   p ON p.id = ct.person_id
 		JOIN companies c ON c.id = ct.company_id
@@ -262,12 +270,18 @@ func (s *Store) GetRepMonthHeatmap(ctx context.Context, topN int) ([]RepMonthCel
 	if topN <= 0 || topN > 50 {
 		topN = 15
 	}
-	rows, err := s.db.Query(ctx, `
+	// Compute window: first day of the month 11 months ago through the end of
+	// the current month. Pre-computing in Go avoids Postgres-only date_trunc.
+	now := time.Now().UTC()
+	windowStart := time.Date(now.Year(), now.Month()-11, 1, 0, 0, 0, 0, time.UTC).Format(time.RFC3339)
+	windowEnd := time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, time.UTC).Format(time.RFC3339)
+
+	rows, err := s.db.QueryContext(ctx, `
 		WITH window_trades AS (
 			SELECT ct.*
 			FROM congressional_trades ct
-			WHERE ct.traded_at >= (date_trunc('month', NOW()) - interval '11 months')
-			  AND ct.traded_at <  (date_trunc('month', NOW()) + interval '1 month')
+			WHERE ct.traded_at >= ?
+			  AND ct.traded_at <  ?
 		),
 		top_reps AS (
 			SELECT person_id
@@ -275,18 +289,18 @@ func (s *Store) GetRepMonthHeatmap(ctx context.Context, topN int) ([]RepMonthCel
 			WHERE person_id IS NOT NULL
 			GROUP BY person_id
 			ORDER BY COUNT(*) DESC
-			LIMIT $1
+			LIMIT ?
 		)
 		SELECT p.slug, p.name, COALESCE(NULLIF(p.party,''), '?') AS party,
-		       to_char(date_trunc('month', ct.traded_at), 'YYYY-MM') AS month,
+		       strftime('%Y-%m', ct.traded_at) AS month,
 		       COUNT(*) AS trade_count,
-		       COALESCE(SUM(`+midpointExpr+`), 0)::bigint AS volume_mid
+		       COALESCE(SUM(`+midpointExpr+`), 0) AS volume_mid
 		FROM window_trades ct
 		JOIN top_reps  tr ON tr.person_id = ct.person_id
 		JOIN persons   p  ON p.id         = ct.person_id
 		GROUP BY p.slug, p.name, p.party, month
 		ORDER BY p.name, month
-	`, topN)
+	`, windowStart, windowEnd, topN)
 	if err != nil {
 		return nil, err
 	}
@@ -310,8 +324,8 @@ func (s *Store) TradesByPartySector(ctx context.Context, party, sector string, l
 	}
 	q := `
 SELECT ct.id,
-       to_char(ct.traded_at, 'YYYY-MM-DD'),
-       to_char(ct.filed_at,  'YYYY-MM-DD'),
+       strftime('%Y-%m-%d', ct.traded_at),
+       strftime('%Y-%m-%d', ct.filed_at),
        p.slug, p.name, p.party, p.state,
        ct.ticker, ct.trade_type,
        ct.amount_range_low, ct.amount_range_high,
@@ -319,11 +333,11 @@ SELECT ct.id,
 FROM congressional_trades ct
 JOIN persons   p ON p.id = ct.person_id
 JOIN companies c ON c.id = ct.company_id
-WHERE COALESCE(NULLIF(p.party,''), '?') = $1
-  AND c.sector = $2
+WHERE COALESCE(NULLIF(p.party,''), '?') = ?
+  AND c.sector = ?
 ORDER BY ct.traded_at DESC, ct.id DESC
-LIMIT $3`
-	rows, err := s.db.Query(ctx, q, party, sector, limit)
+LIMIT ?`
+	rows, err := s.db.QueryContext(ctx, q, party, sector, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -349,19 +363,19 @@ func (s *Store) TradesByPersonMonth(ctx context.Context, slug, month string, lim
 	}
 	q := `
 SELECT ct.id,
-       to_char(ct.traded_at, 'YYYY-MM-DD'),
-       to_char(ct.filed_at,  'YYYY-MM-DD'),
+       strftime('%Y-%m-%d', ct.traded_at),
+       strftime('%Y-%m-%d', ct.filed_at),
        p.slug, p.name, p.party, p.state,
        ct.ticker, ct.trade_type,
        ct.amount_range_low, ct.amount_range_high,
        ` + midpointExpr + `
 FROM congressional_trades ct
 JOIN persons p ON p.id = ct.person_id
-WHERE p.slug = $1
-  AND to_char(date_trunc('month', ct.traded_at), 'YYYY-MM') = $2
+WHERE p.slug = ?
+  AND strftime('%Y-%m', ct.traded_at) = ?
 ORDER BY ct.traded_at DESC, ct.id DESC
-LIMIT $3`
-	rows, err := s.db.Query(ctx, q, slug, month, limit)
+LIMIT ?`
+	rows, err := s.db.QueryContext(ctx, q, slug, month, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -396,14 +410,14 @@ func (s *Store) GetRepTickerHeatmap(ctx context.Context, n int) ([]RepTickerHeat
 	if n <= 0 || n > 100 {
 		n = 25
 	}
-	rows, err := s.db.Query(ctx, `
+	rows, err := s.db.QueryContext(ctx, `
 		WITH top_persons AS (
 			SELECT ct.person_id
 			FROM congressional_trades ct
 			WHERE ct.person_id IS NOT NULL AND ct.ticker IS NOT NULL AND ct.ticker <> ''
 			GROUP BY ct.person_id
 			ORDER BY COUNT(*) DESC
-			LIMIT $1
+			LIMIT ?
 		),
 		top_tickers AS (
 			SELECT ct.ticker
@@ -412,7 +426,7 @@ func (s *Store) GetRepTickerHeatmap(ctx context.Context, n int) ([]RepTickerHeat
 			WHERE ct.ticker IS NOT NULL AND ct.ticker <> ''
 			GROUP BY ct.ticker
 			ORDER BY COUNT(*) DESC
-			LIMIT $1
+			LIMIT ?
 		)
 		SELECT ct.person_id, p.slug, p.name, ct.ticker, COUNT(*)
 		FROM congressional_trades ct
@@ -421,7 +435,7 @@ func (s *Store) GetRepTickerHeatmap(ctx context.Context, n int) ([]RepTickerHeat
 		JOIN persons      p  ON p.id         = ct.person_id
 		GROUP BY ct.person_id, p.slug, p.name, ct.ticker
 		ORDER BY COUNT(*) DESC
-	`, n)
+	`, n, n)
 	if err != nil {
 		return nil, err
 	}

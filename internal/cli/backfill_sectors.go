@@ -71,11 +71,11 @@ var backfillSectorsCmd = &cobra.Command{
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
-		pool, err := db.Connect(ctx, cfg.DatabaseURL)
+		d, err := db.Connect(ctx, cfg.DatabaseURL)
 		if err != nil {
 			return fmt.Errorf("connecting to database: %w", err)
 		}
-		defer pool.Close()
+		defer d.Close()
 
 		raw, err := os.ReadFile(backfillSectorsFile)
 		if err != nil {
@@ -122,17 +122,18 @@ var backfillSectorsCmd = &cobra.Command{
 			if sub == "" {
 				sub = m.sector
 			}
-			ct, err := pool.Exec(ctx, `
+			ct, err := d.ExecContext(ctx, `
 				UPDATE companies
-				SET sector = $2,
-				    subsector = COALESCE(NULLIF($3,''), subsector)
-				WHERE ticker = $1
-			`, tk, nullIfEmpty(canonical), nullIfEmpty(sub))
+				SET sector = ?,
+				    subsector = COALESCE(NULLIF(?, ''), subsector)
+				WHERE ticker = ?
+			`, nullIfEmpty(canonical), nullIfEmpty(sub), tk)
 			if err != nil {
 				log.Printf("backfill-sectors: update %s: %v", tk, err)
 				continue
 			}
-			if ct.RowsAffected() > 0 {
+			n, _ := ct.RowsAffected()
+			if n > 0 {
 				updated++
 			} else {
 				missing++

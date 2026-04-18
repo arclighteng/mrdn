@@ -31,13 +31,13 @@ Does NOT run the score engine — run score-backfill separately.`,
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
-		pool, err := db.Connect(ctx, cfg.DatabaseURL)
+		d, err := db.Connect(ctx, cfg.DatabaseURL)
 		if err != nil {
 			return fmt.Errorf("connecting to database: %w", err)
 		}
-		defer pool.Close()
+		defer d.Close()
 
-		store := db.NewStore(pool)
+		store := db.NewStore(d)
 		res, err := resolver.New(ctx, store)
 		if err != nil {
 			return fmt.Errorf("initializing resolver: %w", err)

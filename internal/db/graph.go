@@ -15,8 +15,8 @@ const (
 // It represents either a company or a person resolved from the database.
 type GraphNode struct {
 	ID     int    `json:"id"`
-	Type   string `json:"type"`   // "company" or "person"
-	Label  string `json:"label"`  // display name
+	Type   string `json:"type"`             // "company" or "person"
+	Label  string `json:"label"`            // display name
 	Ticker string `json:"ticker,omitempty"` // companies only
 	Slug   string `json:"slug,omitempty"`   // persons only
 }
@@ -191,15 +191,15 @@ func (s *Store) resolveNode(ctx context.Context, id int, entityType string) (Gra
 	node := GraphNode{ID: id, Type: entityType}
 	switch entityType {
 	case "company":
-		err := s.db.QueryRow(ctx,
-			`SELECT name, ticker FROM companies WHERE id = $1`, id,
+		err := s.db.QueryRowContext(ctx,
+			`SELECT name, ticker FROM companies WHERE id = ?`, id,
 		).Scan(&node.Label, &node.Ticker)
 		if err != nil {
 			return GraphNode{}, fmt.Errorf("resolving company %d: %w", id, err)
 		}
 	case "person":
-		err := s.db.QueryRow(ctx,
-			`SELECT name, slug FROM persons WHERE id = $1`, id,
+		err := s.db.QueryRowContext(ctx,
+			`SELECT name, slug FROM persons WHERE id = ?`, id,
 		).Scan(&node.Label, &node.Slug)
 		if err != nil {
 			return GraphNode{}, fmt.Errorf("resolving person %d: %w", id, err)
@@ -214,13 +214,13 @@ func (s *Store) resolveNode(ctx context.Context, id int, entityType string) (Gra
 // either side of the link. It uses the two composite indexes
 // (from_entity, from_type) and (to_entity, to_type) via an OR predicate.
 func (s *Store) getEdgesFrom(ctx context.Context, entityID int, entityType string) ([]EntityLink, error) {
-	rows, err := s.db.Query(ctx, `
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, from_entity, from_type, to_entity, to_type,
 		       relationship, evidence_event_id, discovered_at
 		FROM entity_links
-		WHERE (from_entity = $1 AND from_type = $2)
-		   OR (to_entity   = $1 AND to_type   = $2)
-	`, entityID, entityType)
+		WHERE (from_entity = ? AND from_type = ?)
+		   OR (to_entity   = ? AND to_type   = ?)
+	`, entityID, entityType, entityID, entityType)
 	if err != nil {
 		return nil, err
 	}
@@ -229,13 +229,15 @@ func (s *Store) getEdgesFrom(ctx context.Context, entityID int, entityType strin
 	var links []EntityLink
 	for rows.Next() {
 		var l EntityLink
+		var discoveredAt string
 		if err := rows.Scan(
 			&l.ID, &l.FromEntity, &l.FromType,
 			&l.ToEntity, &l.ToType,
-			&l.Relationship, &l.EvidenceEventID, &l.DiscoveredAt,
+			&l.Relationship, &l.EvidenceEventID, &discoveredAt,
 		); err != nil {
 			return nil, err
 		}
+		l.DiscoveredAt, _ = scanTime(discoveredAt)
 		links = append(links, l)
 	}
 	return links, rows.Err()

@@ -10,12 +10,11 @@ import (
 )
 
 func TestInsertAndGetLatestScore(t *testing.T) {
-	store := setupTestDB(t)
+	store := setupTestTx(t)
 	ctx := context.Background()
 
 	c, err := store.UpsertCompany(ctx, db.Company{Ticker: "SCR1", Name: "Score Test", Sector: db.StrPtr("Technology")})
 	require.NoError(t, err)
-	defer store.DeleteCompany(ctx, c.ID)
 
 	err = store.InsertScore(ctx, db.Score{
 		CompanyID:      c.ID,
@@ -35,13 +34,11 @@ func TestInsertAndGetLatestScore(t *testing.T) {
 }
 
 func TestGetScoreRankings(t *testing.T) {
-	store := setupTestDB(t)
+	store := setupTestTx(t)
 	ctx := context.Background()
 
 	c1, _ := store.UpsertCompany(ctx, db.Company{Ticker: "RNK1", Name: "Rank One", Sector: db.StrPtr("TestSector_Rank")})
 	c2, _ := store.UpsertCompany(ctx, db.Company{Ticker: "RNK2", Name: "Rank Two", Sector: db.StrPtr("TestSector_Rank")})
-	defer store.DeleteCompany(ctx, c1.ID)
-	defer store.DeleteCompany(ctx, c2.ID)
 
 	store.InsertScore(ctx, db.Score{CompanyID: c1.ID, CompositeScore: 80.0, WeightVersion: 1})
 	store.InsertScore(ctx, db.Score{CompanyID: c2.ID, CompositeScore: 60.0, WeightVersion: 1})
@@ -65,22 +62,27 @@ func TestGetScoreRankings(t *testing.T) {
 }
 
 func TestGetScoreMovers(t *testing.T) {
-	store := setupTestDB(t)
+	d := testDB(t)
+	store := db.NewStore(d)
 	ctx := context.Background()
 
-	// Create a company with two scores to guarantee a mover
 	c, err := store.UpsertCompany(ctx, db.Company{Ticker: "MVR1", Name: "Mover Test", Sector: db.StrPtr("TestSector_Mover")})
 	require.NoError(t, err)
-	defer store.DeleteCompany(ctx, c.ID)
 
-	require.NoError(t, store.InsertScore(ctx, db.Score{CompanyID: c.ID, CompositeScore: 40.0, WeightVersion: 1}))
-	require.NoError(t, store.InsertScore(ctx, db.Score{CompanyID: c.ID, CompositeScore: 70.0, WeightVersion: 1}))
+	// Insert scores with explicit timestamps so computed_at values differ
+	_, err = d.ExecContext(ctx,
+		"INSERT INTO scores (company_id, composite_score, weight_version, computed_at) VALUES (?, ?, ?, ?)",
+		c.ID, 40.0, 1, "2026-04-18T10:00:00Z")
+	require.NoError(t, err)
+	_, err = d.ExecContext(ctx,
+		"INSERT INTO scores (company_id, composite_score, weight_version, computed_at) VALUES (?, ?, ?, ?)",
+		c.ID, 70.0, 1, "2026-04-18T16:00:00Z")
+	require.NoError(t, err)
 
 	movers, err := store.GetScoreMovers(ctx, 24, 20)
 	require.NoError(t, err)
 	assert.NotNil(t, movers)
 
-	// Find our test mover
 	var found bool
 	for _, m := range movers {
 		if m.Ticker == "MVR1" {

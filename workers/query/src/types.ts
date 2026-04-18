@@ -49,7 +49,7 @@ export interface ErrorResponse {
 
 /** Cloudflare Worker environment bindings. */
 export interface Env {
-  DATABASE_URL: string;
+  DB: D1Database;
   MQL_KV: KVNamespace;
 }
 

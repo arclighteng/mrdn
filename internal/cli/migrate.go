@@ -20,13 +20,13 @@ var migrateCmd = &cobra.Command{
 		}
 
 		ctx := context.Background()
-		pool, err := db.Connect(ctx, cfg.DatabaseURL)
+		d, err := db.Connect(ctx, cfg.DatabaseURL)
 		if err != nil {
 			return fmt.Errorf("connecting to database: %w", err)
 		}
-		defer pool.Close()
+		defer d.Close()
 
-		if err := db.Migrate(ctx, pool); err != nil {
+		if err := db.Migrate(ctx, d); err != nil {
 			return fmt.Errorf("running migrations: %w", err)
 		}
 

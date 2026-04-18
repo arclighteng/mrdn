@@ -7,9 +7,7 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
-  "dependencies": {
-    "@neondatabase/serverless": "^1.0.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@cloudflare/workers-types": "^4.0.0",
     "typescript": "^5.7.0",

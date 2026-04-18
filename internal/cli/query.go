@@ -29,13 +29,13 @@ var queryCompaniesCmd = &cobra.Command{
 		}
 
 		ctx := context.Background()
-		pool, err := db.Connect(ctx, cfg.DatabaseURL)
+		d, err := db.Connect(ctx, cfg.DatabaseURL)
 		if err != nil {
 			return fmt.Errorf("connecting to database: %w", err)
 		}
-		defer pool.Close()
+		defer d.Close()
 
-		store := db.NewStore(pool)
+		store := db.NewStore(d)
 
 		sector, _ := cmd.Flags().GetString("sector")
 		minScore, _ := cmd.Flags().GetFloat64("min-score")
@@ -84,13 +84,13 @@ var queryEventsCmd = &cobra.Command{
 		}
 
 		ctx := context.Background()
-		pool, err := db.Connect(ctx, cfg.DatabaseURL)
+		d, err := db.Connect(ctx, cfg.DatabaseURL)
 		if err != nil {
 			return fmt.Errorf("connecting to database: %w", err)
 		}
-		defer pool.Close()
+		defer d.Close()
 
-		store := db.NewStore(pool)
+		store := db.NewStore(d)
 
 		source, _ := cmd.Flags().GetString("source")
 		since, _ := cmd.Flags().GetString("since")
@@ -146,13 +146,13 @@ var queryConnectionsCmd = &cobra.Command{
 		}
 
 		ctx := context.Background()
-		pool, err := db.Connect(ctx, cfg.DatabaseURL)
+		d, err := db.Connect(ctx, cfg.DatabaseURL)
 		if err != nil {
 			return fmt.Errorf("connecting to database: %w", err)
 		}
-		defer pool.Close()
+		defer d.Close()
 
-		store := db.NewStore(pool)
+		store := db.NewStore(d)
 
 		company, err := store.GetCompanyByTicker(ctx, ticker)
 		if err != nil {

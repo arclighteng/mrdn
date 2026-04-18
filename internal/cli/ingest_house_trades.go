@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,8 +19,6 @@ import (
 
 	"github.com/arclighteng/mrdn/internal/config"
 	"github.com/arclighteng/mrdn/internal/db"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/spf13/cobra"
 )
 
@@ -76,12 +75,12 @@ var ingestHouseTradesCmd = &cobra.Command{
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
-		pool, err := db.Connect(ctx, cfg.DatabaseURL)
+		d, err := db.Connect(ctx, cfg.DatabaseURL)
 		if err != nil {
 			return fmt.Errorf("connecting to database: %w", err)
 		}
-		defer pool.Close()
-		store := db.NewStore(pool)
+		defer d.Close()
+		store := db.NewStore(d)
 
 		startTime := time.Now()
 		var httpCode int
@@ -184,8 +183,9 @@ var ingestHouseTradesCmd = &cobra.Command{
 
 			eventID, ierr := store.InsertEvent(ctx, ev)
 			if ierr != nil {
-				var pgErr *pgconn.PgError
-				if errors.As(ierr, &pgErr) && pgErr.Code == "23505" {
+				// InsertEvent returns 0 (no error) for duplicates when using
+				// INSERT OR IGNORE. A non-nil error here is a genuine failure.
+				if strings.Contains(ierr.Error(), "UNIQUE constraint failed") {
 					stats.skippedDup++
 				} else {
 					stats.errors++
@@ -257,7 +257,7 @@ func resolvePerson(ctx context.Context, store *db.Store, r *hswRecord, cache map
 		cache[slug] = p.ID
 		return p.ID, false, nil
 	}
-	if !errors.Is(err, pgx.ErrNoRows) && !strings.Contains(err.Error(), "no rows") {
+	if !errors.Is(err, sql.ErrNoRows) && !strings.Contains(err.Error(), "no rows") {
 		return 0, false, err
 	}
 	state := r.State
@@ -288,9 +288,9 @@ func resolvePerson(ctx context.Context, store *db.Store, r *hswRecord, cache map
 }
 
 var (
-	nonAlnum     = regexp.MustCompile(`[^a-z0-9]+`)
-	titlePrefix  = regexp.MustCompile(`(?i)^(hon\.?|mr\.?|mrs\.?|ms\.?|dr\.?|rep\.?|sen\.?)\s+`)
-	amountNumRe  = regexp.MustCompile(`[\d,]+`)
+	nonAlnum    = regexp.MustCompile(`[^a-z0-9]+`)
+	titlePrefix = regexp.MustCompile(`(?i)^(hon\.?|mr\.?|mrs\.?|ms\.?|dr\.?|rep\.?|sen\.?)\s+`)
+	amountNumRe = regexp.MustCompile(`[\d,]+`)
 )
 
 func cleanName(n string) string {

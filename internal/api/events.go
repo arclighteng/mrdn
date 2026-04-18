@@ -7,7 +7,7 @@ import (
 
 	"github.com/arclighteng/mrdn/internal/db"
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5"
+	"database/sql"
 )
 
 // GET /api/v1/events?source=X&type=X&since=T&limit=N&offset=N
@@ -63,7 +63,7 @@ func (s *Server) handleGetEvent(w http.ResponseWriter, r *http.Request) {
 
 	event, err := s.store.GetEvent(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, 404, "NOT_FOUND", "event not found")
 			return
 		}

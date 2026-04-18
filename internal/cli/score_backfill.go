@@ -34,13 +34,13 @@ dashboard with real spread when starting fresh or after a long downtime.`,
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
-		pool, err := db.Connect(ctx, cfg.DatabaseURL)
+		d, err := db.Connect(ctx, cfg.DatabaseURL)
 		if err != nil {
 			return fmt.Errorf("connecting to database: %w", err)
 		}
-		defer pool.Close()
+		defer d.Close()
 
-		store := db.NewStore(pool)
+		store := db.NewStore(d)
 
 		startTime := time.Now()
 		var runErr error
@@ -69,7 +69,7 @@ dashboard with real spread when starting fresh or after a long downtime.`,
 			score.DefaultWeights(),
 		)
 
-		rows, err := pool.Query(ctx, `SELECT DISTINCT company_id FROM events WHERE company_id IS NOT NULL`)
+		rows, err := d.QueryContext(ctx, `SELECT DISTINCT company_id FROM events WHERE company_id IS NOT NULL`)
 		if err != nil {
 			runErr = fmt.Errorf("querying companies with events: %w", err)
 			return runErr

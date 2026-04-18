@@ -8,8 +8,9 @@ describe("compile", () => {
     const q = parse("type:trade by:pelosi since:30d");
     const result = compile(q, null, []);
     expect(result.sql).toContain("congressional_trades");
-    expect(result.sql).toContain("$1");
-    expect(result.params).toContainEqual(["pelosi"]);
+    expect(result.sql).toContain("?");
+    // by:pelosi (no space) → slug IN (?) path; param pushed as scalar
+    expect(result.params).toContain("pelosi");
     expect(result.sql).not.toContain("UNION ALL");
   });
 
@@ -40,7 +41,8 @@ describe("compile", () => {
     const q = parse("type:trade score:>70 since:30d");
     const result = compile(q, null, []);
     expect(result.sql).toContain("latest_scores");
-    expect(result.sql).toContain("DISTINCT ON");
+    // SQLite uses ROW_NUMBER() instead of DISTINCT ON
+    expect(result.sql).toContain("ROW_NUMBER()");
   });
 
   it("compiles group query", () => {
@@ -75,8 +77,10 @@ describe("compile", () => {
   it("compiles signal filter using provided tickers", () => {
     const q = parse("type:trade signal:swarm since:30d");
     const result = compile(q, null, ["MSFT", "AAPL"]);
-    expect(result.sql).toContain("c.ticker = ANY");
-    expect(result.params).toContainEqual(["MSFT", "AAPL"]);
+    // SQLite uses IN (?,?) with scalar params instead of ANY($N) with array param
+    expect(result.sql).toContain("c.ticker IN");
+    expect(result.params).toContain("MSFT");
+    expect(result.params).toContain("AAPL");
   });
 
   it("compiles negated filter", () => {
@@ -89,7 +93,8 @@ describe("compile", () => {
   it("compiles tariff country filter with hs_codes join", () => {
     const q = parse("type:tariff country:RU since:30d");
     const result = compile(q, null, []);
-    expect(result.sql).toContain("affected_countries");
+    // SQLite uses junction table EXISTS query instead of Postgres && array overlap
+    expect(result.sql).toContain("tariff_countries");
   });
 
   it("produces WHERE 1=0 for inapplicable filters", () => {
@@ -98,10 +103,11 @@ describe("compile", () => {
     expect(result.sql).toContain("contracts");
   });
 
-  it("compiles bare text as ILIKE", () => {
+  it("compiles bare text as LIKE (case-insensitive in SQLite)", () => {
     const q = parse("type:trade pelosi since:30d");
     const result = compile(q, null, []);
-    expect(result.sql).toContain("ILIKE");
+    // SQLite LIKE is case-insensitive for ASCII; ILIKE is a Postgres extension
+    expect(result.sql).toContain("LIKE");
   });
 
   it("throws on getGroupKey with invalid group (defense-in-depth)", () => {

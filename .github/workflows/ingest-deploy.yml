@@ -1,8 +1,7 @@
-name: Ingest & Deploy to Cloudflare Pages
+name: Ingest & Deploy to Cloudflare
 
 on:
   schedule:
-    # Every 6 hours
     - cron: '0 */6 * * *'
   workflow_dispatch: {}
 
@@ -20,22 +19,27 @@ jobs:
       - name: Build
         run: go build -o mrdn ./cmd/mrdn
 
+      - name: Run migrations (local SQLite)
+        run: ./mrdn migrate
+        env:
+          DATABASE_URL: file:mrdn.db
+
       - name: Ingest (one-shot poll all sources)
         run: ./mrdn ingest-once
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: file:mrdn.db
           MRDN_POLYGON_API_KEY: ${{ secrets.MRDN_POLYGON_API_KEY }}
           MRDN_FEC_API_KEY: ${{ secrets.MRDN_FEC_API_KEY }}
 
       - name: Compute scores
         run: ./mrdn score-backfill --workers 4
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: file:mrdn.db
 
       - name: Export static JSON
         run: ./mrdn export --out dist/data
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: file:mrdn.db
 
       - name: Copy frontend assets
         run: cp web/static/* dist/
@@ -51,6 +55,32 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Migrate D1 schema
+        run: |
+          cd workers/query
+          npx wrangler d1 execute mrdn-db \
+            --file=../../internal/db/migrations/001_sqlite_initial.sql \
+            --remote
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+
+      - name: Upload data to D1
+        run: |
+          TABLES="companies persons events congressional_trades contracts sanctions tariffs tariff_hs_codes tariff_countries warn_filings donations lobbying court_filings court_filing_parties market_data insider_trades person_committees company_hs_codes score_weights bills entity_aliases entity_links source_meta scores api_keys party_history"
+          > d1-data.sql
+          for TABLE in $TABLES; do
+            echo "-- $TABLE" >> d1-data.sql
+            sqlite3 mrdn.db ".mode insert $TABLE" "SELECT * FROM $TABLE;" >> d1-data.sql 2>/dev/null || true
+          done
+
+          split -l 500 -d d1-data.sql d1-chunk-
+          cd workers/query
+          for CHUNK in ../../d1-chunk-*; do
+            npx wrangler d1 execute mrdn-db --file="$CHUNK" --remote || true
+          done
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+
       - name: Install Worker dependencies
         run: cd workers/query && npm ci
 
@@ -62,15 +92,13 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
 
-      - name: Upload data metadata and signal blobs to KV
+      - name: Upload signal and metadata to KV
         run: |
           EXPORTED_AT=$(python3 -c "import json; print(json.load(open('dist/data/meta.json'))['exported_at'])")
           npx wrangler kv key put --namespace-id=${{ vars.MQL_KV_NAMESPACE_ID }} "meta:data_as_of" "$EXPORTED_AT"
 
-          # Upload signal membership blobs (ticker lists for each signal type)
           for SIGNAL_FILE in dist/data/signals/swarms.json dist/data/signals/first-movers.json dist/data/signals/round-trips.json dist/data/signals/partisan-consensus.json dist/data/signals/partisan-contrarian.json; do
             SIGNAL_NAME=$(basename "$SIGNAL_FILE" .json)
-            # Extract ticker list from the signal JSON and upload to KV
             python3 -c "
           import json, sys
           data = json.load(open('$SIGNAL_FILE'))
@@ -82,7 +110,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
 
-      - name: Prune old data
+      - name: Prune old data (local)
         run: ./mrdn prune --keep-days 90
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: file:mrdn.db

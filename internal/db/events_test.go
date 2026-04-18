@@ -12,7 +12,7 @@ import (
 )
 
 func TestInsertEvent_Dedup(t *testing.T) {
-	store := setupTestDB(t)
+	store := setupTestTx(t)
 	ctx := context.Background()
 
 	srcID := "dedup-001"
@@ -35,7 +35,7 @@ func TestInsertEvent_Dedup(t *testing.T) {
 }
 
 func TestListEvents(t *testing.T) {
-	store := setupTestDB(t)
+	store := setupTestTx(t)
 	ctx := context.Background()
 
 	listSrcID := "list-001"
@@ -53,10 +53,9 @@ func TestListEvents(t *testing.T) {
 }
 
 func TestCountEvents(t *testing.T) {
-	store := setupTestDB(t)
+	store := setupTestTx(t)
 	ctx := context.Background()
 
-	// Count with no events should be 0
 	count, err := store.CountEvents(ctx, db.EventFilter{Source: "nonexistent_source_xyz"})
 	require.NoError(t, err)
 	assert.Equal(t, 0, count)

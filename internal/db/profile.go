@@ -2,7 +2,9 @@ package db
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 )
 
@@ -101,7 +103,7 @@ COALESCE(
     ELSE 0
   END,
   0
-)::BIGINT
+)
 `
 
 // GetPersonProfile assembles every signal we can compute for a single rep.
@@ -120,7 +122,8 @@ func (s *Store) GetPersonProfile(ctx context.Context, slug string) (PersonProfil
 	}
 
 	// 1. Headline counts + estimated $ volume.
-	if err := s.db.QueryRow(ctx, `
+	var firstTradeStr, lastTradeStr *string
+	if err := s.db.QueryRowContext(ctx, `
 		SELECT
 			COUNT(*),
 			COUNT(DISTINCT ct.ticker),
@@ -132,30 +135,44 @@ func (s *Store) GetPersonProfile(ctx context.Context, slug string) (PersonProfil
 			MIN(ct.traded_at),
 			MAX(ct.traded_at)
 		FROM congressional_trades ct
-		WHERE ct.person_id = $1
+		WHERE ct.person_id = ?
 	`, p.ID).Scan(
 		&prof.Trades, &prof.Tickers, &prof.Buys, &prof.Sells,
 		&prof.EstVolumeUSD, &prof.EstBuyVolumeUSD, &prof.EstSellVolumeUSD,
-		&prof.FirstTrade, &prof.LastTrade,
+		&firstTradeStr, &lastTradeStr,
 	); err != nil {
 		return prof, fmt.Errorf("profile headline: %w", err)
 	}
+	prof.FirstTrade = scanTimePtr(firstTradeStr)
+	prof.LastTrade = scanTimePtr(lastTradeStr)
 
 	// 2. Latency stats (only for trades with both dates).
-	_ = s.db.QueryRow(ctx, `
-		WITH scored AS (
-			SELECT EXTRACT(EPOCH FROM (filed_at - traded_at)) / 86400.0 AS days
-			FROM congressional_trades
-			WHERE person_id = $1 AND filed_at IS NOT NULL AND traded_at IS NOT NULL AND filed_at >= traded_at
-		)
+	// Fetch all latency values as a JSON array and compute percentiles in Go,
+	// since SQLite does not support PERCENTILE_CONT.
+	var latencyJSON *string
+	var lateCount int
+	var totalCount int
+	_ = s.db.QueryRowContext(ctx, `
 		SELECT
-			COALESCE(ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY days))::INT, 0),
-			COALESCE(SUM(CASE WHEN days > 45 THEN 1 ELSE 0 END)::float / NULLIF(COUNT(*), 0), 0)
-		FROM scored
-	`, p.ID).Scan(&prof.MedianLatencyDays, &prof.LatePct)
+			'[' || GROUP_CONCAT(CAST(ROUND(julianday(filed_at) - julianday(traded_at)) AS INTEGER)) || ']',
+			SUM(CASE WHEN (julianday(filed_at) - julianday(traded_at)) > 45 THEN 1 ELSE 0 END),
+			COUNT(*)
+		FROM congressional_trades
+		WHERE person_id = ? AND filed_at IS NOT NULL AND traded_at IS NOT NULL AND filed_at >= traded_at
+	`, p.ID).Scan(&latencyJSON, &lateCount, &totalCount)
+	if latencyJSON != nil && *latencyJSON != "" && *latencyJSON != "[]" {
+		var days []float64
+		if err := json.Unmarshal([]byte(*latencyJSON), &days); err == nil {
+			sort.Float64s(days)
+			prof.MedianLatencyDays = int(percentile(days, 0.5) + 0.5)
+		}
+	}
+	if totalCount > 0 {
+		prof.LatePct = float64(lateCount) / float64(totalCount)
+	}
 
 	// 3. Top 10 tickers by trade count.
-	rows, err := s.db.Query(ctx, `
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT
 			ct.ticker,
 			COUNT(*),
@@ -163,7 +180,7 @@ func (s *Store) GetPersonProfile(ctx context.Context, slug string) (PersonProfil
 			SUM(CASE WHEN ct.trade_type = 'purchase' THEN 1 ELSE 0 END),
 			SUM(CASE WHEN ct.trade_type LIKE 'sale%' THEN 1 ELSE 0 END)
 		FROM congressional_trades ct
-		WHERE ct.person_id = $1 AND ct.ticker IS NOT NULL AND ct.ticker <> '' AND ct.ticker <> '--'
+		WHERE ct.person_id = ? AND ct.ticker IS NOT NULL AND ct.ticker <> '' AND ct.ticker <> '--'
 		GROUP BY ct.ticker
 		ORDER BY COUNT(*) DESC, SUM(`+midpointExpr+`) DESC
 		LIMIT 10
@@ -179,7 +196,7 @@ func (s *Store) GetPersonProfile(ctx context.Context, slug string) (PersonProfil
 	}
 
 	// 4. Solo tickers — tickers ONLY this rep ever traded.
-	soloRows, err := s.db.Query(ctx, `
+	soloRows, err := s.db.QueryContext(ctx, `
 		SELECT
 			ct.ticker,
 			COUNT(*),
@@ -187,16 +204,16 @@ func (s *Store) GetPersonProfile(ctx context.Context, slug string) (PersonProfil
 			SUM(CASE WHEN ct.trade_type = 'purchase' THEN 1 ELSE 0 END),
 			SUM(CASE WHEN ct.trade_type LIKE 'sale%' THEN 1 ELSE 0 END)
 		FROM congressional_trades ct
-		WHERE ct.person_id = $1
+		WHERE ct.person_id = ?
 		  AND ct.ticker IS NOT NULL AND ct.ticker <> '' AND ct.ticker <> '--'
 		  AND NOT EXISTS (
 			SELECT 1 FROM congressional_trades ct2
-			WHERE ct2.ticker = ct.ticker AND ct2.person_id <> $1 AND ct2.person_id IS NOT NULL
+			WHERE ct2.ticker = ct.ticker AND ct2.person_id <> ? AND ct2.person_id IS NOT NULL
 		  )
 		GROUP BY ct.ticker
 		ORDER BY SUM(`+midpointExpr+`) DESC, COUNT(*) DESC
 		LIMIT 10
-	`, p.ID)
+	`, p.ID, p.ID)
 	if err == nil {
 		defer soloRows.Close()
 		for soloRows.Next() {
@@ -210,31 +227,35 @@ func (s *Store) GetPersonProfile(ctx context.Context, slug string) (PersonProfil
 	// 5. Biggest single trade.
 	var bt BiggestTrade
 	var ticker, ttype *string
-	if err := s.db.QueryRow(ctx, `
+	var tradedAtStr string
+	if err := s.db.QueryRowContext(ctx, `
 		SELECT ct.ticker, ct.trade_type, `+midpointExpr+` AS est, ct.traded_at
 		FROM congressional_trades ct
-		WHERE ct.person_id = $1 AND ct.traded_at IS NOT NULL
-		ORDER BY est DESC NULLS LAST, ct.traded_at DESC
+		WHERE ct.person_id = ? AND ct.traded_at IS NOT NULL
+		ORDER BY est DESC, ct.traded_at DESC
 		LIMIT 1
-	`, p.ID).Scan(&ticker, &ttype, &bt.EstAmount, &bt.TradedAt); err == nil && bt.EstAmount > 0 {
+	`, p.ID).Scan(&ticker, &ttype, &bt.EstAmount, &tradedAtStr); err == nil && bt.EstAmount > 0 {
 		if ticker != nil {
 			bt.Ticker = *ticker
 		}
 		if ttype != nil {
 			bt.TradeType = *ttype
 		}
+		if t, err := scanTime(tradedAtStr); err == nil {
+			bt.TradedAt = t
+		}
 		prof.BiggestTrade = &bt
 	}
 
 	// 6. Monthly volume timeline.
-	monthRows, err := s.db.Query(ctx, `
+	monthRows, err := s.db.QueryContext(ctx, `
 		SELECT
-			to_char(date_trunc('month', ct.traded_at), 'YYYY-MM'),
+			strftime('%Y-%m', ct.traded_at),
 			COALESCE(SUM(`+midpointExpr+`), 0),
 			COALESCE(SUM(CASE WHEN ct.trade_type = 'purchase' THEN `+midpointExpr+` ELSE 0 END), 0),
 			COUNT(*)
 		FROM congressional_trades ct
-		WHERE ct.person_id = $1 AND ct.traded_at IS NOT NULL
+		WHERE ct.person_id = ? AND ct.traded_at IS NOT NULL
 		GROUP BY 1
 		ORDER BY 1 ASC
 	`, p.ID)
@@ -250,26 +271,30 @@ func (s *Store) GetPersonProfile(ctx context.Context, slug string) (PersonProfil
 
 	// 7. Swarm participation — # of (ticker, week) buckets where this rep was
 	// part of a ≥4-rep cluster.
-	_ = s.db.QueryRow(ctx, `
+	// SQLite has no date_trunc; use ISO week Monday via date(x, 'weekday 0', '-6 days').
+	_ = s.db.QueryRowContext(ctx, `
 		WITH clusters AS (
-			SELECT ct.ticker, date_trunc('week', ct.traded_at) AS wk, COUNT(DISTINCT ct.person_id) AS reps
+			SELECT ct.ticker,
+			       date(ct.traded_at, 'weekday 0', '-6 days') AS wk,
+			       COUNT(DISTINCT ct.person_id) AS reps
 			FROM congressional_trades ct
 			WHERE ct.ticker IS NOT NULL AND ct.ticker <> '' AND ct.traded_at IS NOT NULL
-			GROUP BY ct.ticker, date_trunc('week', ct.traded_at)
+			GROUP BY ct.ticker, date(ct.traded_at, 'weekday 0', '-6 days')
 			HAVING COUNT(DISTINCT ct.person_id) >= 4
 		)
-		SELECT COUNT(DISTINCT (ct.ticker, date_trunc('week', ct.traded_at)))
+		SELECT COUNT(DISTINCT ct.ticker || '|' || date(ct.traded_at, 'weekday 0', '-6 days'))
 		FROM congressional_trades ct
-		JOIN clusters c ON c.ticker = ct.ticker AND c.wk = date_trunc('week', ct.traded_at)
-		WHERE ct.person_id = $1
+		JOIN clusters c ON c.ticker = ct.ticker
+		  AND c.wk = date(ct.traded_at, 'weekday 0', '-6 days')
+		WHERE ct.person_id = ?
 	`, p.ID).Scan(&prof.SwarmCount)
 
 	// 7b. Net flow + concentration (HHI on dollar volume per ticker).
 	prof.NetFlowUSD = prof.EstBuyVolumeUSD - prof.EstSellVolumeUSD
-	hhiRows, err := s.db.Query(ctx, `
+	hhiRows, err := s.db.QueryContext(ctx, `
 		SELECT COALESCE(SUM(`+midpointExpr+`), 0)
 		FROM congressional_trades ct
-		WHERE ct.person_id = $1 AND ct.ticker IS NOT NULL AND ct.ticker <> '' AND ct.ticker <> '--'
+		WHERE ct.person_id = ? AND ct.ticker IS NOT NULL AND ct.ticker <> '' AND ct.ticker <> '--'
 		GROUP BY ct.ticker
 	`, p.ID)
 	if err == nil {
@@ -297,13 +322,13 @@ func (s *Store) GetPersonProfile(ctx context.Context, slug string) (PersonProfil
 	}
 
 	// 7c. Owner-type breakdown (self / joint / spouse / dependent).
-	ownerRows, err := s.db.Query(ctx, `
+	ownerRows, err := s.db.QueryContext(ctx, `
 		SELECT
 		  COALESCE(NULLIF(NULLIF(ct.owner_type, ''), '--'), 'unspecified'),
 		  COUNT(*),
 		  COALESCE(SUM(`+midpointExpr+`), 0)
 		FROM congressional_trades ct
-		WHERE ct.person_id = $1
+		WHERE ct.person_id = ?
 		GROUP BY 1
 		ORDER BY 3 DESC
 	`, p.ID)
@@ -321,11 +346,11 @@ func (s *Store) GetPersonProfile(ctx context.Context, slug string) (PersonProfil
 	// reps return zero rows and we leave PartyHistory nil.
 	// Synthesize a "current" period from persons.party so the UI can show a
 	// continuous timeline (prior periods from party_history + current from persons).
-	phRows, err := s.db.Query(ctx, `
-		SELECT party, to_char(started_at, 'YYYY-MM-DD'), to_char(ended_at, 'YYYY-MM-DD'), note
+	phRows, err := s.db.QueryContext(ctx, `
+		SELECT party, strftime('%Y-%m-%d', started_at), strftime('%Y-%m-%d', ended_at), note
 		FROM party_history
-		WHERE person_id = $1
-		ORDER BY started_at ASC NULLS FIRST
+		WHERE person_id = ?
+		ORDER BY started_at ASC
 	`, p.ID)
 	if err == nil {
 		defer phRows.Close()
@@ -373,25 +398,31 @@ func (s *Store) FirstMovers(ctx context.Context, minBuyers, limit int) ([]FirstM
 		limit = 50
 	}
 
+	// SQLite does not support DISTINCT ON; use ROW_NUMBER() to deduplicate to
+	// one row per (ticker, person_id) — the earliest purchase.
+	// julianday arithmetic replaces EXTRACT(EPOCH FROM ...) / 86400.
 	const q = `
 WITH first_buy AS (
   -- One row per (ticker, person): the first time that person bought that ticker.
-  SELECT DISTINCT ON (ct.ticker, ct.person_id)
-    ct.ticker, ct.person_id, p.name, p.party, ct.traded_at
-  FROM congressional_trades ct
-  JOIN persons p ON p.id = ct.person_id
-  WHERE ct.trade_type = 'purchase'
-    AND ct.ticker IS NOT NULL AND ct.ticker <> '' AND ct.ticker <> '--'
-    AND ct.traded_at IS NOT NULL
-    AND ct.traded_at >= '2000-01-01'::timestamptz
-    AND ct.traded_at <  '2100-01-01'::timestamptz
-  ORDER BY ct.ticker, ct.person_id, ct.traded_at ASC
+  SELECT ticker, person_id, name, party, traded_at
+  FROM (
+    SELECT ct.ticker, ct.person_id, p.name, p.party, ct.traded_at,
+           ROW_NUMBER() OVER (PARTITION BY ct.ticker, ct.person_id ORDER BY ct.traded_at ASC) AS rn
+    FROM congressional_trades ct
+    JOIN persons p ON p.id = ct.person_id
+    WHERE ct.trade_type = 'purchase'
+      AND ct.ticker IS NOT NULL AND ct.ticker <> '' AND ct.ticker <> '--'
+      AND ct.traded_at IS NOT NULL
+      AND ct.traded_at >= '2000-01-01'
+      AND ct.traded_at <  '2100-01-01'
+  ) sub
+  WHERE rn = 1
 ),
 totals AS (
   SELECT ticker, COUNT(*) AS total
   FROM first_buy
   GROUP BY ticker
-  HAVING COUNT(*) >= $1
+  HAVING COUNT(*) >= ?
 ),
 ranked AS (
   SELECT fb.ticker, fb.name, fb.party, fb.traded_at, t.total,
@@ -401,14 +432,14 @@ ranked AS (
   JOIN totals t ON t.ticker = fb.ticker
 )
 SELECT ticker, name, party, traded_at, total,
-       EXTRACT(EPOCH FROM (traded_at - first_date)) / 86400.0 AS lag_days
+       julianday(traded_at) - julianday(first_date) AS lag_days
 FROM ranked
 WHERE rn <= 5
 ORDER BY total DESC, ticker, traded_at ASC
-LIMIT $2
+LIMIT ?
 `
 
-	rows, err := s.db.Query(ctx, q, minBuyers, limit*5)
+	rows, err := s.db.QueryContext(ctx, q, minBuyers, limit*5)
 	if err != nil {
 		return nil, fmt.Errorf("first movers query: %w", err)
 	}
@@ -419,11 +450,15 @@ LIMIT $2
 	for rows.Next() {
 		var ticker, name string
 		var party *string
-		var tradedAt time.Time
+		var tradedAtStr string
 		var total int64
 		var lagDays float64
-		if err := rows.Scan(&ticker, &name, &party, &tradedAt, &total, &lagDays); err != nil {
+		if err := rows.Scan(&ticker, &name, &party, &tradedAtStr, &total, &lagDays); err != nil {
 			return nil, fmt.Errorf("scanning first mover: %w", err)
+		}
+		tradedAt, err := scanTime(tradedAtStr)
+		if err != nil {
+			return nil, fmt.Errorf("parsing first mover traded_at %q: %w", tradedAtStr, err)
 		}
 		row, ok := byTicker[ticker]
 		if !ok {

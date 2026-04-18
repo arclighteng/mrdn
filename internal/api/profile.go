@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5"
+	"database/sql"
 )
 
 // GET /api/v1/persons/{slug}/profile
@@ -21,7 +21,7 @@ func (s *Server) handlePersonProfile(w http.ResponseWriter, r *http.Request) {
 
 	prof, err := s.store.GetPersonProfile(r.Context(), slug)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, 404, "NOT_FOUND", "person not found")
 			return
 		}

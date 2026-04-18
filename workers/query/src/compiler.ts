@@ -151,9 +151,12 @@ const TABLES: TableMeta[] = [
     amountCol: null,
     amountIsCents: false,
     filterCols: {
-      country: "tf.affected_countries",
+      country: "tariff_countries",
     },
-    customJoins: "LEFT JOIN company_hs_codes chc ON chc.hs_code = ANY(tf.hs_codes) LEFT JOIN companies c ON c.id = chc.company_id",
+    // Junction tables replace Postgres array columns.
+    // company_hs_codes links tariffs → companies via HS code.
+    // tariff_countries links tariffs → country codes.
+    customJoins: "LEFT JOIN tariff_hs_codes thc ON thc.tariff_id = tf.id LEFT JOIN companies c ON c.id = thc.company_id",
   },
 ];
 
@@ -197,7 +200,6 @@ export function compile(
   const innerSql = branches.length === 1 ? branches[0] : branches.join("\nUNION ALL\n");
 
   params.push(query.limit);
-  const limitIdx = params.length;
 
   let sql: string;
   if (query.group) {
@@ -208,18 +210,20 @@ export function compile(
     FROM (\n${innerSql}\n) AS base
     GROUP BY ${groupKey}
     ORDER BY count DESC
-    LIMIT $${limitIdx}`;
+    LIMIT ?`;
   } else {
     const sortCol = getSortColumn(query.sort);
-    sql = `SELECT * FROM (\n${innerSql}\n) AS unified\nORDER BY ${sortCol}\nLIMIT $${limitIdx}`;
+    sql = `SELECT * FROM (\n${innerSql}\n) AS unified\nORDER BY ${sortCol}\nLIMIT ?`;
   }
 
+  // SQLite does not support DISTINCT ON. Use ROW_NUMBER() window function instead.
   if (needsScoreCTE) {
     sql = `WITH latest_scores AS (
-  SELECT DISTINCT ON (company_id)
-    company_id, composite_score, market_score, policy_score, insider_score
-  FROM scores
-  ORDER BY company_id, computed_at DESC
+  SELECT company_id, composite_score, market_score, policy_score, insider_score FROM (
+    SELECT company_id, composite_score, market_score, policy_score, insider_score,
+           ROW_NUMBER() OVER (PARTITION BY company_id ORDER BY computed_at DESC) AS rn
+    FROM scores
+  ) WHERE rn = 1
 )\n${sql}`;
   }
 
@@ -270,13 +274,16 @@ function buildBranch(
   for (const text of query.bareText) {
     const clauses: string[] = [];
     params.push(`%${text}%`);
-    const paramIdx = params.length;
+    // SQLite LIKE is case-insensitive for ASCII by default, so ILIKE → LIKE.
     if (table.hasCompany || table.customJoins) {
-      clauses.push(`c.ticker ILIKE $${paramIdx}`);
-      clauses.push(`c.name ILIKE $${paramIdx}`);
+      clauses.push(`c.ticker LIKE ?`);
+      clauses.push(`c.name LIKE ?`);
+      // Reuse the same param value — push it again for the second placeholder.
+      params.push(`%${text}%`);
     }
     if (table.hasPerson) {
-      clauses.push(`p.name ILIKE $${paramIdx}`);
+      clauses.push(`p.name LIKE ?`);
+      params.push(`%${text}%`);
     }
     if (clauses.length > 0) {
       wheres.push(`(${clauses.join(" OR ")})`);
@@ -285,10 +292,9 @@ function buildBranch(
 
   if (cursor) {
     params.push(cursor.occurred_at);
-    const tsIdx = params.length;
+    params.push(cursor.occurred_at);
     params.push(cursor.event_id);
-    const idIdx = params.length;
-    wheres.push(`(${table.dateCol} < $${tsIdx} OR (${table.dateCol} = $${tsIdx} AND e.id < $${idIdx}))`);
+    wheres.push(`(${table.dateCol} < ? OR (${table.dateCol} = ? AND e.id < ?))`);
   }
 
   const whereClause = wheres.length > 0 ? `WHERE ${wheres.join(" AND ")}` : "";
@@ -315,26 +321,28 @@ function buildFilterClause(
       warnings.push(`ticker: filter not applicable to ${table.eventType}`);
       return "1=0";
     }
-    params.push(filter.values);
-    return `${neg}c.ticker = ANY($${params.length})`;
+    // SQLite has no ANY($N) — expand to IN (?,?,?).
+    const placeholders = filter.values.map(() => "?").join(", ");
+    params.push(...filter.values);
+    return `${neg}c.ticker IN (${placeholders})`;
   }
 
   if (filter.key === "sector") {
     if (!table.hasCompany && !table.customJoins) return null;
     params.push(`%${filter.values[0]}%`);
-    return `${neg}c.sector ILIKE $${params.length}`;
+    return `${neg}c.sector LIKE ?`;
   }
 
   if (filter.key === "subsector") {
     if (!table.hasCompany) return null;
     params.push(`%${filter.values[0]}%`);
-    return `${neg}c.subsector ILIKE $${params.length}`;
+    return `${neg}c.subsector LIKE ?`;
   }
 
   if (filter.key === "market-cap") {
     if (!table.hasCompany) return null;
     params.push(filter.values[0]);
-    return `${neg}c.market_cap_bucket = $${params.length}`;
+    return `${neg}c.market_cap_bucket = ?`;
   }
 
   if (PERSON_FILTERS.has(filter.key)) {
@@ -347,26 +355,31 @@ function buildFilterClause(
       const isName = filter.values.some((v) => v.includes(" "));
       if (isName) {
         params.push(`%${filter.values[0]}%`);
-        return `${neg}p.name ILIKE $${params.length}`;
+        return `${neg}p.name LIKE ?`;
       }
-      params.push(filter.values);
-      return `${neg}p.slug = ANY($${params.length})`;
+      const placeholders = filter.values.map(() => "?").join(", ");
+      params.push(...filter.values);
+      return `${neg}p.slug IN (${placeholders})`;
     }
 
     if (filter.key === "party") {
-      params.push(filter.values);
-      return `${neg}p.party = ANY($${params.length})`;
+      const placeholders = filter.values.map(() => "?").join(", ");
+      params.push(...filter.values);
+      return `${neg}p.party IN (${placeholders})`;
     }
 
     if (filter.key === "branch") {
       const roleMap: Record<string, string> = { senate: "senator", house: "representative" };
-      params.push(filter.values.map((v) => roleMap[v] || v));
-      return `${neg}p.role = ANY($${params.length})`;
+      const roles = filter.values.map((v) => roleMap[v] || v);
+      const placeholders = roles.map(() => "?").join(", ");
+      params.push(...roles);
+      return `${neg}p.role IN (${placeholders})`;
     }
 
     if (filter.key === "committee") {
-      params.push(filter.values);
-      return `${neg}EXISTS (SELECT 1 FROM person_committees pc WHERE pc.person_id = p.id AND pc.committee_code = ANY($${params.length}))`;
+      const placeholders = filter.values.map(() => "?").join(", ");
+      params.push(...filter.values);
+      return `${neg}EXISTS (SELECT 1 FROM person_committees pc WHERE pc.person_id = p.id AND pc.committee_code IN (${placeholders}))`;
     }
   }
 
@@ -374,7 +387,7 @@ function buildFilterClause(
     const resolved = resolveDate(filter.values[0]);
     params.push(resolved);
     const op = filter.key === "since" ? ">=" : "<";
-    return `${table.dateCol} ${op} $${params.length}`;
+    return `${table.dateCol} ${op} ?`;
   }
 
   if (filter.key.endsWith("-score") || filter.key === "score") {
@@ -413,22 +426,27 @@ function buildFilterClause(
   if (filter.key === "signal") {
     if (!table.hasCompany && !table.customJoins) return null;
     if (signalTickers.length === 0) return null;
-    params.push(signalTickers);
-    return `c.ticker = ANY($${params.length})`;
+    const placeholders = signalTickers.map(() => "?").join(", ");
+    params.push(...signalTickers);
+    return `c.ticker IN (${placeholders})`;
   }
 
   const col = table.filterCols[filter.key];
   if (col) {
     if (filter.key === "country" && table.eventType === "tariff") {
-      params.push(filter.values);
-      return `${neg}tf.affected_countries && $${params.length}`;
+      // SQLite has no array overlap operator (&&).
+      // tariff_countries is a junction table: (tariff_id, country_code).
+      const placeholders = filter.values.map(() => "?").join(", ");
+      params.push(...filter.values);
+      return `${neg}EXISTS (SELECT 1 FROM tariff_countries tc WHERE tc.tariff_id = tf.id AND tc.country_code IN (${placeholders}))`;
     }
     if (filter.key === "agency" || filter.key === "registrant") {
       params.push(`%${filter.values[0]}%`);
-      return `${neg}${col} ILIKE $${params.length}`;
+      return `${neg}${col} LIKE ?`;
     }
-    params.push(filter.values);
-    return `${neg}${col} = ANY($${params.length})`;
+    const placeholders = filter.values.map(() => "?").join(", ");
+    params.push(...filter.values);
+    return `${neg}${col} IN (${placeholders})`;
   }
 
   return null;
@@ -436,44 +454,45 @@ function buildFilterClause(
 
 function buildProjection(table: TableMeta, needsScores: boolean): string {
   const t = table.alias;
+  // SQLite has no typed NULL casts (NULL::text etc.) — plain NULL is correct.
   const person = table.hasPerson
     ? `p.slug AS person_slug, p.name AS person_name, p.party AS person_party, p.branch AS person_branch`
-    : `NULL::text AS person_slug, NULL::text AS person_name, NULL::text AS person_party, NULL::text AS person_branch`;
+    : `NULL AS person_slug, NULL AS person_name, NULL AS person_party, NULL AS person_branch`;
 
   const company = table.hasCompany || table.customJoins
     ? `c.ticker, c.name AS company_name, c.sector`
-    : `NULL::text AS ticker, NULL::text AS company_name, NULL::text AS sector`;
+    : `NULL AS ticker, NULL AS company_name, NULL AS sector`;
 
   const action = table.filterCols["action"]
     ? `${table.filterCols["action"]} AS action`
-    : `NULL::text AS action`;
+    : `NULL AS action`;
 
-  const owner = table.eventType === "trade" ? `${t}.owner_type AS owner` : `NULL::text AS owner`;
+  const owner = table.eventType === "trade" ? `${t}.owner_type AS owner` : `NULL AS owner`;
 
   const amountMid = table.amountCol
     ? `(${table.amountCol})${table.amountIsCents ? " / 100" : ""} AS amount_mid`
-    : `NULL::bigint AS amount_mid`;
+    : `NULL AS amount_mid`;
 
   const score = needsScores && table.hasCompany
     ? `ls.composite_score AS score`
-    : `NULL::numeric AS score`;
+    : `NULL AS score`;
 
   const filedAt = ["trade", "insider", "warn"].includes(table.eventType)
     ? `${t}.filed_at`
-    : `NULL::timestamptz AS filed_at`;
+    : `NULL AS filed_at`;
 
-  const agency = table.eventType === "contract" ? `${t}.agency` : `NULL::text AS agency`;
-  const program = table.eventType === "sanction" ? `${t}.program` : `NULL::text AS program`;
-  const country = table.eventType === "sanction" ? `${t}.country` : table.eventType === "tariff" ? `NULL::text AS country` : `NULL::text AS country`;
-  const state = table.eventType === "warn" ? `${t}.state` : `NULL::text AS state`;
-  const workers = table.eventType === "warn" ? `${t}.workers_affected` : `NULL::int AS workers_affected`;
-  const entityName = table.eventType === "sanction" ? `${t}.entity_name` : `NULL::text AS entity_name`;
-  const description = table.eventType === "contract" ? `${t}.description` : `NULL::text AS description`;
-  const registrant = table.eventType === "lobbying" ? `${t}.registrant` : `NULL::text AS registrant`;
-  const filingType = table.eventType === "court" ? `${t}.filing_type` : `NULL::text AS filing_type`;
-  const filerName = table.eventType === "insider" ? `${t}.filer_name` : `NULL::text AS filer_name`;
-  const filerTitle = table.eventType === "insider" ? `${t}.filer_title` : `NULL::text AS filer_title`;
-  const shares = table.eventType === "insider" ? `${t}.shares` : `NULL::int AS shares`;
+  const agency = table.eventType === "contract" ? `${t}.agency` : `NULL AS agency`;
+  const program = table.eventType === "sanction" ? `${t}.program` : `NULL AS program`;
+  const country = table.eventType === "sanction" ? `${t}.country` : `NULL AS country`;
+  const state = table.eventType === "warn" ? `${t}.state` : `NULL AS state`;
+  const workers = table.eventType === "warn" ? `${t}.workers_affected` : `NULL AS workers_affected`;
+  const entityName = table.eventType === "sanction" ? `${t}.entity_name` : `NULL AS entity_name`;
+  const description = table.eventType === "contract" ? `${t}.description` : `NULL AS description`;
+  const registrant = table.eventType === "lobbying" ? `${t}.registrant` : `NULL AS registrant`;
+  const filingType = table.eventType === "court" ? `${t}.filing_type` : `NULL AS filing_type`;
+  const filerName = table.eventType === "insider" ? `${t}.filer_name` : `NULL AS filer_name`;
+  const filerTitle = table.eventType === "insider" ? `${t}.filer_title` : `NULL AS filer_title`;
+  const shares = table.eventType === "insider" ? `${t}.shares` : `NULL AS shares`;
 
   return `'${table.eventType}' AS event_type, e.id AS event_id, ${table.dateCol} AS occurred_at,
     ${person}, ${company}, ${action}, ${owner}, ${amountMid},
@@ -492,8 +511,9 @@ function getSortColumn(sort: string): string {
 
 function getGroupKey(group: string): string {
   switch (group) {
-    case "week": return "date_trunc('week', occurred_at)";
-    case "month": return "date_trunc('month', occurred_at)";
+    // SQLite has no date_trunc() — use strftime/date equivalents.
+    case "week": return "date(occurred_at, 'weekday 1', '-7 days')";
+    case "month": return "date(occurred_at, 'start of month')";
     case "company": return "ticker";
     case "person": return "person_slug";
     case "sector": return "sector";
@@ -505,15 +525,13 @@ function getGroupKey(group: string): string {
 function buildRangeClause(col: string, filter: Filter, params: unknown[]): string {
   if (filter.operator === "..") {
     params.push(Number(filter.values[0]));
-    const loIdx = params.length;
     params.push(Number(filter.upperBound!));
-    const hiIdx = params.length;
-    return `${col} BETWEEN $${loIdx} AND $${hiIdx}`;
+    return `${col} BETWEEN ? AND ?`;
   }
   const SAFE_OPS = new Set([">", "<", ">=", "<="]);
   const op = filter.operator && SAFE_OPS.has(filter.operator) ? filter.operator : "=";
   params.push(Number(filter.values[0]));
-  return `${col} ${op} $${params.length}`;
+  return `${col} ${op} ?`;
 }
 
 function parseAmountValue(v: string): number {

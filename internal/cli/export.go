@@ -30,13 +30,13 @@ the dashboard without a live API.`,
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
-		pool, err := db.Connect(ctx, cfg.DatabaseURL)
+		d, err := db.Connect(ctx, cfg.DatabaseURL)
 		if err != nil {
 			return fmt.Errorf("connecting to database: %w", err)
 		}
-		defer pool.Close()
+		defer d.Close()
 
-		store := db.NewStore(pool)
+		store := db.NewStore(d)
 		return export.Run(ctx, store, exportOutDir)
 	},
 }

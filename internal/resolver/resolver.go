@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/arclighteng/mrdn/internal/db"
-	"github.com/jackc/pgx/v5"
 )
 
 // ResolverStore is the subset of db.Store methods that the Resolver needs.
@@ -635,6 +634,3 @@ func isDuplicateError(err error) bool {
 	return strings.Contains(err.Error(), "duplicate key") ||
 		strings.Contains(err.Error(), "23505")
 }
-
-// Ensure the pgx import is used (for error type checks in future).
-var _ = pgx.ErrNoRows

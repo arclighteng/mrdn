@@ -12,12 +12,12 @@ type ActiveTrader struct {
 
 // ListActiveTraders returns persons who have at least one congressional trade.
 func (s *Store) ListActiveTraders(ctx context.Context, limit int) ([]ActiveTrader, error) {
-	rows, err := s.db.Query(ctx, `
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT DISTINCT p.slug, p.name, COALESCE(p.party, '') AS party, COALESCE(p.role, '') AS role
 		FROM persons p
 		JOIN congressional_trades ct ON ct.person_id = p.id
 		ORDER BY p.name
-		LIMIT $1`, limit)
+		LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -36,7 +36,7 @@ func (s *Store) ListActiveTraders(ctx context.Context, limit int) ([]ActiveTrade
 
 // DistinctAgencies returns distinct agency names from the contracts table.
 func (s *Store) DistinctAgencies(ctx context.Context) ([]string, error) {
-	rows, err := s.db.Query(ctx, `
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT DISTINCT agency FROM contracts
 		WHERE agency IS NOT NULL AND agency != ''
 		ORDER BY agency`)
@@ -58,7 +58,7 @@ func (s *Store) DistinctAgencies(ctx context.Context) ([]string, error) {
 
 // DistinctSectors returns distinct sector names from the companies table.
 func (s *Store) DistinctSectors(ctx context.Context) ([]string, error) {
-	rows, err := s.db.Query(ctx, `
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT DISTINCT sector FROM companies
 		WHERE sector IS NOT NULL AND sector != ''
 		ORDER BY sector`)
@@ -80,7 +80,7 @@ func (s *Store) DistinctSectors(ctx context.Context) ([]string, error) {
 
 // DistinctPrograms returns distinct OFAC program names from the sanctions table.
 func (s *Store) DistinctPrograms(ctx context.Context) ([]string, error) {
-	rows, err := s.db.Query(ctx, `
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT DISTINCT program FROM sanctions
 		WHERE program IS NOT NULL AND program != ''
 		ORDER BY program`)
@@ -108,7 +108,7 @@ type CommitteeEntry struct {
 
 // ListCommittees returns all distinct committees from person_committees.
 func (s *Store) ListCommittees(ctx context.Context) ([]CommitteeEntry, error) {
-	rows, err := s.db.Query(ctx, `
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT DISTINCT committee_code, committee_name
 		FROM person_committees
 		WHERE committee_code IS NOT NULL

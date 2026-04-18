@@ -10,4 +10,7 @@ WORKER_ENV = "production"
 binding = "MQL_KV"
 id = "04353bca28bc4a78bb51f170adccfd91"
 
-# DATABASE_URL is set via `wrangler secret put DATABASE_URL`
+[[d1_databases]]
+binding = "DB"
+database_name = "mrdn-db"
+database_id = "<PLACEHOLDER_RUN_wrangler_d1_create>"

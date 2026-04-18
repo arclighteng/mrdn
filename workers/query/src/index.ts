@@ -1,7 +1,7 @@
 import type { Env, Cursor, QueryResponse, ErrorResponse } from "./types";
 import { parse, ParseError } from "./parser";
 import { compile, ComplexityError, ScoreDeltaError, CursorSortError } from "./compiler";
-import { executeQuery } from "./db";
+import { executeQuery } from "./d1";
 import { checkRateLimit, releaseSlot } from "./rate-limit";
 
 const MAX_BODY_BYTES = 2048;
@@ -121,7 +121,7 @@ async function handleQuery(request: Request, env: Env): Promise<Response> {
   // Execute
   let result;
   try {
-    result = await executeQuery(env.DATABASE_URL, compiled.sql, compiled.params);
+    result = await executeQuery(env.DB, compiled.sql, compiled.params);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     if (msg.includes("57014") || msg.includes("statement timeout")) {

@@ -9,7 +9,7 @@ import (
 )
 
 func TestListSourceMeta(t *testing.T) {
-	store := setupTestDB(t)
+	store := setupTestTx(t)
 	ctx := context.Background()
 
 	sources, err := store.ListSourceMeta(ctx)
@@ -19,7 +19,7 @@ func TestListSourceMeta(t *testing.T) {
 }
 
 func TestUpdateSourceStatus(t *testing.T) {
-	store := setupTestDB(t)
+	store := setupTestTx(t)
 	ctx := context.Background()
 
 	err := store.RecordPoll(ctx, "polygon", true)

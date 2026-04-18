@@ -30,9 +30,9 @@ type ScoreRanking struct {
 }
 
 func (s *Store) InsertScore(ctx context.Context, sc Score) error {
-	_, err := s.db.Exec(ctx, `
+	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO scores (company_id, market_score, policy_score, insider_score, composite_score, weight_version)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		VALUES (?, ?, ?, ?, ?, ?)
 	`, sc.CompanyID, sc.MarketScore, sc.PolicyScore, sc.InsiderScore, sc.CompositeScore, sc.WeightVersion)
 	if err != nil {
 		return fmt.Errorf("inserting score for company %d: %w", sc.CompanyID, err)
@@ -42,13 +42,18 @@ func (s *Store) InsertScore(ctx context.Context, sc Score) error {
 
 func (s *Store) GetLatestScore(ctx context.Context, companyID int) (Score, error) {
 	var sc Score
-	err := s.db.QueryRow(ctx, `
+	var computedAt string
+	err := s.db.QueryRowContext(ctx, `
 		SELECT id, company_id, market_score, policy_score, insider_score, composite_score, weight_version, computed_at
-		FROM scores WHERE company_id = $1 ORDER BY computed_at DESC LIMIT 1
+		FROM scores WHERE company_id = ? ORDER BY computed_at DESC LIMIT 1
 	`, companyID).Scan(&sc.ID, &sc.CompanyID, &sc.MarketScore, &sc.PolicyScore,
-		&sc.InsiderScore, &sc.CompositeScore, &sc.WeightVersion, &sc.ComputedAt)
+		&sc.InsiderScore, &sc.CompositeScore, &sc.WeightVersion, &computedAt)
 	if err != nil {
 		return Score{}, fmt.Errorf("getting latest score for company %d: %w", companyID, err)
+	}
+	sc.ComputedAt, err = scanTime(computedAt)
+	if err != nil {
+		return Score{}, fmt.Errorf("parsing computed_at for company %d: %w", companyID, err)
 	}
 	return sc, nil
 }
@@ -57,9 +62,9 @@ func (s *Store) GetScoreHistory(ctx context.Context, companyID int, limit int) (
 	if limit <= 0 {
 		limit = 50
 	}
-	rows, err := s.db.Query(ctx, `
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, company_id, market_score, policy_score, insider_score, composite_score, weight_version, computed_at
-		FROM scores WHERE company_id = $1 ORDER BY computed_at DESC LIMIT $2
+		FROM scores WHERE company_id = ? ORDER BY computed_at DESC LIMIT ?
 	`, companyID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("getting score history for company %d: %w", companyID, err)
@@ -69,9 +74,14 @@ func (s *Store) GetScoreHistory(ctx context.Context, companyID int, limit int) (
 	scores := make([]Score, 0)
 	for rows.Next() {
 		var sc Score
+		var computedAt string
 		if err := rows.Scan(&sc.ID, &sc.CompanyID, &sc.MarketScore, &sc.PolicyScore,
-			&sc.InsiderScore, &sc.CompositeScore, &sc.WeightVersion, &sc.ComputedAt); err != nil {
+			&sc.InsiderScore, &sc.CompositeScore, &sc.WeightVersion, &computedAt); err != nil {
 			return nil, fmt.Errorf("scanning score: %w", err)
+		}
+		sc.ComputedAt, err = scanTime(computedAt)
+		if err != nil {
+			return nil, fmt.Errorf("parsing computed_at: %w", err)
 		}
 		scores = append(scores, sc)
 	}
@@ -82,20 +92,20 @@ func (s *Store) GetScoreRankings(ctx context.Context, limit int) ([]ScoreRanking
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := s.db.Query(ctx, `
+	rows, err := s.db.QueryContext(ctx, `
 		WITH latest AS (
-			SELECT DISTINCT ON (company_id)
-				company_id, market_score, policy_score, insider_score,
-				composite_score, weight_version, computed_at
+			SELECT company_id, market_score, policy_score, insider_score,
+				composite_score, weight_version, computed_at,
+				ROW_NUMBER() OVER (PARTITION BY company_id ORDER BY computed_at DESC) AS rn
 			FROM scores
-			ORDER BY company_id, computed_at DESC
 		)
 		SELECT c.ticker, c.name, c.sector, l.market_score, l.policy_score, l.insider_score,
 			l.composite_score, l.weight_version, l.computed_at
 		FROM latest l
 		JOIN companies c ON c.id = l.company_id
+		WHERE l.rn = 1
 		ORDER BY l.composite_score DESC
-		LIMIT $1
+		LIMIT ?
 	`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("getting score rankings: %w", err)
@@ -105,9 +115,14 @@ func (s *Store) GetScoreRankings(ctx context.Context, limit int) ([]ScoreRanking
 	rankings := make([]ScoreRanking, 0)
 	for rows.Next() {
 		var r ScoreRanking
+		var computedAt string
 		if err := rows.Scan(&r.Ticker, &r.CompanyName, &r.Sector, &r.MarketScore, &r.PolicyScore,
-			&r.InsiderScore, &r.CompositeScore, &r.WeightVersion, &r.ComputedAt); err != nil {
+			&r.InsiderScore, &r.CompositeScore, &r.WeightVersion, &computedAt); err != nil {
 			return nil, fmt.Errorf("scanning ranking: %w", err)
+		}
+		r.ComputedAt, err = scanTime(computedAt)
+		if err != nil {
+			return nil, fmt.Errorf("parsing computed_at for ranking: %w", err)
 		}
 		rankings = append(rankings, r)
 	}
@@ -139,21 +154,20 @@ func (s *Store) GetScoreMovers(ctx context.Context, hours int, limit int) ([]Sco
 	if limit <= 0 {
 		limit = 20
 	}
-	rows, err := s.db.Query(ctx, `
+	cutoff := time.Now().UTC().Add(-time.Duration(hours) * time.Hour).Format(time.RFC3339)
+	rows, err := s.db.QueryContext(ctx, `
 		WITH recent AS (
-			SELECT DISTINCT ON (company_id)
-				company_id, composite_score, computed_at
+			SELECT company_id, composite_score, computed_at,
+				ROW_NUMBER() OVER (PARTITION BY company_id ORDER BY computed_at DESC) AS rn
 			FROM scores
-			WHERE computed_at >= NOW() - make_interval(hours => $1)
-			ORDER BY company_id, computed_at DESC
+			WHERE computed_at >= ?
 		),
 		previous AS (
-			SELECT DISTINCT ON (s.company_id)
-				s.company_id, s.composite_score
+			SELECT s.company_id, s.composite_score,
+				ROW_NUMBER() OVER (PARTITION BY s.company_id ORDER BY s.computed_at DESC) AS rn
 			FROM scores s
-			JOIN recent r ON r.company_id = s.company_id
+			JOIN recent r ON r.company_id = s.company_id AND r.rn = 1
 			WHERE s.computed_at < r.computed_at
-			ORDER BY s.company_id, s.computed_at DESC
 		)
 		SELECT c.ticker, c.name,
 			p.composite_score AS previous_score,
@@ -161,11 +175,12 @@ func (s *Store) GetScoreMovers(ctx context.Context, hours int, limit int) ([]Sco
 			r.composite_score - p.composite_score AS change,
 			ABS(r.composite_score - p.composite_score) AS abs_change
 		FROM recent r
-		JOIN previous p ON p.company_id = r.company_id
+		JOIN previous p ON p.company_id = r.company_id AND p.rn = 1
 		JOIN companies c ON c.id = r.company_id
+		WHERE r.rn = 1
 		ORDER BY abs_change DESC
-		LIMIT $2
-	`, hours, limit)
+		LIMIT ?
+	`, cutoff, limit)
 	if err != nil {
 		return nil, fmt.Errorf("getting score movers: %w", err)
 	}

@@ -2,34 +2,32 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
-	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	_ "modernc.org/sqlite"
 )
 
-// Connect opens a pgxpool connection to dsn with explicit pool limits and
-// verifies reachability via Ping before returning.
-func Connect(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
-	cfg, err := pgxpool.ParseConfig(dsn)
+// Connect opens a SQLite database at dsn (file path or ":memory:").
+func Connect(ctx context.Context, dsn string) (*sql.DB, error) {
+	d, err := sql.Open("sqlite", dsn)
 	if err != nil {
-		return nil, fmt.Errorf("parsing database config: %w", err)
+		return nil, fmt.Errorf("opening database: %w", err)
 	}
 
-	cfg.MaxConns = 20
-	cfg.MinConns = 2
-	cfg.MaxConnLifetime = 30 * time.Minute
-	cfg.MaxConnIdleTime = 5 * time.Minute
-
-	pool, err := pgxpool.NewWithConfig(ctx, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("connecting to database: %w", err)
+	if _, err := d.ExecContext(ctx, `
+		PRAGMA journal_mode=WAL;
+		PRAGMA foreign_keys=ON;
+		PRAGMA busy_timeout=5000;
+	`); err != nil {
+		d.Close()
+		return nil, fmt.Errorf("setting pragmas: %w", err)
 	}
 
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
+	if err := d.PingContext(ctx); err != nil {
+		d.Close()
 		return nil, fmt.Errorf("pinging database: %w", err)
 	}
 
-	return pool, nil
+	return d, nil
 }

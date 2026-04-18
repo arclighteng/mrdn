@@ -10,7 +10,7 @@ import (
 	"github.com/arclighteng/mrdn/internal/db"
 	"github.com/arclighteng/mrdn/internal/score"
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5"
+	"database/sql"
 )
 
 var tickerRe = regexp.MustCompile(`^[A-Z]{1,5}$`)
@@ -86,7 +86,7 @@ func (s *Server) handleGetCompany(w http.ResponseWriter, r *http.Request) {
 
 	company, err := s.store.GetCompanyByTicker(r.Context(), ticker)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, 404, "NOT_FOUND", "company not found")
 			return
 		}
@@ -137,7 +137,7 @@ func (s *Server) handleCompanyScores(w http.ResponseWriter, r *http.Request) {
 
 	company, err := s.store.GetCompanyByTicker(r.Context(), ticker)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, 404, "NOT_FOUND", "company not found")
 			return
 		}
@@ -174,7 +174,7 @@ func (s *Server) handleCompanyScoreBreakdown(w http.ResponseWriter, r *http.Requ
 
 	company, err := s.store.GetCompanyByTicker(r.Context(), ticker)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, 404, "NOT_FOUND", "company not found")
 			return
 		}
@@ -333,7 +333,7 @@ func (s *Server) handleCompanyEvents(w http.ResponseWriter, r *http.Request) {
 
 	company, err := s.store.GetCompanyByTicker(r.Context(), ticker)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, 404, "NOT_FOUND", "company not found")
 			return
 		}

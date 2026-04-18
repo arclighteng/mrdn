@@ -2,7 +2,6 @@ package db_test
 
 import (
 	"context"
-	"os"
 	"testing"
 
 	"github.com/arclighteng/mrdn/internal/db"
@@ -10,33 +9,32 @@ import (
 )
 
 func TestMigrate_CreatesTablesOnce(t *testing.T) {
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		t.Skip("DATABASE_URL not set — skipping integration test")
-	}
-
 	ctx := context.Background()
-	pool, err := db.Connect(ctx, dsn)
+	d, err := db.Connect(ctx, ":memory:")
 	require.NoError(t, err)
-	defer pool.Close()
+	defer d.Close()
 
 	// Run migrations twice — second run should be a no-op
-	err = db.Migrate(ctx, pool)
+	err = db.Migrate(ctx, d)
 	require.NoError(t, err)
 
-	err = db.Migrate(ctx, pool)
+	err = db.Migrate(ctx, d)
 	require.NoError(t, err)
 
 	// Verify companies table exists
-	var exists bool
-	err = pool.QueryRow(ctx,
-		"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'companies')").Scan(&exists)
+	var count int
+	err = d.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='companies'").Scan(&count)
 	require.NoError(t, err)
-	require.True(t, exists)
+	require.Equal(t, 1, count)
 
 	// Verify source_meta was seeded
-	var count int
-	err = pool.QueryRow(ctx, "SELECT COUNT(*) FROM source_meta").Scan(&count)
+	err = d.QueryRowContext(ctx, "SELECT COUNT(*) FROM source_meta").Scan(&count)
 	require.NoError(t, err)
 	require.Greater(t, count, 0)
+
+	// Verify persons were seeded
+	err = d.QueryRowContext(ctx, "SELECT COUNT(*) FROM persons").Scan(&count)
+	require.NoError(t, err)
+	require.Equal(t, 20, count)
 }

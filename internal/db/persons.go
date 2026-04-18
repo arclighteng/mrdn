@@ -38,42 +38,34 @@ type PersonFilter struct {
 
 // UpsertPerson inserts or updates a person by slug, returning the persisted row.
 func (s *Store) UpsertPerson(ctx context.Context, p Person) (Person, error) {
-	var result Person
-	err := s.db.QueryRow(ctx, `
+	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO persons (slug, name, role, tier, branch, state, party, bioguide_id, linked_person_id, linked_relationship, disclosure_source)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (slug) DO UPDATE SET
-			name                = EXCLUDED.name,
-			role                = EXCLUDED.role,
-			tier                = EXCLUDED.tier,
-			branch              = EXCLUDED.branch,
-			state               = EXCLUDED.state,
-			party               = EXCLUDED.party,
-			bioguide_id         = EXCLUDED.bioguide_id,
-			linked_person_id    = EXCLUDED.linked_person_id,
-			linked_relationship = EXCLUDED.linked_relationship,
-			disclosure_source   = EXCLUDED.disclosure_source
-		RETURNING id, slug, name, role, tier, branch, state, party, bioguide_id, linked_person_id, linked_relationship, disclosure_source
+			name                = excluded.name,
+			role                = excluded.role,
+			tier                = excluded.tier,
+			branch              = excluded.branch,
+			state               = excluded.state,
+			party               = excluded.party,
+			bioguide_id         = excluded.bioguide_id,
+			linked_person_id    = excluded.linked_person_id,
+			linked_relationship = excluded.linked_relationship,
+			disclosure_source   = excluded.disclosure_source
 	`, p.Slug, p.Name, p.Role, p.Tier, p.Branch, p.State, p.Party, p.BioguideID,
-		p.LinkedPersonID, p.LinkedRelationship, p.DisclosureSource,
-	).Scan(
-		&result.ID, &result.Slug, &result.Name, &result.Role, &result.Tier,
-		&result.Branch, &result.State, &result.Party, &result.BioguideID,
-		&result.LinkedPersonID, &result.LinkedRelationship, &result.DisclosureSource,
-	)
+		p.LinkedPersonID, p.LinkedRelationship, p.DisclosureSource)
 	if err != nil {
 		return Person{}, fmt.Errorf("upserting person %s: %w", p.Slug, err)
 	}
-	return result, nil
+	return s.GetPersonBySlug(ctx, p.Slug)
 }
 
 // GetPersonBySlug returns the person with the given slug.
-// Returns a wrapped pgx.ErrNoRows when no matching row exists.
 func (s *Store) GetPersonBySlug(ctx context.Context, slug string) (Person, error) {
 	var p Person
-	err := s.db.QueryRow(ctx, `
+	err := s.db.QueryRowContext(ctx, `
 		SELECT id, slug, name, role, tier, branch, state, party, bioguide_id, linked_person_id, linked_relationship, disclosure_source
-		FROM persons WHERE slug = $1
+		FROM persons WHERE slug = ?
 	`, slug).Scan(
 		&p.ID, &p.Slug, &p.Name, &p.Role, &p.Tier,
 		&p.Branch, &p.State, &p.Party, &p.BioguideID,
@@ -85,51 +77,38 @@ func (s *Store) GetPersonBySlug(ctx context.Context, slug string) (Person, error
 	return p, nil
 }
 
-// buildPersonWhere constructs the WHERE clause and args for person filters.
-// All column references use the "p." table alias. Returns the WHERE fragment
-// (starting with "WHERE 1=1"), the args slice, and the next arg index.
-func buildPersonWhere(f PersonFilter) (conditions string, args []any, argN int) {
-	argN = 1
+func buildPersonWhere(f PersonFilter) (conditions string, args []any) {
 	conditions = "WHERE 1=1"
 
 	if f.Tier != nil {
-		conditions += fmt.Sprintf(" AND p.tier = $%d", argN)
+		conditions += " AND p.tier = ?"
 		args = append(args, *f.Tier)
-		argN++
 	}
 	if f.Branch != "" {
-		conditions += fmt.Sprintf(" AND p.branch = $%d", argN)
+		conditions += " AND p.branch = ?"
 		args = append(args, f.Branch)
-		argN++
 	}
 	if f.Role != "" {
-		conditions += fmt.Sprintf(" AND p.role = $%d", argN)
+		conditions += " AND p.role = ?"
 		args = append(args, f.Role)
-		argN++
 	}
 	if f.State != "" {
-		conditions += fmt.Sprintf(" AND p.state = $%d", argN)
+		conditions += " AND p.state = ?"
 		args = append(args, f.State)
-		argN++
 	}
 	if f.Party != "" {
-		conditions += fmt.Sprintf(" AND p.party = $%d", argN)
+		conditions += " AND p.party = ?"
 		args = append(args, f.Party)
-		argN++
 	}
-	return conditions, args, argN
+	return conditions, args
 }
 
-// ListPersons returns persons matching the filter. When f.Sort == "influence",
-// results are ordered by trade activity descending (most active first); otherwise
-// by name ascending.
+// ListPersons returns persons matching the filter.
 func (s *Store) ListPersons(ctx context.Context, f PersonFilter) ([]Person, error) {
-	conditions, args, argN := buildPersonWhere(f)
+	conditions, args := buildPersonWhere(f)
 
 	orderBy := " ORDER BY p.name"
 	if f.Sort == "influence" {
-		// Rank by estimated dollar volume first, then trade count, then tier.
-		// Persons who never trade fall to the bottom.
 		orderBy = ` ORDER BY (
 			SELECT COALESCE(SUM(
 				COALESCE(
@@ -158,21 +137,20 @@ func (s *Store) ListPersons(ctx context.Context, f PersonFilter) ([]Person, erro
 					WHEN ct.amount_range_low IS NOT NULL THEN ct.amount_range_low
 					WHEN ct.amount_range_high IS NOT NULL THEN ct.amount_range_high
 					ELSE 0
-				END, 0)::BIGINT
+				END, 0)
 		) FROM congressional_trades ct WHERE ct.person_id = p.id), 0)
 		FROM persons p ` + conditions + orderBy
 
 	if f.Limit > 0 {
-		query += fmt.Sprintf(" LIMIT $%d", argN)
+		query += " LIMIT ?"
 		args = append(args, f.Limit)
-		argN++
 	}
 	if f.Offset > 0 {
-		query += fmt.Sprintf(" OFFSET $%d", argN)
+		query += " OFFSET ?"
 		args = append(args, f.Offset)
 	}
 
-	rows, err := s.db.Query(ctx, query, args...)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("listing persons: %w", err)
 	}
@@ -197,23 +175,22 @@ func (s *Store) ListPersons(ctx context.Context, f PersonFilter) ([]Person, erro
 	return persons, nil
 }
 
-// CountPersons returns the total number of persons matching the filter,
-// applying the same WHERE logic as ListPersons.
+// CountPersons returns the total number of persons matching the filter.
 func (s *Store) CountPersons(ctx context.Context, f PersonFilter) (int, error) {
-	conditions, args, _ := buildPersonWhere(f)
+	conditions, args := buildPersonWhere(f)
 
 	query := "SELECT COUNT(*) FROM persons p " + conditions
 
 	var count int
-	if err := s.db.QueryRow(ctx, query, args...).Scan(&count); err != nil {
+	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
 		return 0, fmt.Errorf("counting persons: %w", err)
 	}
 	return count, nil
 }
 
-// DeletePerson removes the person with the given slug. Used for test cleanup.
+// DeletePerson removes the person with the given slug.
 func (s *Store) DeletePerson(ctx context.Context, slug string) error {
-	_, err := s.db.Exec(ctx, "DELETE FROM persons WHERE slug = $1", slug)
+	_, err := s.db.ExecContext(ctx, "DELETE FROM persons WHERE slug = ?", slug)
 	if err != nil {
 		return fmt.Errorf("deleting person %s: %w", slug, err)
 	}

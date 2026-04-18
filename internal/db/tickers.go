@@ -44,19 +44,19 @@ SELECT
   COALESCE(SUM(CASE WHEN ct.trade_type LIKE 'sale%' THEN ` + midpointExpr + ` ELSE 0 END), 0),
   COUNT(DISTINCT CASE WHEN ct.trade_type = 'purchase' AND p.party = 'R' THEN ct.person_id END),
   COUNT(DISTINCT CASE WHEN ct.trade_type = 'purchase' AND p.party = 'D' THEN ct.person_id END),
-  to_char(MIN(ct.traded_at), 'YYYY-MM-DD'),
-  to_char(MAX(ct.traded_at), 'YYYY-MM-DD')
+  strftime('%Y-%m-%d', MIN(ct.traded_at)),
+  strftime('%Y-%m-%d', MAX(ct.traded_at))
 FROM congressional_trades ct
 LEFT JOIN persons p ON p.id = ct.person_id
 LEFT JOIN companies c ON c.id = ct.company_id
 WHERE ct.ticker IS NOT NULL AND ct.ticker <> '' AND ct.ticker <> '--'
-  AND ct.traded_at >= '2000-01-01'::timestamptz
-  AND ct.traded_at <  '2100-01-01'::timestamptz
+  AND ct.traded_at >= '2000-01-01'
+  AND ct.traded_at <  '2100-01-01'
 GROUP BY ct.ticker
 ORDER BY COUNT(DISTINCT ct.person_id) DESC, COUNT(*) DESC
-LIMIT $1
+LIMIT ?
 `
-	rows, err := s.db.Query(ctx, q, limit)
+	rows, err := s.db.QueryContext(ctx, q, limit)
 	if err != nil {
 		return nil, fmt.Errorf("top tickers: %w", err)
 	}
@@ -80,14 +80,14 @@ LIMIT $1
 // window of a target rep. "Shared" is a count of distinct tickers both touched
 // within WindowDays of each other. Nothing inferred — pure time proximity.
 type CoTraderRow struct {
-	PersonID     int     `json:"person_id"`
-	Slug         string  `json:"slug"`
-	Name         string  `json:"name"`
-	Party        *string `json:"party,omitempty"`
-	State        *string `json:"state,omitempty"`
-	SharedTickers int    `json:"shared_tickers"`
-	Overlaps     int     `json:"overlaps"`
-	SampleTicker string  `json:"sample_ticker"`
+	PersonID      int     `json:"person_id"`
+	Slug          string  `json:"slug"`
+	Name          string  `json:"name"`
+	Party         *string `json:"party,omitempty"`
+	State         *string `json:"state,omitempty"`
+	SharedTickers int     `json:"shared_tickers"`
+	Overlaps      int     `json:"overlaps"`
+	SampleTicker  string  `json:"sample_ticker"`
 }
 
 // CoTraders finds reps whose trades cluster in time with the given person's
@@ -105,21 +105,21 @@ WITH target AS (
   SELECT ct.ticker, ct.traded_at, ct.person_id
   FROM congressional_trades ct
   JOIN persons p ON p.id = ct.person_id
-  WHERE p.slug = $1
+  WHERE p.slug = ?
     AND ct.ticker IS NOT NULL AND ct.ticker <> '' AND ct.ticker <> '--'
-    AND ct.traded_at >= '2000-01-01'::timestamptz
-    AND ct.traded_at <  '2100-01-01'::timestamptz
+    AND ct.traded_at >= '2000-01-01'
+    AND ct.traded_at <  '2100-01-01'
 ),
 pairs AS (
   SELECT o.person_id AS other_id, t.ticker,
-         MIN(ABS(EXTRACT(EPOCH FROM (o.traded_at - t.traded_at)) / 86400)) AS day_gap
+         MIN(ABS(julianday(o.traded_at) - julianday(t.traded_at))) AS day_gap
   FROM target t
   JOIN congressional_trades o
     ON o.ticker = t.ticker
    AND o.person_id <> t.person_id
-   AND ABS(EXTRACT(EPOCH FROM (o.traded_at - t.traded_at)) / 86400) <= $2
-  WHERE o.traded_at >= '2000-01-01'::timestamptz
-    AND o.traded_at <  '2100-01-01'::timestamptz
+   AND ABS(julianday(o.traded_at) - julianday(t.traded_at)) <= ?
+  WHERE o.traded_at >= '2000-01-01'
+    AND o.traded_at <  '2100-01-01'
   GROUP BY o.person_id, t.ticker
 )
 SELECT p.id, p.slug, p.name, p.party, p.state,
@@ -130,9 +130,9 @@ FROM pairs
 JOIN persons p ON p.id = pairs.other_id
 GROUP BY p.id, p.slug, p.name, p.party, p.state
 ORDER BY shared DESC, overlap_n DESC
-LIMIT $3
+LIMIT ?
 `
-	rows, err := s.db.Query(ctx, q, slug, windowDays, limit)
+	rows, err := s.db.QueryContext(ctx, q, slug, windowDays, limit)
 	if err != nil {
 		return nil, fmt.Errorf("co-traders: %w", err)
 	}
@@ -151,37 +151,37 @@ LIMIT $3
 // TickerDetail is the per-ticker drilldown — all reps who touched it plus a
 // chronological event feed.
 type TickerDetail struct {
-	Ticker      string             `json:"ticker"`
-	Summary     TickerLeaderRow    `json:"summary"`
-	ByRep       []TickerByRepRow   `json:"by_rep"`
-	Recent      []TickerEvent      `json:"recent"`
+	Ticker  string           `json:"ticker"`
+	Summary TickerLeaderRow  `json:"summary"`
+	ByRep   []TickerByRepRow `json:"by_rep"`
+	Recent  []TickerEvent    `json:"recent"`
 }
 
 // TickerByRepRow is one rep's activity on a single ticker.
 type TickerByRepRow struct {
-	PersonID   int    `json:"person_id"`
-	Slug       string `json:"slug"`
-	Name       string `json:"name"`
+	PersonID   int     `json:"person_id"`
+	Slug       string  `json:"slug"`
+	Name       string  `json:"name"`
 	Party      *string `json:"party,omitempty"`
 	State      *string `json:"state,omitempty"`
-	Trades     int    `json:"trades"`
-	Buys       int    `json:"buys"`
-	Sells      int    `json:"sells"`
-	EstVolume  int64  `json:"est_volume"`
-	FirstTrade string `json:"first_trade"`
-	LastTrade  string `json:"last_trade"`
+	Trades     int     `json:"trades"`
+	Buys       int     `json:"buys"`
+	Sells      int     `json:"sells"`
+	EstVolume  int64   `json:"est_volume"`
+	FirstTrade string  `json:"first_trade"`
+	LastTrade  string  `json:"last_trade"`
 }
 
 // TickerEvent is one trade row on this ticker, ready for a timeline feed.
 type TickerEvent struct {
-	PersonID  int    `json:"person_id"`
-	Slug      string `json:"slug"`
-	Name      string `json:"name"`
+	PersonID  int     `json:"person_id"`
+	Slug      string  `json:"slug"`
+	Name      string  `json:"name"`
 	Party     *string `json:"party,omitempty"`
-	TradeType string `json:"trade_type"`
+	TradeType string  `json:"trade_type"`
 	OwnerType *string `json:"owner_type,omitempty"`
-	EstAmount int64  `json:"est_amount"`
-	TradedAt  string `json:"traded_at"`
+	EstAmount int64   `json:"est_amount"`
+	TradedAt  string  `json:"traded_at"`
 	FiledAt   *string `json:"filed_at,omitempty"`
 }
 
@@ -194,7 +194,7 @@ func (s *Store) GetTickerDetail(ctx context.Context, ticker string, recentLimit 
 	d.Summary.Ticker = ticker
 
 	// Headline summary.
-	err := s.db.QueryRow(ctx, `
+	err := s.db.QueryRowContext(ctx, `
 SELECT
   COUNT(*),
   COUNT(DISTINCT ct.person_id),
@@ -205,13 +205,13 @@ SELECT
   COALESCE(SUM(CASE WHEN ct.trade_type LIKE 'sale%' THEN `+midpointExpr+` ELSE 0 END), 0),
   COUNT(DISTINCT CASE WHEN ct.trade_type = 'purchase' AND p.party = 'R' THEN ct.person_id END),
   COUNT(DISTINCT CASE WHEN ct.trade_type = 'purchase' AND p.party = 'D' THEN ct.person_id END),
-  to_char(MIN(ct.traded_at), 'YYYY-MM-DD'),
-  to_char(MAX(ct.traded_at), 'YYYY-MM-DD')
+  strftime('%Y-%m-%d', MIN(ct.traded_at)),
+  strftime('%Y-%m-%d', MAX(ct.traded_at))
 FROM congressional_trades ct
 LEFT JOIN persons p ON p.id = ct.person_id
-WHERE ct.ticker = $1
-  AND ct.traded_at >= '2000-01-01'::timestamptz
-  AND ct.traded_at <  '2100-01-01'::timestamptz
+WHERE ct.ticker = ?
+  AND ct.traded_at >= '2000-01-01'
+  AND ct.traded_at <  '2100-01-01'
 `, ticker).Scan(
 		&d.Summary.Trades, &d.Summary.DistinctReps,
 		&d.Summary.Buyers, &d.Summary.Sellers,
@@ -224,20 +224,20 @@ WHERE ct.ticker = $1
 	}
 
 	// Per-rep rollup.
-	rows, err := s.db.Query(ctx, `
+	rows, err := s.db.QueryContext(ctx, `
 SELECT
   p.id, p.slug, p.name, p.party, p.state,
   COUNT(*),
   SUM(CASE WHEN ct.trade_type = 'purchase' THEN 1 ELSE 0 END),
   SUM(CASE WHEN ct.trade_type LIKE 'sale%' THEN 1 ELSE 0 END),
   COALESCE(SUM(`+midpointExpr+`), 0),
-  to_char(MIN(ct.traded_at), 'YYYY-MM-DD'),
-  to_char(MAX(ct.traded_at), 'YYYY-MM-DD')
+  strftime('%Y-%m-%d', MIN(ct.traded_at)),
+  strftime('%Y-%m-%d', MAX(ct.traded_at))
 FROM congressional_trades ct
 JOIN persons p ON p.id = ct.person_id
-WHERE ct.ticker = $1
-  AND ct.traded_at >= '2000-01-01'::timestamptz
-  AND ct.traded_at <  '2100-01-01'::timestamptz
+WHERE ct.ticker = ?
+  AND ct.traded_at >= '2000-01-01'
+  AND ct.traded_at <  '2100-01-01'
 GROUP BY p.id, p.slug, p.name, p.party, p.state
 ORDER BY COALESCE(SUM(`+midpointExpr+`), 0) DESC, COUNT(*) DESC
 `, ticker)
@@ -255,20 +255,20 @@ ORDER BY COALESCE(SUM(`+midpointExpr+`), 0) DESC, COUNT(*) DESC
 	rows.Close()
 
 	// Recent event feed.
-	evRows, err := s.db.Query(ctx, `
+	evRows, err := s.db.QueryContext(ctx, `
 SELECT
   p.id, p.slug, p.name, p.party,
   ct.trade_type, ct.owner_type,
   `+midpointExpr+`,
-  to_char(ct.traded_at, 'YYYY-MM-DD'),
-  to_char(ct.filed_at, 'YYYY-MM-DD')
+  strftime('%Y-%m-%d', ct.traded_at),
+  strftime('%Y-%m-%d', ct.filed_at)
 FROM congressional_trades ct
 JOIN persons p ON p.id = ct.person_id
-WHERE ct.ticker = $1
-  AND ct.traded_at >= '2000-01-01'::timestamptz
-  AND ct.traded_at <  '2100-01-01'::timestamptz
+WHERE ct.ticker = ?
+  AND ct.traded_at >= '2000-01-01'
+  AND ct.traded_at <  '2100-01-01'
 ORDER BY ct.traded_at DESC
-LIMIT $2
+LIMIT ?
 `, ticker, recentLimit)
 	if err != nil {
 		return d, fmt.Errorf("ticker recent: %w", err)
@@ -290,22 +290,22 @@ LIMIT $2
 // sell, computed from real traded_at values. Both legs include their disclosed
 // midpoint dollar amount.
 type RoundTripRow struct {
-	PersonID    int     `json:"person_id"`
-	Slug        string  `json:"slug"`
-	Name        string  `json:"name"`
-	Party       *string `json:"party,omitempty"`
-	Ticker      string  `json:"ticker"`
-	BuyDate     string  `json:"buy_date"`
-	SellDate    string  `json:"sell_date"`
-	HoldDays    int     `json:"hold_days"`
-	BuyAmount   int64   `json:"buy_amount"`
-	SellAmount  int64   `json:"sell_amount"`
+	PersonID   int     `json:"person_id"`
+	Slug       string  `json:"slug"`
+	Name       string  `json:"name"`
+	Party      *string `json:"party,omitempty"`
+	Ticker     string  `json:"ticker"`
+	BuyDate    string  `json:"buy_date"`
+	SellDate   string  `json:"sell_date"`
+	HoldDays   int     `json:"hold_days"`
+	BuyAmount  int64   `json:"buy_amount"`
+	SellAmount int64   `json:"sell_amount"`
 }
 
 // RoundTrips finds the fastest buy→sell turnarounds in the dataset. The query
-// pairs each purchase with the next sale of the same ticker by the same rep
-// (window function with LEAD), then surfaces only pairs where the gap is short
-// AND the dollar amounts are non-trivial. Pure data — no inference of intent.
+// pairs each purchase with the next sale of the same ticker by the same rep,
+// then surfaces only pairs where the gap is short AND the dollar amounts are
+// non-trivial. Pure data — no inference of intent.
 func (s *Store) RoundTrips(ctx context.Context, maxHoldDays, minAmount, limit int) ([]RoundTripRow, error) {
 	if maxHoldDays <= 0 {
 		maxHoldDays = 90
@@ -317,8 +317,9 @@ func (s *Store) RoundTrips(ctx context.Context, maxHoldDays, minAmount, limit in
 		minAmount = 0
 	}
 	// For each purchase, find the earliest subsequent sale of the same ticker
-	// by the same rep. DISTINCT ON + ORDER BY does the "first match" lookup;
-	// the LATERAL join keeps it readable and lets us pull the sale's $ amount.
+	// by the same rep via a correlated subquery (SQLite does not support
+	// JOIN LATERAL). sell_at and sell_amt are each fetched with their own
+	// correlated subquery so we stay within standard SQL.
 	q := `
 WITH buys AS (
   SELECT ct.id, ct.person_id, ct.ticker, ct.traded_at AS buy_at,
@@ -326,48 +327,54 @@ WITH buys AS (
   FROM congressional_trades ct
   WHERE ct.trade_type = 'purchase'
     AND ct.ticker IS NOT NULL AND ct.ticker <> '' AND ct.ticker <> '--'
-    AND ct.traded_at >= '2000-01-01'::timestamptz
-    AND ct.traded_at <  '2100-01-01'::timestamptz
+    AND ct.traded_at >= '2000-01-01'
+    AND ct.traded_at <  '2100-01-01'
 ),
 matched AS (
   SELECT b.person_id, b.ticker, b.buy_at, b.buy_amt,
-         s.sell_at, s.sell_amt
+         (SELECT ct2.traded_at
+          FROM congressional_trades ct2
+          WHERE ct2.person_id = b.person_id
+            AND ct2.ticker = b.ticker
+            AND ct2.trade_type LIKE 'sale%'
+            AND ct2.traded_at > b.buy_at
+            AND ct2.traded_at < '2100-01-01'
+          ORDER BY ct2.traded_at ASC
+          LIMIT 1) AS sell_at,
+         (SELECT COALESCE(
+                   CASE
+                     WHEN ct2.amount_range_low IS NOT NULL AND ct2.amount_range_high IS NOT NULL
+                       THEN (ct2.amount_range_low + ct2.amount_range_high) / 2
+                     WHEN ct2.amount_range_low IS NOT NULL THEN ct2.amount_range_low
+                     WHEN ct2.amount_range_high IS NOT NULL THEN ct2.amount_range_high
+                     ELSE 0
+                   END, 0)
+          FROM congressional_trades ct2
+          WHERE ct2.person_id = b.person_id
+            AND ct2.ticker = b.ticker
+            AND ct2.trade_type LIKE 'sale%'
+            AND ct2.traded_at > b.buy_at
+            AND ct2.traded_at < '2100-01-01'
+          ORDER BY ct2.traded_at ASC
+          LIMIT 1) AS sell_amt
   FROM buys b
-  JOIN LATERAL (
-    SELECT ct2.traded_at AS sell_at,
-           COALESCE(
-             CASE
-               WHEN ct2.amount_range_low IS NOT NULL AND ct2.amount_range_high IS NOT NULL
-                 THEN (ct2.amount_range_low + ct2.amount_range_high) / 2
-               WHEN ct2.amount_range_low IS NOT NULL THEN ct2.amount_range_low
-               WHEN ct2.amount_range_high IS NOT NULL THEN ct2.amount_range_high
-               ELSE 0
-             END, 0)::BIGINT AS sell_amt
-    FROM congressional_trades ct2
-    WHERE ct2.person_id = b.person_id
-      AND ct2.ticker = b.ticker
-      AND ct2.trade_type LIKE 'sale%'
-      AND ct2.traded_at > b.buy_at
-      AND ct2.traded_at <  '2100-01-01'::timestamptz
-    ORDER BY ct2.traded_at ASC
-    LIMIT 1
-  ) s ON TRUE
 )
 SELECT m.person_id, p.slug, p.name, p.party,
        m.ticker,
-       to_char(m.buy_at,  'YYYY-MM-DD'),
-       to_char(m.sell_at, 'YYYY-MM-DD'),
-       (EXTRACT(EPOCH FROM (m.sell_at - m.buy_at)) / 86400)::int,
+       strftime('%Y-%m-%d', m.buy_at),
+       strftime('%Y-%m-%d', m.sell_at),
+       CAST(julianday(m.sell_at) - julianday(m.buy_at) AS INTEGER),
        m.buy_amt, m.sell_amt
 FROM matched m
 JOIN persons p ON p.id = m.person_id
-WHERE (EXTRACT(EPOCH FROM (m.sell_at - m.buy_at)) / 86400)::int BETWEEN 0 AND $1
-  AND m.buy_amt >= $2
-ORDER BY (EXTRACT(EPOCH FROM (m.sell_at - m.buy_at)) / 86400)::int ASC,
+WHERE m.sell_at IS NOT NULL
+  AND CAST(julianday(m.sell_at) - julianday(m.buy_at) AS INTEGER) BETWEEN 0 AND ?
+  AND m.buy_amt >= ?
+ORDER BY CAST(julianday(m.sell_at) - julianday(m.buy_at) AS INTEGER) ASC,
          m.buy_amt DESC
-LIMIT $3
+LIMIT ?
 `
-	rows, err := s.db.Query(ctx, q, maxHoldDays, minAmount, limit)
+	rows, err := s.db.QueryContext(ctx, q, maxHoldDays, minAmount, limit)
 	if err != nil {
 		return nil, fmt.Errorf("round trips: %w", err)
 	}
@@ -384,4 +391,3 @@ LIMIT $3
 	}
 	return out, rows.Err()
 }
-

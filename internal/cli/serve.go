@@ -30,16 +30,16 @@ var serveCmd = &cobra.Command{
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
-		pool, err := db.Connect(ctx, cfg.DatabaseURL)
+		d, err := db.Connect(ctx, cfg.DatabaseURL)
 		if err != nil {
 			return fmt.Errorf("connecting to database: %w", err)
 		}
-		defer pool.Close()
+		defer d.Close()
 
 		// Verify DB connectivity but don't auto-migrate.
 		// Run `mrdn migrate` separately before starting the server.
 
-		store := db.NewStore(pool)
+		store := db.NewStore(d)
 		srv := api.NewServer(store)
 		srv.SetStaticFS(web.Static)
 

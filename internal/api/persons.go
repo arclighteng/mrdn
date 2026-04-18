@@ -7,7 +7,7 @@ import (
 
 	"github.com/arclighteng/mrdn/internal/db"
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5"
+	"database/sql"
 )
 
 var slugRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,80}$`)
@@ -81,7 +81,7 @@ func (s *Server) handleGetPerson(w http.ResponseWriter, r *http.Request) {
 
 	person, err := s.store.GetPersonBySlug(r.Context(), slug)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, 404, "NOT_FOUND", "person not found")
 			return
 		}

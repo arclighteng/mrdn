@@ -8,8 +8,8 @@ import (
 
 // UpdateEventCompanyID sets the company_id on an existing event row.
 func (s *Store) UpdateEventCompanyID(ctx context.Context, eventID int, companyID int) error {
-	_, err := s.db.Exec(ctx,
-		`UPDATE events SET company_id = $1 WHERE id = $2`,
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE events SET company_id = ? WHERE id = ?`,
 		companyID, eventID)
 	if err != nil {
 		return fmt.Errorf("updating event %d company_id: %w", eventID, err)
@@ -27,7 +27,7 @@ type CompanyLookup struct {
 // ListAllCompanyLookups returns all companies with just id, ticker, name
 // for populating the in-memory resolver cache.
 func (s *Store) ListAllCompanyLookups(ctx context.Context) ([]CompanyLookup, error) {
-	rows, err := s.db.Query(ctx,
+	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, ticker, name FROM companies ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("listing company lookups: %w", err)
@@ -52,23 +52,19 @@ func (s *Store) ListUnresolvedEventsAfter(ctx context.Context, source string, af
 	query := `SELECT id, source, source_id, company_id, event_type, event_data, occurred_at, ingested_at
 		FROM events WHERE company_id IS NULL`
 	args := []any{}
-	argN := 1
 
-	query += fmt.Sprintf(" AND id > $%d", argN)
+	query += " AND id > ?"
 	args = append(args, afterID)
-	argN++
 
 	if source != "" {
-		query += fmt.Sprintf(" AND source = $%d", argN)
+		query += " AND source = ?"
 		args = append(args, source)
-		argN++
 	}
 
-	query += " ORDER BY id"
-	query += fmt.Sprintf(" LIMIT $%d", argN)
+	query += " ORDER BY id LIMIT ?"
 	args = append(args, batchSize)
 
-	rows, err := s.db.Query(ctx, query, args...)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("listing unresolved events: %w", err)
 	}
@@ -77,10 +73,13 @@ func (s *Store) ListUnresolvedEventsAfter(ctx context.Context, source string, af
 	var events []Event
 	for rows.Next() {
 		var e Event
+		var occurredAtStr, ingestedAtStr string
 		if err := rows.Scan(&e.ID, &e.Source, &e.SourceID, &e.CompanyID, &e.EventType,
-			&e.EventData, &e.OccurredAt, &e.IngestedAt); err != nil {
+			&e.EventData, &occurredAtStr, &ingestedAtStr); err != nil {
 			return nil, fmt.Errorf("scanning unresolved event: %w", err)
 		}
+		e.OccurredAt, _ = scanTime(occurredAtStr)
+		e.IngestedAt, _ = scanTime(ingestedAtStr)
 		events = append(events, e)
 	}
 	return events, rows.Err()
@@ -98,8 +97,8 @@ func (s *Store) SearchCompanyByName(ctx context.Context, name string) (*CompanyL
 	var c CompanyLookup
 
 	// Try exact match first.
-	err := s.db.QueryRow(ctx,
-		`SELECT id, ticker, name FROM companies WHERE LOWER(name) = LOWER($1) LIMIT 1`,
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, ticker, name FROM companies WHERE name = ? COLLATE NOCASE LIMIT 1`,
 		name).Scan(&c.ID, &c.Ticker, &c.Name)
 	if err == nil {
 		return &c, nil
@@ -109,12 +108,12 @@ func (s *Store) SearchCompanyByName(ctx context.Context, name string) (*CompanyL
 	// Use the shorter of the two as the prefix — query both directions.
 	// Escape LIKE metacharacters so user input cannot alter the match pattern.
 	escapedName := escapeLike(name)
-	err = s.db.QueryRow(ctx,
+	err = s.db.QueryRowContext(ctx,
 		`SELECT id, ticker, name FROM companies
-		WHERE LOWER(name) LIKE LOWER($1) || '%' ESCAPE '\'
-		   OR LOWER($1) LIKE LOWER(name) || '%' ESCAPE '\'
+		WHERE LOWER(name) LIKE LOWER(?) || '%' ESCAPE '\'
+		   OR LOWER(?) LIKE LOWER(name) || '%' ESCAPE '\'
 		ORDER BY LENGTH(name) LIMIT 1`,
-		escapedName).Scan(&c.ID, &c.Ticker, &c.Name)
+		escapedName, escapedName).Scan(&c.ID, &c.Ticker, &c.Name)
 	if err != nil {
 		return nil, err
 	}
