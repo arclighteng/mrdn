@@ -48,6 +48,7 @@ jobs:
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
+          accountId: ${{ vars.CF_ACCOUNT_ID }}
           command: pages deploy dist --project-name=mrdn
 
       - name: Setup Node.js
@@ -63,6 +64,7 @@ jobs:
             --remote
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID }}
 
       - name: Upload data to D1
         run: |
@@ -80,6 +82,7 @@ jobs:
           done
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID }}
 
       - name: Install Worker dependencies
         run: cd workers/query && npm ci
@@ -91,6 +94,7 @@ jobs:
         run: cd workers/query && npx wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID }}
 
       - name: Upload signal and metadata to KV
         run: |
@@ -109,6 +113,7 @@ jobs:
           done
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID }}
 
       - name: Prune old data (local)
         run: ./mrdn prune --keep-days 90
