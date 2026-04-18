@@ -27,7 +27,10 @@ export async function executeQuery(
 
   const sqlClient = neon(url);
   const start = Date.now();
-  const rows = await sqlClient(sql, params);
+  // neon() returns a tagged-template function, but also supports (sql, params) when
+  // called with a plain string and array — TypeScript types are stricter than runtime.
+  // Cast to bypass the TemplateStringsArray constraint.
+  const rows = await (sqlClient as unknown as (sql: string, params: unknown[]) => Promise<Record<string, unknown>[]>)(sql, params);
   return {
     rows: rows as Record<string, unknown>[],
     duration_ms: Date.now() - start,
