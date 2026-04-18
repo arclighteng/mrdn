@@ -32,7 +32,7 @@ jobs:
           MRDN_FEC_API_KEY: ${{ secrets.MRDN_FEC_API_KEY }}
 
       - name: Ingest House trades (historical)
-        run: ./mrdn ingest-house-trades
+        run: ./mrdn ingest-house-trades --file data/seed/house_trades.json
         env:
           DATABASE_URL: file:mrdn.db
 
