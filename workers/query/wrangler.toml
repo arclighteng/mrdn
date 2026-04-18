@@ -8,6 +8,6 @@ WORKER_ENV = "production"
 # KV namespace for signal membership + data metadata
 [[kv_namespaces]]
 binding = "MQL_KV"
-id = "PLACEHOLDER_KV_ID"
+id = "04353bca28bc4a78bb51f170adccfd91"
 
 # DATABASE_URL is set via `wrangler secret put DATABASE_URL`
