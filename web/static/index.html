@@ -1690,7 +1690,7 @@ function app() {
     mqlSuggestIdx: -1,
     mqlShowSuggestions: false,
     mqlRecent: JSON.parse(localStorage.getItem('mrdn_mql_recent') || '[]'),
-    mqlWorkerUrl: document.querySelector('meta[name="mql-worker-url"]')?.content || 'https://mrdn-query.arclighteng.workers.dev',
+    mqlWorkerUrl: document.querySelector('meta[name="mql-worker-url"]')?.content || 'https://mrdn-query.mrdn.workers.dev',
 
     init() {
       this.loadDashboard();

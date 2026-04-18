@@ -9,7 +9,9 @@ export async function executeQuery(
   params: unknown[],
 ): Promise<QueryResult> {
   const start = Date.now();
-  const stmt = db.prepare(sql).bind(...params);
+  const stmt = params.length > 0
+    ? db.prepare(sql).bind(...params)
+    : db.prepare(sql);
   const result = await stmt.all();
   return {
     rows: (result.results ?? []) as Record<string, unknown>[],
