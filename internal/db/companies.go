@@ -42,6 +42,7 @@ type CompanyFilter struct {
 
 // StrPtr is a helper for creating *string values in test code and seed data.
 func StrPtr(s string) *string { return &s }
+func IntPtr(i int) *int       { return &i }
 
 // EnsureCompany inserts the company if it doesn't exist yet, but never
 // overwrites an existing row.

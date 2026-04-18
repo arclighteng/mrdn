@@ -12,7 +12,7 @@ type SourceMeta struct {
 	ExpectedLag         *string    `json:"expected_lag,omitempty"`
 	LastSuccessfulPoll  *time.Time `json:"last_successful_poll"`
 	LastNewDataAt       *time.Time `json:"last_new_data_at"`
-	PollIntervalSeconds int        `json:"poll_interval_seconds"`
+	PollIntervalSeconds *int       `json:"poll_interval_seconds,omitempty"`
 	Status              string     `json:"status"`
 	LastAttemptAt       *time.Time `json:"last_attempt_at"`
 	LastHTTPCode        *int       `json:"last_http_code"`

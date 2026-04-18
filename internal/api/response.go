@@ -63,7 +63,7 @@ func freshnessFromSource(sm db.SourceMeta) Freshness {
 	// If status is not healthy, grade is D
 	// If PollIntervalSeconds is 0, we can't compute age ratio — grade D (unknown interval)
 	// A = age < 2x poll_interval, B = < 5x, C = < 10x, D = older
-	if sm.Status != "healthy" || sm.PollIntervalSeconds == 0 {
+	if sm.Status != "healthy" || sm.PollIntervalSeconds == nil || *sm.PollIntervalSeconds == 0 {
 		f.Grade = "D"
 		return f
 	}
@@ -73,7 +73,7 @@ func freshnessFromSource(sm db.SourceMeta) Freshness {
 		return f
 	}
 
-	ratio := float64(f.AgeSeconds) / float64(sm.PollIntervalSeconds)
+	ratio := float64(f.AgeSeconds) / float64(*sm.PollIntervalSeconds)
 	switch {
 	case ratio < 2:
 		f.Grade = "A"
