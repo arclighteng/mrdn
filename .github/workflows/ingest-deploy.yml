@@ -80,6 +80,9 @@ jobs:
             sqlite3 mrdn.db ".mode insert $TABLE" "SELECT * FROM $TABLE;" >> d1-data.sql 2>/dev/null || true
           done
 
+          # Convert INSERT INTO → INSERT OR REPLACE INTO to handle re-runs
+          sed -i 's/^INSERT INTO/INSERT OR REPLACE INTO/g' d1-data.sql
+
           split -l 500 -d d1-data.sql d1-chunk-
           cd workers/query
           for CHUNK in ../../d1-chunk-*; do
