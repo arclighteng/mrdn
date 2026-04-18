@@ -63,6 +63,15 @@ describe("compile", () => {
     expect(() => compile(q, null, [])).toThrow(ComplexityError);
   });
 
+  it("allows by: filter by narrowing to person tables", () => {
+    const q = parse("by:adam-b-schiff");
+    const result = compile(q, null, []);
+    expect(result.complexity).toBeLessThanOrEqual(6);
+    // Should only query congressional_trades (the only hasPerson table)
+    expect(result.sql).toContain("congressional_trades");
+    expect(result.sql).not.toContain("UNION ALL");
+  });
+
   it("compiles cursor pagination", () => {
     const cursor: Cursor = {
       occurred_at: "2025-03-15T14:22:00Z",

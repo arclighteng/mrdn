@@ -195,6 +195,23 @@ export function compile(
     tables = tables.filter((t) => !negTypeFilter.values.includes(t.eventType));
   }
 
+  // Auto-narrow tables based on filter applicability to avoid D1 compound SELECT limits.
+  const hasByFilter = query.filters.some((f) => f.key === "by");
+  if (hasByFilter) {
+    tables = tables.filter((t) => t.hasPerson);
+  }
+  const hasTickerFilter = query.filters.some((f) => f.key === "ticker");
+  if (hasTickerFilter || query.bareText.length > 0) {
+    tables = tables.filter((t) => t.hasCompany || !!t.customJoins);
+  }
+
+  // D1 has a compound SELECT limit (~500 terms). Each branch generates many terms,
+  // so cap at 5 tables. Tables are ordered by importance in the TABLES array.
+  if (tables.length > 5) {
+    warnings.push(`Query spans ${tables.length} event types — showing results from the first 5. Add a type: filter for specific results.`);
+    tables = tables.slice(0, 5);
+  }
+
   const branches = tables.map((table) => buildBranch(table, query, params, cursor, signalTickers, warnings));
 
   const innerSql = branches.length === 1 ? branches[0] : branches.join("\nUNION ALL\n");
@@ -610,7 +627,8 @@ function computeComplexity(query: ParsedQuery, signalTickers: string[]): number 
   }
   if (!hasDate) score += 2;
   if (query.filters.some((f) => f.key === "signal") && signalTickers.length === 0) score += 3;
-  if (!hasType && !hasTicker && !hasPerson && !hasDate) score += 2;
+  const hasBareText = query.bareText.length > 0;
+  if (!hasType && !hasTicker && !hasPerson && !hasDate && !hasBareText) score += 2;
 
   return score;
 }
