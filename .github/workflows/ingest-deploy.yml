@@ -31,6 +31,11 @@ jobs:
           MRDN_POLYGON_API_KEY: ${{ secrets.MRDN_POLYGON_API_KEY }}
           MRDN_FEC_API_KEY: ${{ secrets.MRDN_FEC_API_KEY }}
 
+      - name: Ingest House trades (historical)
+        run: ./mrdn ingest-house-trades
+        env:
+          DATABASE_URL: file:mrdn.db
+
       - name: Compute scores
         run: ./mrdn score-backfill --workers 4
         env:
