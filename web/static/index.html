@@ -139,6 +139,122 @@ tailwind.config = {
   </template>
 </div>
 
+<!-- MQL Results -->
+<template x-if="mqlResults !== null">
+  <div class="max-w-7xl mx-auto px-4 mt-4 mb-8">
+    <!-- Results header -->
+    <div class="flex items-center justify-between mb-4">
+      <div class="text-sm text-neutral-400">
+        <span x-text="mqlMeta?.result_count ?? 0"></span> results
+        <template x-if="mqlMeta?.query_ms">
+          <span> in <span x-text="mqlMeta.query_ms"></span>ms</span>
+        </template>
+      </div>
+      <button @click="clearMql()" class="text-sm text-neutral-400 hover:text-white">Clear results</button>
+    </div>
+
+    <!-- Grouped view -->
+    <template x-if="mqlMeta?.grouped">
+      <div class="space-y-2">
+        <template x-for="row in mqlResults" :key="row.group_key">
+          <div class="bg-surface-1 border border-white/10 rounded-lg px-4 py-3 flex items-center justify-between">
+            <div>
+              <span class="text-white font-medium" x-text="row.group_key || 'Unknown'"></span>
+              <span class="text-neutral-500 text-sm ml-2" x-text="'(' + row.group_by + ')'"></span>
+            </div>
+            <div class="flex items-center gap-6 text-sm">
+              <span class="text-neutral-400"><span class="text-white" x-text="row.count"></span> events</span>
+              <template x-if="row.total_amount">
+                <span class="text-neutral-400">$<span class="text-white" x-text="formatAmount(row.total_amount)"></span></span>
+              </template>
+              <span class="text-neutral-500 text-xs" x-text="formatDate(row.first_seen) + ' – ' + formatDate(row.last_seen)"></span>
+            </div>
+          </div>
+        </template>
+      </div>
+    </template>
+
+    <!-- Timeline view (default) -->
+    <template x-if="!mqlMeta?.grouped">
+      <div class="space-y-2">
+        <template x-for="row in mqlResults" :key="row.event_id">
+          <div class="bg-surface-1 border border-white/10 rounded-lg px-4 py-3">
+            <div class="flex items-center gap-3 mb-1">
+              <span class="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded font-semibold"
+                :class="{
+                  'bg-accent/20 text-accent': row.event_type === 'trade',
+                  'bg-up/20 text-up': row.event_type === 'contract',
+                  'bg-red-500/20 text-red-400': row.event_type === 'sanction',
+                  'bg-yellow-500/20 text-yellow-500': row.event_type === 'donation',
+                  'bg-purple-500/20 text-purple-400': row.event_type === 'lobbying',
+                  'bg-orange-500/20 text-orange-400': row.event_type === 'insider',
+                  'bg-cyan-500/20 text-cyan-400': row.event_type === 'court',
+                  'bg-pink-500/20 text-pink-400': row.event_type === 'warn',
+                  'bg-teal-500/20 text-teal-400': row.event_type === 'tariff',
+                }" x-text="row.event_type"></span>
+              <span class="text-xs text-neutral-500" x-text="formatDate(row.occurred_at)"></span>
+              <template x-if="row.score">
+                <span class="text-xs px-1.5 py-0.5 rounded"
+                  :class="row.score >= 70 ? 'bg-down/20 text-down' : row.score >= 40 ? 'bg-yellow-500/20 text-yellow-500' : 'bg-up/20 text-up'"
+                  x-text="Number(row.score).toFixed(1)"></span>
+              </template>
+            </div>
+            <div class="flex items-center gap-2 text-sm">
+              <template x-if="row.person_name">
+                <button @click="clearMql(); openPerson(row.person_slug)"
+                  class="text-accent hover:underline" x-text="row.person_name"></button>
+              </template>
+              <template x-if="row.action">
+                <span class="text-neutral-400" x-text="row.action"></span>
+              </template>
+              <template x-if="row.ticker">
+                <button @click="clearMql(); openCompany(row.ticker)"
+                  class="text-white font-mono font-medium hover:underline" x-text="row.ticker"></button>
+              </template>
+              <template x-if="row.company_name">
+                <span class="text-neutral-500" x-text="row.company_name"></span>
+              </template>
+            </div>
+            <div class="flex items-center gap-4 mt-1 text-xs text-neutral-500">
+              <template x-if="row.amount_mid">
+                <span>$<span x-text="formatAmount(row.amount_mid)"></span></span>
+              </template>
+              <template x-if="row.owner"><span x-text="'owner: ' + row.owner"></span></template>
+              <template x-if="row.agency"><span x-text="row.agency"></span></template>
+              <template x-if="row.program"><span x-text="row.program"></span></template>
+              <template x-if="row.country"><span x-text="row.country"></span></template>
+              <template x-if="row.state"><span x-text="'State: ' + row.state"></span></template>
+              <template x-if="row.workers_affected"><span x-text="row.workers_affected + ' workers'"></span></template>
+              <template x-if="row.entity_name"><span x-text="row.entity_name"></span></template>
+              <template x-if="row.registrant"><span x-text="row.registrant"></span></template>
+              <template x-if="row.filer_name"><span x-text="row.filer_name + (row.filer_title ? ' (' + row.filer_title + ')' : '')"></span></template>
+              <template x-if="row.sector"><span x-text="row.sector"></span></template>
+            </div>
+          </div>
+        </template>
+
+        <!-- Load more -->
+        <template x-if="mqlMeta?.has_more">
+          <button @click="loadMoreMql()"
+            class="w-full py-3 text-sm text-accent hover:text-accent-light bg-surface-1 border border-white/10 rounded-lg"
+            :disabled="mqlLoading">
+            <span x-show="!mqlLoading">Load more</span>
+            <span x-show="mqlLoading">Loading...</span>
+          </button>
+        </template>
+
+        <!-- Empty state -->
+        <template x-if="mqlResults.length === 0">
+          <div class="text-center py-12 text-neutral-500">
+            <p class="text-lg mb-2">No results</p>
+            <p class="text-sm">Try broadening your date range or removing filters.</p>
+          </div>
+        </template>
+      </div>
+    </template>
+  </div>
+</template>
+
 <!-- Score Legend (dismissable) -->
 <div x-data="{ show: !localStorage.getItem('mrdn_legend_dismissed') }" x-show="show" x-transition
   class="max-w-7xl mx-auto px-4 mt-3">
@@ -157,7 +273,7 @@ tailwind.config = {
 </div>
 
 <!-- Main -->
-<main class="max-w-7xl mx-auto px-4 py-6">
+<main class="max-w-7xl mx-auto px-4 py-6" :class="mqlResults !== null ? 'opacity-30 pointer-events-none' : ''">
 
   <!-- Dashboard -->
   <div x-show="view === 'dashboard'" x-transition class="space-y-6 fade-in">
