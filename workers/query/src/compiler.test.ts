@@ -1,0 +1,106 @@
+import { describe, it, expect } from "vitest";
+import { compile, ComplexityError } from "./compiler";
+import { parse } from "./parser";
+import type { Cursor } from "./types";
+
+describe("compile", () => {
+  it("compiles a single-type query", () => {
+    const q = parse("type:trade by:pelosi since:30d");
+    const result = compile(q, null, []);
+    expect(result.sql).toContain("congressional_trades");
+    expect(result.sql).toContain("$1");
+    expect(result.params).toContainEqual(["pelosi"]);
+    expect(result.sql).not.toContain("UNION ALL");
+  });
+
+  it("compiles a multi-type query with UNION ALL", () => {
+    const q = parse("type:trade,contract ticker:MSFT since:30d");
+    const result = compile(q, null, []);
+    expect(result.sql).toContain("UNION ALL");
+    expect(result.sql).toContain("congressional_trades");
+    expect(result.sql).toContain("contracts");
+  });
+
+  it("uses parameterized values, never interpolates", () => {
+    const q = parse('type:trade by:"robert drop table" since:30d');
+    const result = compile(q, null, []);
+    expect(result.sql).not.toContain("drop table");
+    // Quoted name with space → ILIKE match, param is "%robert drop table%"
+    expect(result.params.some((p) => p === "%robert drop table%")).toBe(true);
+  });
+
+  it("compiles amount filter with unit conversion", () => {
+    const q = parse("type:contract amount:>1m since:30d");
+    const result = compile(q, null, []);
+    // Contracts store cents — compiler should multiply by 100
+    expect(result.params).toContain(100000000);
+  });
+
+  it("compiles score filter with CTE", () => {
+    const q = parse("type:trade score:>70 since:30d");
+    const result = compile(q, null, []);
+    expect(result.sql).toContain("latest_scores");
+    expect(result.sql).toContain("DISTINCT ON");
+  });
+
+  it("compiles group query", () => {
+    const q = parse("type:trade group:company since:30d");
+    const result = compile(q, null, []);
+    expect(result.sql).toContain("GROUP BY");
+    expect(result.sql).toContain("COUNT(*)");
+  });
+
+  it("rejects score-delta sort with helpful message", () => {
+    const q = parse("type:trade sort:score-delta since:30d");
+    expect(() => compile(q, null, [])).toThrow("score-delta");
+  });
+
+  it("rejects queries that exceed complexity limit", () => {
+    // No type, no ticker, no person, no date bounds — should be high complexity
+    const q = parse("sector:defense");
+    expect(() => compile(q, null, [])).toThrow(ComplexityError);
+  });
+
+  it("compiles cursor pagination", () => {
+    const cursor: Cursor = {
+      occurred_at: "2025-03-15T14:22:00Z",
+      event_id: 92041,
+      data_as_of: "2026-04-17T06:00:00Z",
+    };
+    const q = parse("type:trade since:30d");
+    const result = compile(q, cursor, []);
+    expect(result.sql).toContain("e.id <");
+  });
+
+  it("compiles signal filter using provided tickers", () => {
+    const q = parse("type:trade signal:swarm since:30d");
+    const result = compile(q, null, ["MSFT", "AAPL"]);
+    expect(result.sql).toContain("c.ticker = ANY");
+    expect(result.params).toContainEqual(["MSFT", "AAPL"]);
+  });
+
+  it("compiles negated filter", () => {
+    const q = parse("type:trade -ticker:MSFT since:30d");
+    const result = compile(q, null, []);
+    expect(result.sql).toContain("NOT");
+    expect(result.sql).toContain("c.ticker");
+  });
+
+  it("compiles tariff country filter with hs_codes join", () => {
+    const q = parse("type:tariff country:RU since:30d");
+    const result = compile(q, null, []);
+    expect(result.sql).toContain("affected_countries");
+  });
+
+  it("produces WHERE 1=0 for inapplicable filters", () => {
+    const q = parse("type:contract party:D since:30d");
+    const result = compile(q, null, []);
+    expect(result.sql).toContain("contracts");
+  });
+
+  it("compiles bare text as ILIKE", () => {
+    const q = parse("type:trade pelosi since:30d");
+    const result = compile(q, null, []);
+    expect(result.sql).toContain("ILIKE");
+  });
+});
