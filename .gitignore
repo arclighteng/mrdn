@@ -19,6 +19,7 @@ dist/
 bin/
 .worktrees/
 .air.toml
+node_modules/
 
 # Editor / OS
 .vscode/

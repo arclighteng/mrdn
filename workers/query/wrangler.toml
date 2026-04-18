@@ -1,0 +1,13 @@
+name = "mrdn-query"
+main = "src/index.ts"
+compatibility_date = "2026-04-01"
+
+[vars]
+WORKER_ENV = "production"
+
+# KV namespace for signal membership + data metadata
+[[kv_namespaces]]
+binding = "MQL_KV"
+id = "PLACEHOLDER_KV_ID"
+
+# DATABASE_URL is set via `wrangler secret put DATABASE_URL`
