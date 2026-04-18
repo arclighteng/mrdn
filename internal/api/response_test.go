@@ -38,7 +38,7 @@ func TestFreshnessFromSource_Healthy(t *testing.T) {
 	now := time.Now().Add(-30 * time.Second)
 	sm := db.SourceMeta{
 		SourceName:          "polygon",
-		ExpectedLag:         "1 day",
+		ExpectedLag:         db.StrPtr("1 day"),
 		LastNewDataAt:       &now,
 		PollIntervalSeconds: 86400,
 		Status:              "healthy",
@@ -46,7 +46,7 @@ func TestFreshnessFromSource_Healthy(t *testing.T) {
 
 	f := freshnessFromSource(sm)
 	assert.Equal(t, "polygon", f.Source)
-	assert.Equal(t, "1 day", f.SourceLag)
+	assert.Equal(t, db.StrPtr("1 day"), f.SourceLag)
 	assert.Equal(t, "A", f.Grade)
 	assert.InDelta(t, 30, f.AgeSeconds, 5)
 }
@@ -56,7 +56,7 @@ func TestFreshnessFromSource_GradeB(t *testing.T) {
 	now := time.Now().Add(-3 * 3600 * time.Second) // 3 hours ago
 	sm := db.SourceMeta{
 		SourceName:          "edgar_form4",
-		ExpectedLag:         "same day",
+		ExpectedLag:         db.StrPtr("same day"),
 		LastNewDataAt:       &now,
 		PollIntervalSeconds: 3600,
 		Status:              "healthy",
@@ -71,7 +71,7 @@ func TestFreshnessFromSource_GradeC(t *testing.T) {
 	now := time.Now().Add(-7 * 3600 * time.Second)
 	sm := db.SourceMeta{
 		SourceName:          "edgar_form4",
-		ExpectedLag:         "same day",
+		ExpectedLag:         db.StrPtr("same day"),
 		LastNewDataAt:       &now,
 		PollIntervalSeconds: 3600,
 		Status:              "healthy",
@@ -85,7 +85,7 @@ func TestFreshnessFromSource_Degraded(t *testing.T) {
 	now := time.Now().Add(-10 * time.Second)
 	sm := db.SourceMeta{
 		SourceName:          "finnhub",
-		ExpectedLag:         "seconds",
+		ExpectedLag:         db.StrPtr("seconds"),
 		LastNewDataAt:       &now,
 		PollIntervalSeconds: 0,
 		Status:              "healthy",
@@ -99,7 +99,7 @@ func TestFreshnessFromSource_Down(t *testing.T) {
 	now := time.Now().Add(-10 * time.Second)
 	sm := db.SourceMeta{
 		SourceName:          "polygon",
-		ExpectedLag:         "1 day",
+		ExpectedLag:         db.StrPtr("1 day"),
 		LastNewDataAt:       &now,
 		PollIntervalSeconds: 86400,
 		Status:              "down",
@@ -112,7 +112,7 @@ func TestFreshnessFromSource_Down(t *testing.T) {
 func TestFreshnessFromSource_NilLastUpdated(t *testing.T) {
 	sm := db.SourceMeta{
 		SourceName:          "polygon",
-		ExpectedLag:         "1 day",
+		ExpectedLag:         db.StrPtr("1 day"),
 		PollIntervalSeconds: 86400,
 		Status:              "healthy",
 	}

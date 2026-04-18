@@ -9,7 +9,7 @@ import (
 type SourceMeta struct {
 	ID                  int        `json:"id"`
 	SourceName          string     `json:"source_name"`
-	ExpectedLag         string     `json:"expected_lag"`
+	ExpectedLag         *string    `json:"expected_lag,omitempty"`
 	LastSuccessfulPoll  *time.Time `json:"last_successful_poll"`
 	LastNewDataAt       *time.Time `json:"last_new_data_at"`
 	PollIntervalSeconds int        `json:"poll_interval_seconds"`

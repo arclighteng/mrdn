@@ -45,8 +45,12 @@ var sourcesCmd = &cobra.Command{
 			if s.LastNewDataAt != nil {
 				lastData = time.Since(*s.LastNewDataAt).Truncate(time.Second).String() + " ago"
 			}
+			lag := ""
+			if s.ExpectedLag != nil {
+				lag = *s.ExpectedLag
+			}
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-				s.SourceName, s.Status, s.ExpectedLag, lastPoll, lastData)
+				s.SourceName, s.Status, lag, lastPoll, lastData)
 		}
 		w.Flush()
 		return nil

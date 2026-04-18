@@ -11,7 +11,7 @@ import (
 
 type Freshness struct {
 	Source      string     `json:"source"`
-	SourceLag   string     `json:"source_lag"`
+	SourceLag   *string    `json:"source_lag,omitempty"`
 	LastUpdated *time.Time `json:"last_updated"`
 	AgeSeconds  int        `json:"age_seconds"`
 	Grade       string     `json:"grade"`
