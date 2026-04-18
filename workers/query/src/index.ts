@@ -127,6 +127,9 @@ async function handleQuery(request: Request, env: Env): Promise<Response> {
     if (msg.includes("57014") || msg.includes("statement timeout")) {
       return errorResponse(503, "QUERY_TIMEOUT", "Query exceeded 8-second timeout. Try narrowing your filters.");
     }
+    if (msg.includes("too many terms in compound SELECT")) {
+      return errorResponse(400, "COMPLEXITY_LIMIT", "Query spans too many tables. Add a type: filter to narrow.");
+    }
     console.error("Query execution error:", msg);
     return errorResponse(500, "INTERNAL_ERROR", "Query execution failed");
   }
