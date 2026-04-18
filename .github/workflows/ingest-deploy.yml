@@ -36,6 +36,17 @@ jobs:
         env:
           DATABASE_URL: file:mrdn.db
 
+      - name: Enrich company names from Polygon
+        run: ./mrdn enrich-companies
+        env:
+          DATABASE_URL: file:mrdn.db
+          MRDN_POLYGON_API_KEY: ${{ secrets.MRDN_POLYGON_API_KEY }}
+
+      - name: Backfill sectors from HSW data
+        run: ./mrdn backfill-sectors --file data/seed/house_trades.json
+        env:
+          DATABASE_URL: file:mrdn.db
+
       - name: Compute scores
         run: ./mrdn score-backfill --workers 4
         env:
