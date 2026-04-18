@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"time"
 
 	"github.com/arclighteng/mrdn/internal/db"
 )
@@ -62,6 +63,16 @@ func Run(ctx context.Context, store *db.Store, outDir string) error {
 	}
 	if err := exportPersonDetails(ctx, store, outDir); err != nil {
 		return fmt.Errorf("person details: %w", err)
+	}
+
+	// --- Query index for MQL autocomplete ---
+	if err := exportQueryIndex(ctx, store, outDir); err != nil {
+		return fmt.Errorf("query index: %w", err)
+	}
+
+	// --- Data metadata for staleness detection ---
+	if err := exportDataMeta(outDir); err != nil {
+		return fmt.Errorf("data meta: %w", err)
 	}
 
 	log.Println("[export] done")
@@ -404,6 +415,85 @@ func emptyIfNil[T any](s []T) []T {
 		return []T{}
 	}
 	return s
+}
+
+func exportQueryIndex(ctx context.Context, store *db.Store, outDir string) error {
+	traders, err := store.ListActiveTraders(ctx, 500)
+	if err != nil {
+		log.Printf("[export] query index: active traders: %v", err)
+		traders = nil
+	}
+
+	type tickerEntry struct {
+		Ticker string `json:"ticker"`
+		Sector string `json:"sector,omitempty"`
+	}
+	topTickers, err := store.TopTickers(ctx, 500)
+	if err != nil {
+		log.Printf("[export] query index: top tickers: %v", err)
+		topTickers = nil
+	}
+	var tickers []tickerEntry
+	for _, t := range topTickers {
+		sector := ""
+		if t.Sector != nil {
+			sector = *t.Sector
+		}
+		tickers = append(tickers, tickerEntry{
+			Ticker: t.Ticker,
+			Sector: sector,
+		})
+	}
+
+	agencies, err := store.DistinctAgencies(ctx)
+	if err != nil {
+		log.Printf("[export] query index: agencies: %v", err)
+	}
+
+	sectors, err := store.DistinctSectors(ctx)
+	if err != nil {
+		log.Printf("[export] query index: sectors: %v", err)
+	}
+
+	programs, err := store.DistinctPrograms(ctx)
+	if err != nil {
+		log.Printf("[export] query index: programs: %v", err)
+	}
+
+	committees, err := store.ListCommittees(ctx)
+	if err != nil {
+		log.Printf("[export] query index: committees: %v", err)
+	}
+
+	index := map[string]any{
+		"version": time.Now().UTC().Format(time.RFC3339),
+		"keys": []map[string]any{
+			{"key": "type:", "values": []string{"trade", "contract", "sanction", "donation", "lobbying", "insider", "court", "warn", "tariff"}, "description": "Event type"},
+			{"key": "action:", "values": []string{"buy", "sell", "exchange", "10b5-1", "option", "gift", "award", "modification", "cancellation"}, "description": "Action type"},
+			{"key": "party:", "values": []string{"D", "R", "I"}, "description": "Political party"},
+			{"key": "branch:", "values": []string{"senate", "house"}, "description": "Chamber"},
+			{"key": "owner:", "values": []string{"self", "spouse", "dependent"}, "description": "Trade ownership"},
+			{"key": "sort:", "values": []string{"recent", "score", "amount"}, "description": "Sort order"},
+			{"key": "group:", "values": []string{"type", "company", "person", "sector", "week", "month"}, "description": "Group by"},
+			{"key": "market-cap:", "values": []string{"large", "mid", "small"}, "description": "Company size"},
+			{"key": "signal:", "values": []string{"swarm", "first-mover", "round-trip", "partisan"}, "description": "Signal membership"},
+		},
+		"persons":    emptyIfNil(traders),
+		"tickers":    emptyIfNil(tickers),
+		"agencies":   emptyIfNil(agencies),
+		"sectors":    emptyIfNil(sectors),
+		"programs":   emptyIfNil(programs),
+		"committees": emptyIfNil(committees),
+	}
+
+	return writeJSON(filepath.Join(outDir, "query-index.json"), index)
+}
+
+func exportDataMeta(outDir string) error {
+	meta := map[string]any{
+		"exported_at": time.Now().UTC().Format(time.RFC3339),
+	}
+	return writeJSON(filepath.Join(outDir, "meta.json"), meta)
 }
 
 // writeJSON marshals data to a JSON file, creating parent directories as needed.
