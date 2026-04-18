@@ -46,6 +46,42 @@ jobs:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           command: pages deploy dist --project-name=mrdn
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Worker dependencies
+        run: cd workers/query && npm ci
+
+      - name: Run Worker tests
+        run: cd workers/query && npx vitest run
+
+      - name: Deploy MQL Worker
+        run: cd workers/query && npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+
+      - name: Upload data metadata and signal blobs to KV
+        run: |
+          EXPORTED_AT=$(python3 -c "import json; print(json.load(open('dist/data/meta.json'))['exported_at'])")
+          npx wrangler kv key put --namespace-id=${{ vars.MQL_KV_NAMESPACE_ID }} "meta:data_as_of" "$EXPORTED_AT"
+
+          # Upload signal membership blobs (ticker lists for each signal type)
+          for SIGNAL_FILE in dist/data/signals/swarms.json dist/data/signals/first-movers.json dist/data/signals/round-trips.json dist/data/signals/partisan-consensus.json dist/data/signals/partisan-contrarian.json; do
+            SIGNAL_NAME=$(basename "$SIGNAL_FILE" .json)
+            # Extract ticker list from the signal JSON and upload to KV
+            python3 -c "
+          import json, sys
+          data = json.load(open('$SIGNAL_FILE'))
+          items = data.get('data', [])
+          tickers = list(set(item.get('ticker', '') for item in items if item.get('ticker')))
+          print(json.dumps(tickers))
+          " | npx wrangler kv key put --namespace-id=${{ vars.MQL_KV_NAMESPACE_ID }} "signal:$SIGNAL_NAME" --pipe
+          done
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+
       - name: Prune old data
         run: ./mrdn prune --keep-days 90
         env:
