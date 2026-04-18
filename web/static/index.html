@@ -83,6 +83,62 @@ tailwind.config = {
   </div>
 </nav>
 
+<!-- MQL Query Bar -->
+<div class="max-w-7xl mx-auto px-4 mt-3 relative" x-data>
+  <div class="relative">
+    <div class="flex items-center bg-surface-1 border border-white/15 rounded-lg focus-within:border-accent/50 transition-colors">
+      <span class="pl-3 text-neutral-500 text-sm select-none">MQL</span>
+      <input x-ref="mqlInput" type="text" x-model="mqlQuery"
+        @input.debounce.150ms="updateMqlSuggestions()"
+        @keydown="mqlKeydown($event)"
+        @focus="updateMqlSuggestions()"
+        @blur="setTimeout(() => mqlShowSuggestions = false, 200)"
+        placeholder="type:trade by:pelosi since:30d"
+        class="flex-1 bg-transparent text-sm text-neutral-200 placeholder-neutral-500 px-3 py-2.5 outline-none font-mono">
+      <template x-if="mqlQuery">
+        <button @click="clearMql()" class="px-3 text-neutral-500 hover:text-white">&times;</button>
+      </template>
+      <template x-if="mqlLoading">
+        <div class="pr-3"><div class="w-4 h-4 border-2 border-accent/30 border-t-accent rounded-full animate-spin"></div></div>
+      </template>
+    </div>
+
+    <!-- Autocomplete dropdown -->
+    <div x-show="mqlShowSuggestions && mqlSuggestions.length > 0" x-transition
+      class="absolute z-50 w-full mt-1 bg-surface-1 border border-white/15 rounded-lg shadow-xl max-h-64 overflow-y-auto">
+      <template x-for="(s, i) in mqlSuggestions" :key="i">
+        <button @mousedown.prevent="selectMqlSuggestion(s)"
+          :class="i === mqlSuggestIdx ? 'bg-surface-3 text-white' : 'text-neutral-300 hover:bg-surface-2'"
+          class="w-full text-left px-3 py-2 text-sm font-mono flex items-center gap-2">
+          <span class="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded"
+            :class="{
+              'bg-accent/20 text-accent': s.type === 'key',
+              'bg-up/20 text-up': s.type === 'value',
+              'bg-down/20 text-down': s.type === 'person',
+              'bg-yellow-500/20 text-yellow-500': s.type === 'ticker',
+              'bg-neutral-700 text-neutral-400': s.type === 'recent',
+            }" x-text="s.type"></span>
+          <span x-text="s.label"></span>
+        </button>
+      </template>
+    </div>
+  </div>
+
+  <!-- Error display -->
+  <template x-if="mqlError">
+    <div class="mt-2 px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-400" x-text="mqlError"></div>
+  </template>
+
+  <!-- Warnings -->
+  <template x-if="mqlWarnings.length > 0">
+    <div class="mt-2 px-3 py-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-sm text-yellow-400">
+      <template x-for="w in mqlWarnings" :key="w">
+        <p x-text="w"></p>
+      </template>
+    </div>
+  </template>
+</div>
+
 <!-- Score Legend (dismissable) -->
 <div x-data="{ show: !localStorage.getItem('mrdn_legend_dismissed') }" x-show="show" x-transition
   class="max-w-7xl mx-auto px-4 mt-3">
@@ -1490,8 +1546,28 @@ function app() {
     // Rankings
     rankSort: 'composite',
 
+    // MQL query state
+    mqlQuery: '',
+    mqlResults: null,
+    mqlMeta: null,
+    mqlWarnings: [],
+    mqlError: null,
+    mqlLoading: false,
+    mqlIndex: null,
+    mqlSuggestions: [],
+    mqlSuggestIdx: -1,
+    mqlShowSuggestions: false,
+    mqlRecent: JSON.parse(localStorage.getItem('mrdn_mql_recent') || '[]'),
+    mqlWorkerUrl: document.querySelector('meta[name="mql-worker-url"]')?.content || 'https://mrdn-query.arclighteng.workers.dev',
+
     init() {
       this.loadDashboard();
+      this.loadQueryIndex();
+      const urlQ = new URLSearchParams(window.location.search).get('q');
+      if (urlQ) {
+        this.mqlQuery = urlQ;
+        this.executeMql();
+      }
     },
 
     async api(path) {
@@ -2329,6 +2405,186 @@ function app() {
       if (secs < 3600) return Math.floor(secs / 60) + ' min';
       if (secs < 86400) return Math.floor(secs / 3600) + ' hr';
       return Math.floor(secs / 86400) + ' day';
+    },
+
+    async loadQueryIndex() {
+      try {
+        const resp = await fetch('/data/query-index.json');
+        if (resp.ok) this.mqlIndex = await resp.json();
+      } catch (e) { console.warn('Failed to load query index:', e); }
+    },
+
+    async executeMql() {
+      if (!this.mqlQuery.trim()) {
+        this.clearMql();
+        return;
+      }
+      this.mqlLoading = true;
+      this.mqlError = null;
+      this.mqlShowSuggestions = false;
+
+      try {
+        const resp = await fetch(this.mqlWorkerUrl + '/api/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ q: this.mqlQuery }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+          this.mqlError = data.message || 'Query failed';
+          this.mqlResults = null;
+          return;
+        }
+        this.mqlResults = data.results;
+        this.mqlMeta = data.meta;
+        this.mqlWarnings = data.warnings || [];
+
+        // Save to recent
+        const recent = this.mqlRecent.filter(r => r !== this.mqlQuery);
+        recent.unshift(this.mqlQuery);
+        this.mqlRecent = recent.slice(0, 5);
+        localStorage.setItem('mrdn_mql_recent', JSON.stringify(this.mqlRecent));
+
+        // Update URL
+        const url = new URL(window.location);
+        url.searchParams.set('q', this.mqlQuery);
+        history.pushState(null, '', url);
+      } catch (e) {
+        this.mqlError = 'Network error — query service unavailable';
+      } finally {
+        this.mqlLoading = false;
+      }
+    },
+
+    clearMql() {
+      this.mqlQuery = '';
+      this.mqlResults = null;
+      this.mqlMeta = null;
+      this.mqlWarnings = [];
+      this.mqlError = null;
+      const url = new URL(window.location);
+      url.searchParams.delete('q');
+      history.pushState(null, '', url);
+    },
+
+    async loadMoreMql() {
+      if (!this.mqlMeta?.next_cursor) return;
+      this.mqlLoading = true;
+      try {
+        const resp = await fetch(this.mqlWorkerUrl + '/api/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ q: this.mqlQuery, cursor: this.mqlMeta.next_cursor }),
+        });
+        const data = await resp.json();
+        if (resp.ok) {
+          this.mqlResults = [...this.mqlResults, ...data.results];
+          this.mqlMeta = data.meta;
+        }
+      } finally {
+        this.mqlLoading = false;
+      }
+    },
+
+    updateMqlSuggestions() {
+      if (!this.mqlIndex || !this.mqlQuery) {
+        this.mqlSuggestions = this.mqlRecent.map(q => ({ label: q, type: 'recent', value: q }));
+        this.mqlShowSuggestions = this.mqlSuggestions.length > 0;
+        return;
+      }
+
+      const parts = this.mqlQuery.split(' ');
+      const last = parts[parts.length - 1] || '';
+      const suggestions = [];
+
+      if (last.includes(':')) {
+        // Value completion
+        const [key, partial] = last.split(':');
+        const keyEntry = this.mqlIndex.keys?.find(k => k.key === key + ':');
+        if (keyEntry) {
+          const filtered = keyEntry.values.filter(v => v.toLowerCase().startsWith(partial.toLowerCase()));
+          for (const v of filtered.slice(0, 8)) {
+            suggestions.push({ label: key + ':' + v, type: 'value', value: [...parts.slice(0, -1), key + ':' + v].join(' ') });
+          }
+        }
+        // Person completion for by:
+        if (key === 'by' && this.mqlIndex.persons) {
+          const pFiltered = this.mqlIndex.persons.filter(p =>
+            p.slug.startsWith(partial.toLowerCase()) || p.name.toLowerCase().includes(partial.toLowerCase())
+          );
+          for (const p of pFiltered.slice(0, 5)) {
+            suggestions.push({ label: `by:${p.slug} — ${p.name} (${p.party})`, type: 'person', value: [...parts.slice(0, -1), 'by:' + p.slug].join(' ') });
+          }
+        }
+        // Ticker completion
+        if (key === 'ticker' && this.mqlIndex.tickers) {
+          const tFiltered = this.mqlIndex.tickers.filter(t =>
+            t.ticker.toLowerCase().startsWith(partial.toLowerCase())
+          );
+          for (const t of tFiltered.slice(0, 5)) {
+            const label = t.sector ? `ticker:${t.ticker} — ${t.sector}` : `ticker:${t.ticker}`;
+            suggestions.push({ label, type: 'ticker', value: [...parts.slice(0, -1), 'ticker:' + t.ticker].join(' ') });
+          }
+        }
+      } else if (last) {
+        // Key completion
+        const matchingKeys = this.mqlIndex.keys?.filter(k => k.key.startsWith(last)) || [];
+        for (const k of matchingKeys.slice(0, 8)) {
+          suggestions.push({ label: k.key + ' — ' + k.description, type: 'key', value: [...parts.slice(0, -1), k.key].join(' ') });
+        }
+        // Bare text — match persons/tickers
+        if (this.mqlIndex.persons) {
+          const pMatch = this.mqlIndex.persons.filter(p => p.name.toLowerCase().includes(last.toLowerCase()));
+          for (const p of pMatch.slice(0, 3)) {
+            suggestions.push({ label: `${p.name} (${p.party}) → by:${p.slug}`, type: 'person', value: [...parts.slice(0, -1), 'by:' + p.slug].join(' ') });
+          }
+        }
+      }
+
+      this.mqlSuggestions = suggestions.slice(0, 10);
+      this.mqlSuggestIdx = -1;
+      this.mqlShowSuggestions = suggestions.length > 0;
+    },
+
+    mqlKeydown(event) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        this.mqlSuggestIdx = Math.min(this.mqlSuggestIdx + 1, this.mqlSuggestions.length - 1);
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        this.mqlSuggestIdx = Math.max(this.mqlSuggestIdx - 1, -1);
+      } else if (event.key === 'Tab' && this.mqlSuggestIdx >= 0) {
+        event.preventDefault();
+        this.mqlQuery = this.mqlSuggestions[this.mqlSuggestIdx].value;
+        this.mqlShowSuggestions = false;
+      } else if (event.key === 'Enter') {
+        if (this.mqlSuggestIdx >= 0) {
+          this.mqlQuery = this.mqlSuggestions[this.mqlSuggestIdx].value;
+          this.mqlShowSuggestions = false;
+        }
+        this.executeMql();
+      } else if (event.key === 'Escape') {
+        this.mqlShowSuggestions = false;
+      }
+    },
+
+    selectMqlSuggestion(suggestion) {
+      this.mqlQuery = suggestion.value;
+      this.mqlShowSuggestions = false;
+      this.$refs.mqlInput?.focus();
+    },
+
+    formatAmount(n) {
+      if (n == null) return '—';
+      if (Math.abs(n) >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+      if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+      if (Math.abs(n) >= 1e3) return (n / 1e3).toFixed(0) + 'K';
+      return n.toLocaleString();
+    },
+
+    formatDate(d) {
+      if (!d) return '';
+      return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     },
   }
 }
