@@ -1,5 +1,5 @@
 const MAX_CONCURRENT = 5;
-const TTL_SECONDS = 30;
+const TTL_SECONDS = 60;
 
 export interface RateLimitResult {
   allowed: boolean;
