@@ -154,7 +154,7 @@ func (s *Store) GetPersonProfile(ctx context.Context, slug string) (PersonProfil
 	var totalCount int
 	_ = s.db.QueryRowContext(ctx, `
 		SELECT
-			'[' || GROUP_CONCAT(CAST(ROUND(julianday(filed_at) - julianday(traded_at)) AS INTEGER)) || ']',
+			COALESCE('[' || GROUP_CONCAT(CAST(ROUND(julianday(filed_at) - julianday(traded_at)) AS INTEGER)) || ']', '[]'),
 			SUM(CASE WHEN (julianday(filed_at) - julianday(traded_at)) > 45 THEN 1 ELSE 0 END),
 			COUNT(*)
 		FROM congressional_trades

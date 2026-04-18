@@ -86,7 +86,7 @@ agg AS (
     COUNT(*)                                                          AS trades,
     MAX(days)                                                         AS worst_days,
     SUM(CASE WHEN days > 45 THEN 1 ELSE 0 END)                        AS late_count,
-    '[' || GROUP_CONCAT(CAST(ROUND(days) AS INTEGER)) || ']'          AS days_json
+    COALESCE('[' || GROUP_CONCAT(CAST(ROUND(days) AS INTEGER)) || ']', '[]') AS days_json
   FROM scored
   GROUP BY person_id
 )
@@ -195,7 +195,7 @@ SELECT
   COUNT(*),
   COALESCE(SUM(CASE WHEN days > 45 THEN 1 ELSE 0 END), 0),
   COALESCE(CAST(ROUND(MAX(days)) AS INTEGER), 0),
-  '[' || GROUP_CONCAT(CAST(ROUND(days) AS INTEGER)) || ']'
+  COALESCE('[' || GROUP_CONCAT(CAST(ROUND(days) AS INTEGER)) || ']', '[]')
 FROM (
   SELECT
     CAST(ROUND(julianday(filed_at) - julianday(traded_at)) AS INTEGER) AS days

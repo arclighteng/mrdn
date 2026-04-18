@@ -63,7 +63,7 @@ SELECT
   SUM(CASE WHEN trade_type LIKE 'sale%' THEN 1 ELSE 0 END)       AS sells,
   COUNT(DISTINCT CASE WHEN party = 'R' THEN person_id END)       AS r_count,
   COUNT(DISTINCT CASE WHEN party = 'D' THEN person_id END)       AS d_count,
-  GROUP_CONCAT(DISTINCT name)                                    AS rep_names
+  COALESCE(GROUP_CONCAT(DISTINCT name), '')                       AS rep_names
 FROM t
 GROUP BY ticker, week_start
 HAVING COUNT(DISTINCT person_id) >= ?
