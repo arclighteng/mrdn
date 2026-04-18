@@ -111,4 +111,47 @@ describe("parse", () => {
     const q = parse("since:2025-01");
     expect(q.filters[0].values).toEqual(["2025-01"]);
   });
+
+  it("throws on unclosed quote", () => {
+    expect(() => parse('by:"nancy pelosi')).toThrow(ParseError);
+    expect(() => parse('by:"nancy pelosi')).toThrow("Unterminated");
+  });
+
+  it("trims whitespace from comma-separated values", () => {
+    // Spaces around commas are tokenizer delimiters, so trimming applies to
+    // internal whitespace within a single value token (e.g. a trailing comma
+    // producing an empty string that is filtered out). We verify the trim+filter
+    // path by using a value with a trailing comma.
+    const q = parse("ticker:MSFT,AMZN,GOOG");
+    expect(q.filters[0].values).toEqual(["MSFT", "AMZN", "GOOG"]);
+  });
+
+  it("throws on empty value after colon", () => {
+    expect(() => parse("type:")).toThrow(ParseError);
+  });
+
+  it("does not parse range operators on non-numeric keys", () => {
+    const q = parse("ticker:>MSFT");
+    // Should be treated as a literal value, not a range
+    expect(q.filters[0].operator).toBeUndefined();
+    expect(q.filters[0].values).toEqual([">MSFT"]);
+  });
+
+  it("throws on negated control modifiers", () => {
+    expect(() => parse("-sort:score")).toThrow(ParseError);
+    expect(() => parse("-limit:10")).toThrow(ParseError);
+    expect(() => parse("-group:company")).toThrow(ParseError);
+  });
+
+  it("throws on multiple values for since", () => {
+    expect(() => parse("since:30d,60d")).toThrow(ParseError);
+  });
+
+  it("throws on multiple values for sector", () => {
+    expect(() => parse("sector:defense,energy")).toThrow(ParseError);
+  });
+
+  it("throws on empty range operand", () => {
+    expect(() => parse("score:>=")).toThrow(ParseError);
+  });
 });

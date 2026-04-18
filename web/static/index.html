@@ -94,6 +94,13 @@ tailwind.config = {
         @focus="updateMqlSuggestions()"
         @blur="setTimeout(() => mqlShowSuggestions = false, 200)"
         placeholder="type:trade by:pelosi since:30d"
+        role="combobox"
+        aria-expanded="false"
+        :aria-expanded="mqlShowSuggestions && mqlSuggestions.length > 0"
+        aria-autocomplete="list"
+        aria-controls="mql-suggestions"
+        :aria-activedescendant="mqlSuggestIdx >= 0 ? 'mql-s-' + mqlSuggestIdx : ''"
+        aria-label="MQL query"
         class="flex-1 bg-transparent text-sm text-neutral-200 placeholder-neutral-500 px-3 py-2.5 outline-none font-mono">
       <template x-if="mqlQuery">
         <button @click="clearMql()" class="px-3 text-neutral-500 hover:text-white">&times;</button>
@@ -105,10 +112,16 @@ tailwind.config = {
 
     <!-- Autocomplete dropdown -->
     <div x-show="mqlShowSuggestions && mqlSuggestions.length > 0" x-transition
+      id="mql-suggestions"
+      role="listbox"
+      aria-label="Query suggestions"
       class="absolute z-50 w-full mt-1 bg-surface-1 border border-white/15 rounded-lg shadow-xl max-h-64 overflow-y-auto">
       <template x-for="(s, i) in mqlSuggestions" :key="i">
         <button @mousedown.prevent="selectMqlSuggestion(s)"
           :class="i === mqlSuggestIdx ? 'bg-surface-3 text-white' : 'text-neutral-300 hover:bg-surface-2'"
+          role="option"
+          :id="'mql-s-' + i"
+          :aria-selected="i === mqlSuggestIdx"
           class="w-full text-left px-3 py-2 text-sm font-mono flex items-center gap-2">
           <span class="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded"
             :class="{
@@ -145,7 +158,10 @@ tailwind.config = {
     <!-- Results header -->
     <div class="flex items-center justify-between mb-4">
       <div class="text-sm text-neutral-400">
-        <span x-text="mqlMeta?.result_count ?? 0"></span> results
+        <span x-text="mqlResults?.length ?? 0"></span> results
+        <template x-if="mqlMeta?.has_more">
+          <span class="text-neutral-500">+</span>
+        </template>
         <template x-if="mqlMeta?.query_ms">
           <span> in <span x-text="mqlMeta.query_ms"></span>ms</span>
         </template>
@@ -273,7 +289,7 @@ tailwind.config = {
 </div>
 
 <!-- Main -->
-<main class="max-w-7xl mx-auto px-4 py-6" :class="mqlResults !== null ? 'opacity-30 pointer-events-none' : ''">
+<main class="max-w-7xl mx-auto px-4 py-6" :class="mqlResults !== null ? 'opacity-30' : ''">
 
   <!-- Dashboard -->
   <div x-show="view === 'dashboard'" x-transition class="space-y-6 fade-in">
@@ -2535,6 +2551,8 @@ function app() {
         this.clearMql();
         return;
       }
+      this._mqlSeq = (this._mqlSeq || 0) + 1;
+      const seq = this._mqlSeq;
       this.mqlLoading = true;
       this.mqlError = null;
       this.mqlShowSuggestions = false;
@@ -2549,8 +2567,12 @@ function app() {
         if (!resp.ok) {
           this.mqlError = data.message || 'Query failed';
           this.mqlResults = null;
+          const url = new URL(window.location);
+          url.searchParams.delete('q');
+          history.replaceState(null, '', url);
           return;
         }
+        if (seq !== this._mqlSeq) return; // Stale response, discard
         this.mqlResults = data.results;
         this.mqlMeta = data.meta;
         this.mqlWarnings = data.warnings || [];
@@ -2567,6 +2589,9 @@ function app() {
         history.pushState(null, '', url);
       } catch (e) {
         this.mqlError = 'Network error — query service unavailable';
+        const url = new URL(window.location);
+        url.searchParams.delete('q');
+        history.replaceState(null, '', url);
       } finally {
         this.mqlLoading = false;
       }
@@ -2584,7 +2609,7 @@ function app() {
     },
 
     async loadMoreMql() {
-      if (!this.mqlMeta?.next_cursor) return;
+      if (!this.mqlMeta?.next_cursor || this.mqlLoading) return;
       this.mqlLoading = true;
       try {
         const resp = await fetch(this.mqlWorkerUrl + '/api/query', {
@@ -2597,6 +2622,8 @@ function app() {
           this.mqlResults = [...this.mqlResults, ...data.results];
           this.mqlMeta = data.meta;
         }
+      } catch (e) {
+        this.mqlError = 'Failed to load more results';
       } finally {
         this.mqlLoading = false;
       }

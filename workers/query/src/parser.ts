@@ -14,6 +14,15 @@ const VALID_KEYS = new Set([
 const VALID_SORTS = new Set(["recent", "score", "amount", "score-delta"]);
 const VALID_GROUPS = new Set(["type", "company", "person", "sector", "week", "month"]);
 
+const NUMERIC_KEYS = new Set([
+  "score", "market-score", "policy-score", "insider-score",
+  "amount", "workers", "limit",
+]);
+
+const MODIFIER_KEYS = new Set(["sort", "group", "limit"]);
+
+const SINGLE_VALUE_KEYS = new Set(["since", "before", "sector", "subsector"]);
+
 const MAX_CLAUSES = 20;
 const MAX_VALUES_PER_KEY = 20;
 const MAX_LIMIT = 200;
@@ -61,6 +70,10 @@ export function parse(input: string): ParsedQuery {
       throw new ParseError(`Unknown filter key: "${key}"`);
     }
 
+    if (MODIFIER_KEYS.has(key) && negated) {
+      throw new ParseError(`Cannot negate modifier "${key}"`);
+    }
+
     if (key === "sort") {
       if (!VALID_SORTS.has(valueStr)) {
         throw new ParseError(`Invalid sort value: "${valueStr}". Valid: ${[...VALID_SORTS].join(", ")}`);
@@ -88,6 +101,9 @@ export function parse(input: string): ParsedQuery {
     if (filter.values.length > MAX_VALUES_PER_KEY) {
       throw new ParseError(`Too many values for "${key}" (max ${MAX_VALUES_PER_KEY})`);
     }
+    if (SINGLE_VALUE_KEYS.has(key) && filter.values.length > 1) {
+      throw new ParseError(`"${key}" accepts only one value`);
+    }
     filters.push(filter);
   }
 
@@ -113,13 +129,21 @@ function tokenize(input: string): string[] {
       current += ch;
     }
   }
+
+  if (inQuote) {
+    throw new ParseError("Unterminated quoted string");
+  }
+
   if (current) tokens.push(current);
   return tokens;
 }
 
 function parseValue(key: string, valueStr: string, negated: boolean): Filter {
-  const rangeMatch = valueStr.match(/^(>=?|<=?)(.+)$/);
-  if (rangeMatch) {
+  const rangeMatch = valueStr.match(/^(>=?|<=?)(.*)$/);
+  if (rangeMatch && NUMERIC_KEYS.has(key)) {
+    if (!rangeMatch[2]) {
+      throw new ParseError(`Empty value after operator in "${key}:${valueStr}"`);
+    }
     return {
       key,
       values: [rangeMatch[2]],
@@ -129,7 +153,7 @@ function parseValue(key: string, valueStr: string, negated: boolean): Filter {
   }
 
   const dotDotMatch = valueStr.match(/^([^.]+)\.\.([^.]+)$/);
-  if (dotDotMatch) {
+  if (dotDotMatch && NUMERIC_KEYS.has(key)) {
     return {
       key,
       values: [dotDotMatch[1]],
@@ -147,6 +171,9 @@ function parseValue(key: string, valueStr: string, negated: boolean): Filter {
     };
   }
 
-  const values = valueStr.split(",").filter(Boolean);
+  const values = valueStr.split(",").map(v => v.trim()).filter(Boolean);
+  if (values.length === 0) {
+    throw new ParseError(`Empty value for filter "${key}"`);
+  }
   return { key, values, negated };
 }

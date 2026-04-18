@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { compile, ComplexityError } from "./compiler";
 import { parse } from "./parser";
-import type { Cursor } from "./types";
+import type { Cursor, ParsedQuery } from "./types";
 
 describe("compile", () => {
   it("compiles a single-type query", () => {
@@ -102,5 +102,35 @@ describe("compile", () => {
     const q = parse("type:trade pelosi since:30d");
     const result = compile(q, null, []);
     expect(result.sql).toContain("ILIKE");
+  });
+
+  it("throws on getGroupKey with invalid group (defense-in-depth)", () => {
+    const q: ParsedQuery = {
+      filters: [{ key: "type", values: ["trade"], negated: false }],
+      bareText: [],
+      sort: "recent",
+      group: "injected; DROP TABLE",
+      limit: 50,
+    };
+    expect(() => compile(q, null, [])).toThrow("Invalid group key");
+  });
+
+  it("sanitizes unknown operators in buildRangeClause", () => {
+    const q = parse("type:trade score:>70 since:30d");
+    const result = compile(q, null, []);
+    // Should use > operator, not anything else
+    expect(result.sql).toContain(">");
+  });
+
+  it("rejects cursor with non-recent sort", () => {
+    const cursor = { occurred_at: "2025-03-15T14:22:00Z", event_id: 92041, data_as_of: "" };
+    const q = parse("type:trade sort:score since:30d");
+    expect(() => compile(q, cursor, [])).toThrow("Cursor pagination is only supported with sort:recent");
+  });
+
+  it("allows cursor with sort:recent", () => {
+    const cursor = { occurred_at: "2025-03-15T14:22:00Z", event_id: 92041, data_as_of: "" };
+    const q = parse("type:trade since:30d");
+    expect(() => compile(q, cursor, [])).not.toThrow();
   });
 });

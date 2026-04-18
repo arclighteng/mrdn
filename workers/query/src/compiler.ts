@@ -14,6 +14,13 @@ export class ScoreDeltaError extends Error {
   }
 }
 
+export class CursorSortError extends Error {
+  constructor() {
+    super("Cursor pagination is only supported with sort:recent. Remove the cursor or change the sort order.");
+    this.name = "CursorSortError";
+  }
+}
+
 interface TableMeta {
   name: string;
   eventType: string;
@@ -159,6 +166,10 @@ export function compile(
 ): CompiledQuery {
   if (query.sort === "score-delta") {
     throw new ScoreDeltaError();
+  }
+
+  if (cursor && query.sort !== "recent") {
+    throw new CursorSortError();
   }
 
   const complexity = computeComplexity(query, signalTickers);
@@ -487,7 +498,7 @@ function getGroupKey(group: string): string {
     case "person": return "person_slug";
     case "sector": return "sector";
     case "type": return "event_type";
-    default: return group;
+    default: throw new Error(`Invalid group key: ${group}`);
   }
 }
 
@@ -499,7 +510,8 @@ function buildRangeClause(col: string, filter: Filter, params: unknown[]): strin
     const hiIdx = params.length;
     return `${col} BETWEEN $${loIdx} AND $${hiIdx}`;
   }
-  const op = filter.operator || "=";
+  const SAFE_OPS = new Set([">", "<", ">=", "<="]);
+  const op = filter.operator && SAFE_OPS.has(filter.operator) ? filter.operator : "=";
   params.push(Number(filter.values[0]));
   return `${col} ${op} $${params.length}`;
 }

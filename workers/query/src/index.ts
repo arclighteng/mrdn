@@ -1,6 +1,6 @@
 import type { Env, Cursor, QueryResponse, ErrorResponse } from "./types";
 import { parse, ParseError } from "./parser";
-import { compile, ComplexityError, ScoreDeltaError } from "./compiler";
+import { compile, ComplexityError, ScoreDeltaError, CursorSortError } from "./compiler";
 import { executeQuery } from "./db";
 import { checkRateLimit, releaseSlot } from "./rate-limit";
 
@@ -111,6 +111,9 @@ async function handleQuery(request: Request, env: Env): Promise<Response> {
     }
     if (e instanceof ScoreDeltaError) {
       return errorResponse(400, "PARSE_ERROR", e.message);
+    }
+    if (e instanceof CursorSortError) {
+      return errorResponse(400, "CURSOR_SORT_ERROR", e.message);
     }
     throw e;
   }
