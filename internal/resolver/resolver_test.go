@@ -943,6 +943,7 @@ func TestIsDuplicateError(t *testing.T) {
 	assert.False(t, isDuplicateError(nil))
 	assert.True(t, isDuplicateError(errors.New("duplicate key value violates unique constraint")))
 	assert.True(t, isDuplicateError(errors.New("error code 23505: unique_violation")))
+	assert.True(t, isDuplicateError(errors.New("UNIQUE constraint failed: events.source, events.source_id")))
 	assert.False(t, isDuplicateError(errors.New("some other error")))
 }
 

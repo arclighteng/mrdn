@@ -704,11 +704,14 @@ func strPtr(s string) *string {
 	return &s
 }
 
-// isDuplicateError checks if the error is a Postgres unique violation.
+// isDuplicateError checks if the error is a unique constraint violation
+// (works for both PostgreSQL and SQLite).
 func isDuplicateError(err error) bool {
 	if err == nil {
 		return false
 	}
-	return strings.Contains(err.Error(), "duplicate key") ||
-		strings.Contains(err.Error(), "23505")
+	msg := err.Error()
+	return strings.Contains(msg, "duplicate key") ||
+		strings.Contains(msg, "23505") ||
+		strings.Contains(msg, "UNIQUE constraint failed")
 }
