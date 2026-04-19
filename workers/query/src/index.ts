@@ -134,9 +134,9 @@ async function handleQuery(request: Request, env: Env): Promise<Response> {
     return errorResponse(500, "INTERNAL_ERROR", "Query execution failed");
   }
 
-  // Build cursor for next page
+  // Build cursor for next page (not applicable for grouped queries)
   let nextCursor: string | null = null;
-  if (result.rows.length === parsed.limit) {
+  if (!parsed.group && result.rows.length === parsed.limit) {
     const lastRow = result.rows[result.rows.length - 1];
     const cursorObj: Cursor = {
       occurred_at: String(lastRow.occurred_at),
@@ -152,7 +152,7 @@ async function handleQuery(request: Request, env: Env): Promise<Response> {
       query: body.q,
       query_ms: result.duration_ms,
       result_count: result.rows.length,
-      has_more: result.rows.length === parsed.limit,
+      has_more: !parsed.group && result.rows.length === parsed.limit,
       next_cursor: nextCursor,
       data_as_of: dataAsOf,
       grouped: parsed.group !== null,

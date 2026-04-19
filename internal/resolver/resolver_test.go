@@ -37,7 +37,8 @@ type mockStore struct {
 	insertedTrades    []db.InsiderTrade
 	insertedDonations []db.Donation
 	insertedContracts []db.Contract
-	insertedSanctions []db.Sanction
+	insertedSanctions    []db.Sanction
+	insertedWarnFilings  []db.WarnFiling
 
 	// unresolvedBatches is consumed in order; each call pops the first slice.
 	unresolvedBatches [][]db.Event
@@ -121,6 +122,13 @@ func (m *mockStore) InsertContract(_ context.Context, c db.Contract) error {
 func (m *mockStore) InsertSanction(_ context.Context, s db.Sanction) error {
 	m.mu.Lock()
 	m.insertedSanctions = append(m.insertedSanctions, s)
+	m.mu.Unlock()
+	return nil
+}
+
+func (m *mockStore) InsertWarnFiling(_ context.Context, w db.WarnFiling) error {
+	m.mu.Lock()
+	m.insertedWarnFilings = append(m.insertedWarnFilings, w)
 	m.mu.Unlock()
 	return nil
 }
@@ -1032,6 +1040,9 @@ func (c *cancellingStore) InsertContract(ctx context.Context, co db.Contract) er
 }
 func (c *cancellingStore) InsertSanction(ctx context.Context, s db.Sanction) error {
 	return c.inner.InsertSanction(ctx, s)
+}
+func (c *cancellingStore) InsertWarnFiling(ctx context.Context, w db.WarnFiling) error {
+	return c.inner.InsertWarnFiling(ctx, w)
 }
 func (c *cancellingStore) ListUnresolvedEventsAfter(ctx context.Context, source string, afterID, batchSize int) ([]db.Event, error) {
 	n := c.calls.Add(1)

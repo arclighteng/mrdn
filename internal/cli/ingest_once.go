@@ -97,6 +97,16 @@ Does NOT run the score engine — run score-backfill separately.`,
 		}
 
 		log.Printf("[ingest-once] done — %d new events total", totalNew)
+
+		// Backfill any events whose typed-table insertion failed on prior runs.
+		backfilled, berr := res.Backfill(ctx, "")
+		if berr != nil && ctx.Err() == nil {
+			log.Printf("[ingest-once] backfill error: %v", berr)
+		}
+		if backfilled > 0 {
+			log.Printf("[ingest-once] backfill resolved %d previously-orphaned events", backfilled)
+		}
+
 		return nil
 	},
 }

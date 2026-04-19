@@ -26,6 +26,7 @@ type ResolverStore interface {
 	InsertDonation(ctx context.Context, d db.Donation) error
 	InsertContract(ctx context.Context, c db.Contract) error
 	InsertSanction(ctx context.Context, sn db.Sanction) error
+	InsertWarnFiling(ctx context.Context, w db.WarnFiling) error
 	ListUnresolvedEventsAfter(ctx context.Context, source string, afterID, batchSize int) ([]db.Event, error)
 }
 
@@ -156,6 +157,8 @@ func (r *Resolver) Resolve(ctx context.Context, evt db.Event) int {
 		return 0
 	case "finnhub":
 		companyID, err = r.resolveFinnhub(ctx, evt)
+	case "warn":
+		companyID, err = r.resolveWarn(ctx, evt)
 	default:
 		return 0
 	}
@@ -236,6 +239,7 @@ type edgarFiling struct {
 	Form           string          `json:"form"`
 	FileDate       string          `json:"file_date"`
 	PeriodOfReport string          `json:"period_of_report"`
+	PeriodEnding   string          `json:"period_ending"`
 	EntityName     string          `json:"entity_name"`
 	ADSH           string          `json:"adsh"`
 }
@@ -281,13 +285,21 @@ func (r *Resolver) resolveEdgar(ctx context.Context, evt db.Event) (int, error) 
 	}
 
 	if companyID == 0 {
+		log.Printf("[resolver] edgar event %d: no company match for %q", evt.ID, companyName)
 		return 0, nil
 	}
 
 	// Extract insider_trade typed record.
 	var filedAt *time.Time
-	if filing.FileDate != "" {
-		if t, err := time.Parse("2006-01-02", filing.FileDate); err == nil {
+	dateStr := filing.FileDate
+	if dateStr == "" {
+		dateStr = filing.PeriodOfReport
+	}
+	if dateStr == "" {
+		dateStr = filing.PeriodEnding
+	}
+	if dateStr != "" {
+		if t, err := time.Parse("2006-01-02", dateStr); err == nil {
 			ft := t.UTC()
 			filedAt = &ft
 		}
@@ -553,6 +565,72 @@ func (r *Resolver) resolveFinnhub(ctx context.Context, evt db.Event) (int, error
 		// Duplicate inserts are expected during backfill — don't spam logs.
 		if !isDuplicateError(err) {
 			log.Printf("[resolver] finnhub market_data insert for %s: %v", trade.Symbol, err)
+		}
+	}
+
+	return companyID, nil
+}
+
+// warnFiling mirrors the JSON stored by the WARN parser (camelCase keys).
+type warnFiling struct {
+	Company       string `json:"company"`
+	City          string `json:"city"`
+	State         string `json:"state"`
+	Employees     int    `json:"employees_affected"`
+	NoticeDate    string `json:"notice_date"`
+	EffectiveDate string `json:"effective_date"`
+}
+
+func (r *Resolver) resolveWarn(ctx context.Context, evt db.Event) (int, error) {
+	var filing warnFiling
+	if err := json.Unmarshal(evt.EventData, &filing); err != nil {
+		return 0, fmt.Errorf("unmarshal warn filing: %w", err)
+	}
+
+	var companyID int
+	if filing.Company != "" {
+		cid, err := r.ensureCompany(ctx, "", filing.Company)
+		if err != nil {
+			return 0, err
+		}
+		companyID = cid
+	}
+
+	var companyIDPtr *int
+	if companyID > 0 {
+		companyIDPtr = &companyID
+	}
+	eventID := evt.ID
+	state := filing.State
+	city := filing.City
+	workers := filing.Employees
+
+	var layoffDate *time.Time
+	if filing.EffectiveDate != "" {
+		if t, err := time.Parse("01/02/2006", filing.EffectiveDate); err == nil {
+			ts := t.UTC()
+			layoffDate = &ts
+		}
+	}
+	var filedAt *time.Time
+	if filing.NoticeDate != "" {
+		if t, err := time.Parse("01/02/2006", filing.NoticeDate); err == nil {
+			ts := t.UTC()
+			filedAt = &ts
+		}
+	}
+
+	if err := r.store.InsertWarnFiling(ctx, db.WarnFiling{
+		EventID:         &eventID,
+		CompanyID:       companyIDPtr,
+		State:           &state,
+		City:            &city,
+		WorkersAffected: &workers,
+		LayoffDate:      layoffDate,
+		FiledAt:         filedAt,
+	}); err != nil {
+		if !isDuplicateError(err) {
+			log.Printf("[resolver] warn filing insert for %s: %v", filing.Company, err)
 		}
 	}
 

@@ -225,7 +225,6 @@ CREATE TABLE IF NOT EXISTS entity_aliases (
     auto_applied INTEGER DEFAULT 0
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_entity_aliases_unique ON entity_aliases(entity_type, alias COLLATE NOCASE);
-CREATE INDEX IF NOT EXISTS idx_entity_aliases_lookup ON entity_aliases(entity_type, alias COLLATE NOCASE);
 
 CREATE TABLE IF NOT EXISTS entity_links (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -287,6 +286,7 @@ CREATE INDEX IF NOT EXISTS idx_events_company_occurred ON events(company_id, occ
 CREATE INDEX IF NOT EXISTS idx_events_source ON events(source);
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type);
 CREATE INDEX IF NOT EXISTS idx_market_data_company_recorded ON market_data(company_id, recorded_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_entity_links_unique ON entity_links(from_entity, from_type, to_entity, to_type, relationship);
 CREATE INDEX IF NOT EXISTS idx_entity_links_from ON entity_links(from_entity, from_type);
 CREATE INDEX IF NOT EXISTS idx_entity_links_to ON entity_links(to_entity, to_type);
 CREATE INDEX IF NOT EXISTS idx_scores_company_computed ON scores(company_id, computed_at);

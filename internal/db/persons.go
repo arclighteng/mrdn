@@ -45,13 +45,13 @@ func (s *Store) UpsertPerson(ctx context.Context, p Person) (Person, error) {
 			name                = excluded.name,
 			role                = excluded.role,
 			tier                = excluded.tier,
-			branch              = excluded.branch,
-			state               = excluded.state,
-			party               = excluded.party,
-			bioguide_id         = excluded.bioguide_id,
-			linked_person_id    = excluded.linked_person_id,
-			linked_relationship = excluded.linked_relationship,
-			disclosure_source   = excluded.disclosure_source
+			branch              = COALESCE(excluded.branch, persons.branch),
+			state               = COALESCE(excluded.state, persons.state),
+			party               = COALESCE(excluded.party, persons.party),
+			bioguide_id         = COALESCE(excluded.bioguide_id, persons.bioguide_id),
+			linked_person_id    = COALESCE(excluded.linked_person_id, persons.linked_person_id),
+			linked_relationship = COALESCE(excluded.linked_relationship, persons.linked_relationship),
+			disclosure_source   = COALESCE(excluded.disclosure_source, persons.disclosure_source)
 	`, p.Slug, p.Name, p.Role, p.Tier, p.Branch, p.State, p.Party, p.BioguideID,
 		p.LinkedPersonID, p.LinkedRelationship, p.DisclosureSource)
 	if err != nil {

@@ -38,7 +38,7 @@ type EntityAlias struct {
 // followed by a SELECT to retrieve the full stored row.
 func (s *Store) InsertEntityLink(ctx context.Context, l EntityLink) (EntityLink, error) {
 	res, err := s.db.ExecContext(ctx, `
-		INSERT INTO entity_links (from_entity, from_type, to_entity, to_type, relationship, evidence_event_id)
+		INSERT OR IGNORE INTO entity_links (from_entity, from_type, to_entity, to_type, relationship, evidence_event_id)
 		VALUES (?, ?, ?, ?, ?, ?)
 	`, l.FromEntity, l.FromType, l.ToEntity, l.ToType, l.Relationship, l.EvidenceEventID)
 	if err != nil {

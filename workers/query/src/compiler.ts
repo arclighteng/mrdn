@@ -182,6 +182,18 @@ export function compile(
 
   const params: unknown[] = [];
   const warnings: string[] = [];
+
+  // Check for contradictory date range
+  const sinceFilter = query.filters.find((f) => f.key === "since" && !f.negated);
+  const beforeFilter = query.filters.find((f) => f.key === "before" && !f.negated);
+  if (sinceFilter && beforeFilter) {
+    const sinceDate = resolveDate(sinceFilter.values[0]);
+    const beforeDate = resolveDate(beforeFilter.values[0]);
+    if (sinceDate >= beforeDate) {
+      warnings.push(`Date range since:${sinceFilter.values[0]} before:${beforeFilter.values[0]} matches no dates (${sinceDate} >= ${beforeDate}).`);
+    }
+  }
+
   const needsScoreCTE = hasScoreFilter(query) || query.sort === "score";
 
   const typeFilter = query.filters.find((f) => f.key === "type" && !f.negated);
@@ -208,7 +220,8 @@ export function compile(
   // D1 has a compound SELECT limit (~500 terms). Each branch generates many terms,
   // so cap at 5 tables. Tables are ordered by importance in the TABLES array.
   if (tables.length > 5) {
-    warnings.push(`Query spans ${tables.length} event types — showing results from the first 5. Add a type: filter for specific results.`);
+    const dropped = tables.slice(5).map((t) => t.eventType).join(", ");
+    warnings.push(`Query spans ${tables.length} event types — showing results from the first 5. Excluded: ${dropped}. Add a type: filter for specific results.`);
     tables = tables.slice(0, 5);
   }
 
@@ -258,7 +271,7 @@ function buildBranch(
   const wheres: string[] = [];
   const joins: string[] = [];
 
-  joins.push(`JOIN events e ON e.id = ${table.alias}.event_id`);
+  joins.push(`LEFT JOIN events e ON e.id = ${table.alias}.event_id`);
 
   if (table.hasCompany) {
     if (table.name === "lobbying") {
@@ -272,7 +285,7 @@ function buildBranch(
   }
 
   if (table.hasPerson) {
-    joins.push(`JOIN persons p ON p.id = ${table.alias}.person_id`);
+    joins.push(`LEFT JOIN persons p ON p.id = ${table.alias}.person_id`);
   }
 
   const needsScores = hasScoreFilter(query) || query.sort === "score";
@@ -291,17 +304,18 @@ function buildBranch(
 
   for (const text of query.bareText) {
     const clauses: string[] = [];
-    params.push(`%${text}%`);
+    const escaped = `%${escapeLike(text)}%`;
+    params.push(escaped);
     // SQLite LIKE is case-insensitive for ASCII by default, so ILIKE → LIKE.
     if (table.hasCompany || table.customJoins) {
-      clauses.push(`c.ticker LIKE ?`);
-      clauses.push(`c.name LIKE ?`);
+      clauses.push(`c.ticker LIKE ? ESCAPE '\\'`);
+      clauses.push(`c.name LIKE ? ESCAPE '\\'`);
       // Reuse the same param value — push it again for the second placeholder.
-      params.push(`%${text}%`);
+      params.push(escaped);
     }
     if (table.hasPerson) {
-      clauses.push(`p.name LIKE ?`);
-      params.push(`%${text}%`);
+      clauses.push(`p.name LIKE ? ESCAPE '\\'`);
+      params.push(escaped);
     }
     if (clauses.length > 0) {
       wheres.push(`(${clauses.join(" OR ")})`);
@@ -347,14 +361,14 @@ function buildFilterClause(
 
   if (filter.key === "sector") {
     if (!table.hasCompany && !table.customJoins) return null;
-    params.push(`%${filter.values[0]}%`);
-    return `${neg}c.sector LIKE ?`;
+    params.push(`%${escapeLike(filter.values[0])}%`);
+    return `${neg}c.sector LIKE ? ESCAPE '\\'`;
   }
 
   if (filter.key === "subsector") {
     if (!table.hasCompany) return null;
-    params.push(`%${filter.values[0]}%`);
-    return `${neg}c.subsector LIKE ?`;
+    params.push(`%${escapeLike(filter.values[0])}%`);
+    return `${neg}c.subsector LIKE ? ESCAPE '\\'`;
   }
 
   if (filter.key === "market-cap") {
@@ -372,8 +386,9 @@ function buildFilterClause(
     if (filter.key === "by") {
       const isName = filter.values.some((v) => v.includes(" "));
       if (isName) {
-        params.push(`%${filter.values[0]}%`);
-        return `${neg}p.name LIKE ?`;
+        const likeClauses = filter.values.map(() => "p.name LIKE ? ESCAPE '\\'");
+        filter.values.forEach((v) => params.push(`%${escapeLike(v)}%`));
+        return `${neg}(${likeClauses.join(" OR ")})`;
       }
       const placeholders = filter.values.map(() => "?").join(", ");
       params.push(...filter.values);
@@ -402,6 +417,10 @@ function buildFilterClause(
   }
 
   if (filter.key === "since" || filter.key === "before") {
+    if (filter.negated) {
+      warnings.push(`Negated ${filter.key}: filter is not supported — ignoring.`);
+      return null;
+    }
     const resolved = resolveDate(filter.values[0]);
     params.push(resolved);
     const op = filter.key === "since" ? ">=" : "<";
@@ -416,7 +435,11 @@ function buildFilterClause(
       "insider-score": "ls.insider_score",
     };
     const col = colMap[filter.key];
-    if (!col || !table.hasCompany) return null;
+    if (!col) return null;
+    if (!table.hasCompany) {
+      warnings.push(`${filter.key}: filter not applicable to ${table.eventType}`);
+      return null;
+    }
     return buildRangeClause(col, filter, params);
   }
 
@@ -446,21 +469,21 @@ function buildFilterClause(
     if (signalTickers.length === 0) return null;
     const placeholders = signalTickers.map(() => "?").join(", ");
     params.push(...signalTickers);
-    return `c.ticker IN (${placeholders})`;
+    return `${neg}c.ticker IN (${placeholders})`;
   }
 
   const col = table.filterCols[filter.key];
   if (col) {
     if (filter.key === "country" && table.eventType === "tariff") {
       // SQLite has no array overlap operator (&&).
-      // tariff_countries is a junction table: (tariff_id, country_code).
+      // tariff_countries is a junction table: (tariff_id, country).
       const placeholders = filter.values.map(() => "?").join(", ");
       params.push(...filter.values);
-      return `${neg}EXISTS (SELECT 1 FROM tariff_countries tc WHERE tc.tariff_id = tf.id AND tc.country_code IN (${placeholders}))`;
+      return `${neg}EXISTS (SELECT 1 FROM tariff_countries tc WHERE tc.tariff_id = tf.id AND tc.country IN (${placeholders}))`;
     }
     if (filter.key === "agency" || filter.key === "registrant") {
-      params.push(`%${filter.values[0]}%`);
-      return `${neg}${col} LIKE ?`;
+      params.push(`%${escapeLike(filter.values[0])}%`);
+      return `${neg}${col} LIKE ? ESCAPE '\\'`;
     }
     const placeholders = filter.values.map(() => "?").join(", ");
     params.push(...filter.values);
@@ -540,15 +563,20 @@ function getGroupKey(group: string): string {
   }
 }
 
-function buildRangeClause(col: string, filter: Filter, params: unknown[]): string {
+function buildRangeClause(col: string, filter: Filter, params: unknown[]): string | null {
   if (filter.operator === "..") {
-    params.push(Number(filter.values[0]));
-    params.push(Number(filter.upperBound!));
+    const lo = Number(filter.values[0]);
+    const hi = Number(filter.upperBound!);
+    if (isNaN(lo) || isNaN(hi)) return null;
+    params.push(lo);
+    params.push(hi);
     return `${col} BETWEEN ? AND ?`;
   }
   const SAFE_OPS = new Set([">", "<", ">=", "<="]);
-  const op = filter.operator && SAFE_OPS.has(filter.operator) ? filter.operator : "=";
-  params.push(Number(filter.values[0]));
+  const op = filter.operator && SAFE_OPS.has(filter.operator) ? filter.operator : ">=";
+  const num = Number(filter.values[0]);
+  if (isNaN(num)) return null;
+  params.push(num);
   return `${col} ${op} ?`;
 }
 
@@ -632,4 +660,8 @@ function computeComplexity(query: ParsedQuery, signalTickers: string[]): number 
   if (!hasType && !hasTicker && !hasPerson && !hasDate && !hasBareText) score += 2;
 
   return score;
+}
+
+function escapeLike(v: string): string {
+  return v.replace(/[%_]/g, (c) => `\\${c}`);
 }

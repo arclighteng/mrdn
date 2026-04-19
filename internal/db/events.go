@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/arclighteng/mrdn/internal/jsonutil"
@@ -52,7 +53,10 @@ func (s *Store) InsertEvent(ctx context.Context, e Event) (int, error) {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO events (source, source_id, company_id, event_type, event_data, occurred_at)
 		VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT (source, source_id) DO UPDATE SET source = excluded.source
+		ON CONFLICT (source, source_id) DO UPDATE SET
+			event_data  = excluded.event_data,
+			company_id  = COALESCE(excluded.company_id, events.company_id),
+			occurred_at = excluded.occurred_at
 	`, e.Source, e.SourceID, e.CompanyID, e.EventType, string(e.EventData), formatTime(e.OccurredAt))
 	if err != nil {
 		return 0, fmt.Errorf("inserting event: %w", err)
@@ -60,7 +64,7 @@ func (s *Store) InsertEvent(ctx context.Context, e Event) (int, error) {
 
 	var id int
 	err = s.db.QueryRowContext(ctx,
-		"SELECT id FROM events WHERE source = ? AND source_id = ?",
+		"SELECT id FROM events WHERE source = ? AND source_id IS ?",
 		e.Source, e.SourceID,
 	).Scan(&id)
 	if err != nil {
@@ -96,6 +100,7 @@ func (s *Store) InsertEventsBatch(ctx context.Context, events []Event) ([]int, e
 
 	for i, e := range events {
 		if err := validateEventData(e.EventData); err != nil {
+			log.Printf("[events] skipping event %d (source=%s): %v", i, e.Source, err)
 			continue
 		}
 		id, err := s.InsertEvent(ctx, e)

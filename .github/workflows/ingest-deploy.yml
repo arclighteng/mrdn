@@ -91,8 +91,14 @@ jobs:
             sqlite3 mrdn.db ".mode insert $TABLE" "SELECT * FROM $TABLE;" >> d1-data.sql 2>/dev/null || true
           done
 
-          # Convert INSERT INTO → INSERT OR REPLACE INTO to handle re-runs
-          sed -i 's/^INSERT INTO/INSERT OR REPLACE INTO/g' d1-data.sql
+          # Convert INSERT INTO → INSERT OR IGNORE INTO for append-only data tables
+          # (avoids DELETE+INSERT cascade on AUTOINCREMENT PKs).
+          # Use INSERT OR REPLACE only for seed/config tables where overwrite is safe.
+          REPLACE_TABLES="companies persons score_weights source_meta entity_aliases api_keys"
+          for RT in $REPLACE_TABLES; do
+            sed -i "s/^INSERT INTO $RT /INSERT OR REPLACE INTO $RT /g" d1-data.sql
+          done
+          sed -i 's/^INSERT INTO/INSERT OR IGNORE INTO/g' d1-data.sql
 
           split -l 500 -d d1-data.sql d1-chunk-
           cd workers/query
