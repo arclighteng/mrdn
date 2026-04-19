@@ -433,6 +433,7 @@ tailwind.config = {
           </template>
           <div x-show="latestEvents.length === 0" class="text-neutral-400 text-sm text-center py-8">No events yet</div>
         </div>
+        <button @click="navigate('signals')" class="w-full text-center text-sm text-accent hover:text-accent-light mt-3 py-2 border-t border-white/15">Explore signals →</button>
       </div>
       <div class="bg-surface-1 rounded-xl border border-white/15 p-5">
         <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Score Rankings</h2>
@@ -453,6 +454,7 @@ tailwind.config = {
           </template>
           <div x-show="rankings.length === 0" class="text-neutral-400 text-sm text-center py-8">No scores computed yet</div>
         </div>
+        <button @click="navigate('rankings')" class="w-full text-center text-sm text-accent hover:text-accent-light mt-3 py-2 border-t border-white/15">View all rankings →</button>
       </div>
     </div>
 
@@ -473,6 +475,7 @@ tailwind.config = {
           </div>
         </template>
       </div>
+      <button @click="navigate('status')" class="w-full text-center text-sm text-accent hover:text-accent-light mt-3 py-2 border-t border-white/15">Full source details →</button>
     </div>
   </div>
 
@@ -887,6 +890,8 @@ tailwind.config = {
     <div class="bg-surface-1 rounded-xl border border-white/15 overflow-hidden">
       <div class="flex items-center gap-3 p-4 border-b border-white/15">
         <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Worst offenders</h2>
+        <input type="text" x-model="complianceSearch" @input.debounce.300ms="compliancePage=0; fetchCompliance()" placeholder="Filter by name, state, ticker..."
+          class="bg-surface-2 border border-white/15 rounded px-3 py-1 text-sm flex-1 max-w-xs focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus:outline-none text-neutral-300">
         <select x-model="complianceSort" @change="compliancePage=0; sortCompliance()" class="bg-surface-2 border border-white/15 rounded px-2 py-1 text-sm text-neutral-300">
           <option value="median">Median latency</option>
           <option value="worst">Worst single trade</option>
@@ -965,6 +970,8 @@ tailwind.config = {
       <div class="bg-surface-1 rounded-xl border border-white/15 overflow-hidden">
         <div class="flex items-center gap-3 p-4 border-b border-white/15">
           <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Swarm clusters</h2>
+          <input type="text" x-model="swarmSearch" @input.debounce.300ms="swarmPage=0; fetchSwarms()" placeholder="Filter by ticker or rep..."
+            class="bg-surface-2 border border-white/15 rounded px-3 py-1 text-sm flex-1 max-w-xs focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus:outline-none text-neutral-300">
           <select x-model="swarmSort" @change="swarmPage=0; sortSwarms()" class="bg-surface-2 border border-white/15 rounded px-2 py-1 text-sm text-neutral-300">
             <option value="reps">Most reps</option>
             <option value="trades">Most trades</option>
@@ -1028,55 +1035,58 @@ tailwind.config = {
       <div class="text-sm text-neutral-400">
         For each ticker bought by ≥4 representatives, who got there <span class="text-white font-semibold">first</span>? The follower lag is computed in days from the first congressional buy. This is chronology, not causation — but it's the closest you can get to "who tipped off whom" using public disclosures alone.
       </div>
-      <div class="flex items-center gap-3 mb-2">
-        <select x-model="firstMoverSort" @change="firstMoverPage=0; sortFirstMovers()" class="bg-surface-2 border border-white/15 rounded px-2 py-1 text-sm text-neutral-300">
-          <option value="buyers">Most buyers</option>
-          <option value="recent">Most recent</option>
-          <option value="ticker">Ticker A→Z</option>
-        </select>
-        <span class="text-xs text-neutral-400 ml-auto" x-text="firstMoverTotal + ' tickers'"></span>
-      </div>
-      <div x-show="firstMovers.length === 0 && !_allFirstMovers" class="text-neutral-400 text-sm text-center py-12">Loading first movers…</div>
-      <div x-show="firstMovers.length === 0 && _allFirstMovers" class="text-neutral-400 text-sm text-center py-12">No first-mover data</div>
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <template x-for="fm in firstMovers" :key="fm.ticker">
-          <div class="bg-surface-1 rounded-xl border border-white/15 p-4">
-            <div class="flex items-center gap-3 mb-3">
-              <span class="font-mono text-lg font-bold text-accent-light cursor-pointer hover:underline" @click.stop="openTicker(fm.ticker)" x-text="fm.ticker"></span>
-              <span class="text-[10px] uppercase tracking-wider text-neutral-400" x-text="fm.total_buyers + ' buyers'"></span>
-              <span class="ml-auto text-[10px] text-neutral-400" x-text="fmtDate(fm.first_date)"></span>
-            </div>
-            <div class="space-y-1.5">
-              <!-- First mover -->
-              <div class="flex items-center gap-2 text-sm">
-                <span class="text-[10px] font-bold text-accent w-12 shrink-0">FIRST</span>
-                <span class="text-white font-medium truncate" x-text="fm.first_buyer"></span>
-                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0"
-                  :class="partyBadge(fm.first_party)"
-                  x-text="fm.first_party || '—'"></span>
-              </div>
-              <!-- Followers -->
-              <template x-for="(f, fi) in (fm.followers || [])" :key="fi">
-                <div class="flex items-center gap-2 text-xs pl-2 border-l border-white/15">
-                  <span class="text-[10px] font-mono text-neutral-400 w-12 shrink-0" x-text="'+' + f.lag_days + 'd'"></span>
-                  <span class="text-neutral-300 truncate" x-text="f.name"></span>
-                  <span class="text-[9px] font-bold px-1 py-0.5 rounded shrink-0"
-                    :class="partyBadge(f.party)"
-                    x-text="f.party || '—'"></span>
+      <div class="bg-surface-1 rounded-xl border border-white/15 overflow-hidden">
+        <div class="flex items-center gap-3 p-4 border-b border-white/15">
+          <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">First in</h2>
+          <select x-model="firstMoverSort" @change="firstMoverPage=0; sortFirstMovers()" class="bg-surface-2 border border-white/15 rounded px-2 py-1 text-sm text-neutral-300">
+            <option value="buyers">Most buyers</option>
+            <option value="recent">Most recent</option>
+            <option value="ticker">Ticker A→Z</option>
+          </select>
+          <span class="text-xs text-neutral-400 ml-auto" x-text="firstMoverTotal + ' tickers'"></span>
+        </div>
+        <div class="p-4">
+          <div x-show="firstMovers.length === 0 && !_allFirstMovers" class="text-neutral-400 text-sm text-center py-12">Loading first movers…</div>
+          <div x-show="firstMovers.length === 0 && _allFirstMovers" class="text-neutral-400 text-sm text-center py-12">No first-mover data</div>
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <template x-for="fm in firstMovers" :key="fm.ticker">
+              <div class="bg-surface-2 rounded-xl border border-white/15 p-4">
+                <div class="flex items-center gap-3 mb-3">
+                  <span class="font-mono text-lg font-bold text-accent-light cursor-pointer hover:underline" @click.stop="openTicker(fm.ticker)" x-text="fm.ticker"></span>
+                  <span class="text-[10px] uppercase tracking-wider text-neutral-400" x-text="fm.total_buyers + ' buyers'"></span>
+                  <span class="ml-auto text-[10px] text-neutral-400" x-text="fmtDate(fm.first_date)"></span>
                 </div>
-              </template>
-            </div>
+                <div class="space-y-1.5">
+                  <div class="flex items-center gap-2 text-sm">
+                    <span class="text-[10px] font-bold text-accent w-12 shrink-0">FIRST</span>
+                    <span class="text-white font-medium truncate" x-text="fm.first_buyer"></span>
+                    <span class="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0"
+                      :class="partyBadge(fm.first_party)"
+                      x-text="fm.first_party || '—'"></span>
+                  </div>
+                  <template x-for="(f, fi) in (fm.followers || [])" :key="fi">
+                    <div class="flex items-center gap-2 text-xs pl-2 border-l border-white/15">
+                      <span class="text-[10px] font-mono text-neutral-400 w-12 shrink-0" x-text="'+' + f.lag_days + 'd'"></span>
+                      <span class="text-neutral-300 truncate" x-text="f.name"></span>
+                      <span class="text-[9px] font-bold px-1 py-0.5 rounded shrink-0"
+                        :class="partyBadge(f.party)"
+                        x-text="f.party || '—'"></span>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </template>
           </div>
-        </template>
-      </div>
-      <div class="flex justify-center gap-2 mt-4" x-show="firstMoverTotal > 30">
-        <button @click="firstMoverPage > 0 && (firstMoverPage--, fetchFirstMovers())"
-          :disabled="firstMoverPage === 0"
-          class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Prev</button>
-        <span class="text-sm text-neutral-400 py-1" x-text="`${firstMoverPage * 30 + 1}–${Math.min((firstMoverPage+1)*30, firstMoverTotal)} of ${firstMoverTotal}`"></span>
-        <button @click="(firstMoverPage+1)*30 < firstMoverTotal && (firstMoverPage++, fetchFirstMovers())"
-          :disabled="(firstMoverPage+1)*30 >= firstMoverTotal"
-          class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Next</button>
+        </div>
+        <div class="flex justify-center gap-2 px-4 py-3 border-t border-white/15" x-show="firstMoverTotal > 30">
+          <button @click="firstMoverPage > 0 && (firstMoverPage--, fetchFirstMovers())"
+            :disabled="firstMoverPage === 0"
+            class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Prev</button>
+          <span class="text-sm text-neutral-400 py-1" x-text="`${firstMoverPage * 30 + 1}–${Math.min((firstMoverPage+1)*30, firstMoverTotal)} of ${firstMoverTotal}`"></span>
+          <button @click="(firstMoverPage+1)*30 < firstMoverTotal && (firstMoverPage++, fetchFirstMovers())"
+            :disabled="(firstMoverPage+1)*30 >= firstMoverTotal"
+            class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Next</button>
+        </div>
       </div>
     </div>
 
@@ -1088,6 +1098,8 @@ tailwind.config = {
       <div class="bg-surface-1 rounded-xl border border-white/15 overflow-hidden">
         <div class="flex items-center gap-3 p-4 border-b border-white/15">
           <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Fast flips</h2>
+          <input type="text" x-model="roundTripSearch" @input.debounce.300ms="roundTripPage=0; fetchRoundTrips()" placeholder="Filter by name or ticker..."
+            class="bg-surface-2 border border-white/15 rounded px-3 py-1 text-sm flex-1 max-w-xs focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus:outline-none text-neutral-300">
           <select x-model="roundTripSort" @change="roundTripPage=0; sortRoundTrips()" class="bg-surface-2 border border-white/15 rounded px-2 py-1 text-sm text-neutral-300">
             <option value="hold">Shortest hold</option>
             <option value="amount">Largest amount</option>
@@ -1165,7 +1177,14 @@ tailwind.config = {
         <div class="bg-surface-1 rounded-xl border border-white/15 overflow-hidden">
           <div class="flex items-center gap-3 p-4 border-b border-white/15">
             <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider" x-text="m === 'consensus' ? 'Bipartisan consensus' : 'Contrarian splits'"></h2>
-            <span class="text-xs text-neutral-400 ml-auto" x-text="partisan.length + ' tickers'"></span>
+            <input type="text" x-model="partisanSearch" @input.debounce.300ms="partisanPage=0; fetchPartisan(m)" placeholder="Filter by ticker..."
+              class="bg-surface-2 border border-white/15 rounded px-3 py-1 text-sm flex-1 max-w-xs focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus:outline-none text-neutral-300">
+            <select x-model="partisanSort" @change="partisanPage=0; fetchPartisan(m)" class="bg-surface-2 border border-white/15 rounded px-2 py-1 text-sm text-neutral-300">
+              <option value="reps">Most reps</option>
+              <option value="score">Highest score</option>
+              <option value="ticker">Ticker A→Z</option>
+            </select>
+            <span class="text-xs text-neutral-400 ml-auto" x-text="partisanTotal + ' tickers'"></span>
           </div>
           <div x-show="partisan.length === 0" class="text-neutral-400 text-sm text-center py-12">No partisan data available</div>
           <div x-show="partisan.length > 0" class="overflow-x-auto">
@@ -1197,6 +1216,15 @@ tailwind.config = {
                 </template>
               </tbody>
             </table>
+          </div>
+          <div class="flex justify-center gap-2 px-4 py-3 border-t border-white/15" x-show="partisanTotal > 30">
+            <button @click="partisanPage > 0 && (partisanPage--, fetchPartisan(m))"
+              :disabled="partisanPage === 0"
+              class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Prev</button>
+            <span class="text-sm text-neutral-400 py-1" x-text="`${partisanPage * 30 + 1}–${Math.min((partisanPage+1)*30, partisanTotal)} of ${partisanTotal}`"></span>
+            <button @click="(partisanPage+1)*30 < partisanTotal && (partisanPage++, fetchPartisan(m))"
+              :disabled="(partisanPage+1)*30 >= partisanTotal"
+              class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Next</button>
           </div>
           <div class="px-4 py-3 border-t border-white/15 text-[11px] text-neutral-400">
             Counts are distinct representatives, not trade rows — one rep buying NVDA ten times counts as one buyer. Independents and reps with no party flag are excluded. Minimum 4 reps total.
@@ -1437,7 +1465,7 @@ tailwind.config = {
     <div class="bg-surface-1 rounded-xl border border-white/15 overflow-hidden">
       <div class="flex items-center gap-4 p-4 border-b border-white/15">
         <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Top Tickers</h2>
-        <input type="text" x-model="tickerSearch" @input.debounce.300ms="tickerPage=0; fetchTopTickers()" placeholder="Filter by ticker or sector..."
+        <input type="text" x-model="tickerSearch" @input.debounce.300ms="tickerPage=0; fetchTopTickers()" placeholder="Filter by ticker, name, or sector..."
           class="bg-surface-2 border border-white/15 rounded px-3 py-1 text-sm flex-1 max-w-xs focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus:outline-none text-neutral-300">
         <select x-model="tickerSort" @change="tickerPage=0; sortTickers()" class="bg-surface-2 border border-white/15 rounded px-2 py-1 text-sm text-neutral-300">
           <option value="reps">Most reps</option>
@@ -1810,17 +1838,23 @@ function app() {
     signalsTab: 'compliance',
     compliance: [],
     complianceSort: 'median',
+    complianceSearch: '',
     complianceSummary: null,
     compliancePage: 0,
     complianceTotal: 0,
     swarms: [],
     swarmSort: 'reps',
+    swarmSearch: '',
     swarmPage: 0,
     swarmTotal: 0,
     firstMoverSort: 'buyers',
     firstMoverPage: 0,
     firstMoverTotal: 0,
     partisan: [],
+    partisanSort: 'reps',
+    partisanSearch: '',
+    partisanPage: 0,
+    partisanTotal: 0,
     firstMovers: [],
 
     // Person profile (deep view)
@@ -1835,6 +1869,7 @@ function app() {
     tickerDetail: null,
     roundTrips: [],
     roundTripSort: 'hold',
+    roundTripSearch: '',
     roundTripPage: 0,
     roundTripTotal: 0,
     coTraders: [],
@@ -2141,7 +2176,16 @@ function app() {
         this._allCompliance = res?.data || [];
         this.complianceSummary = res?.summary || null;
       }
-      const sorted = this._sortBy([...this._allCompliance], this.complianceSort, {
+      let filtered = [...this._allCompliance];
+      if (this.complianceSearch) {
+        const q = this.complianceSearch.toLowerCase();
+        filtered = filtered.filter(c =>
+          (c.name || '').toLowerCase().includes(q) ||
+          (c.state || '').toLowerCase().includes(q) ||
+          (c.worst_ticker || '').toLowerCase().includes(q)
+        );
+      }
+      const sorted = this._sortBy(filtered, this.complianceSort, {
         median: (a, b) => this._cmp(a, b, 'median_days', -1) || this._cmp(a, b, 'name'),
         worst:  (a, b) => this._cmp(a, b, 'worst_days', -1) || this._cmp(a, b, 'name'),
         late:   (a, b) => this._cmp(a, b, 'late_pct', -1) || this._cmp(a, b, 'name'),
@@ -2159,7 +2203,15 @@ function app() {
         const res = await this.api(`/signals/swarms?limit=100&min_reps=4`);
         this._allSwarms = res?.data || [];
       }
-      const sorted = this._sortBy([...this._allSwarms], this.swarmSort, {
+      let filtered = [...this._allSwarms];
+      if (this.swarmSearch) {
+        const q = this.swarmSearch.toLowerCase();
+        filtered = filtered.filter(s =>
+          (s.ticker || '').toLowerCase().includes(q) ||
+          (s.rep_names || []).some(n => n.toLowerCase().includes(q))
+        );
+      }
+      const sorted = this._sortBy(filtered, this.swarmSort, {
         reps:   (a, b) => this._cmp(a, b, 'reps', -1) || this._cmp(a, b, 'trades', -1),
         trades: (a, b) => this._cmp(a, b, 'trades', -1) || this._cmp(a, b, 'reps', -1),
         week:   (a, b) => this._cmp(a, b, 'week_start', -1) || this._cmp(a, b, 'reps', -1),
@@ -2172,8 +2224,24 @@ function app() {
     sortSwarms() { if (this._allSwarms) this.fetchSwarms(); },
 
     async fetchPartisan(mode) {
-      const res = await this.api(`/signals/partisan?limit=50&min_reps=4&mode=${mode}`);
-      this.partisan = res?.data || [];
+      const cacheKey = '_allPartisan_' + mode;
+      if (!this[cacheKey]) {
+        const res = await this.api(`/signals/partisan?limit=50&min_reps=4&mode=${mode}`);
+        this[cacheKey] = res?.data || [];
+      }
+      let filtered = [...this[cacheKey]];
+      if (this.partisanSearch) {
+        const q = this.partisanSearch.toLowerCase();
+        filtered = filtered.filter(p => (p.ticker || '').toLowerCase().includes(q));
+      }
+      const sorted = this._sortBy(filtered, this.partisanSort, {
+        reps:   (a, b) => this._cmp(a, b, 'total_reps', -1) || this._cmp(a, b, 'ticker'),
+        score:  (a, b) => this._cmp(a, b, 'score', -1) || this._cmp(a, b, 'total_reps', -1),
+        ticker: (a, b) => this._cmp(a, b, 'ticker'),
+      });
+      this.partisanTotal = sorted.length;
+      const start = this.partisanPage * 30;
+      this.partisan = sorted.slice(start, start + 30);
     },
 
     async fetchFirstMovers() {
@@ -2197,8 +2265,8 @@ function app() {
       if (tab === 'compliance' && !this._allCompliance) this.fetchCompliance();
       if (tab === 'swarms' && !this._allSwarms) this.fetchSwarms();
       if (tab === 'first-movers' && !this._allFirstMovers) this.fetchFirstMovers();
-      if (tab === 'consensus') this.fetchPartisan('consensus');
-      if (tab === 'contrarian') this.fetchPartisan('contrarian');
+      if (tab === 'consensus') { this.partisanPage = 0; this.fetchPartisan('consensus'); }
+      if (tab === 'contrarian') { this.partisanPage = 0; this.fetchPartisan('contrarian'); }
       if (tab === 'round-trips' && !this._allRoundTrips) this.fetchRoundTrips();
     },
 
@@ -2212,6 +2280,7 @@ function app() {
         const q = this.tickerSearch.toLowerCase();
         filtered = filtered.filter(t =>
           (t.ticker || '').toLowerCase().includes(q) ||
+          (t.name || '').toLowerCase().includes(q) ||
           (t.sector || '').toLowerCase().includes(q)
         );
       }
@@ -2234,7 +2303,15 @@ function app() {
         const res = await this.api(`/signals/round-trips?limit=100&max_hold_days=60&min_amount=15000`);
         this._allRoundTrips = res?.data || [];
       }
-      const sorted = this._sortBy([...this._allRoundTrips], this.roundTripSort, {
+      let filtered = [...this._allRoundTrips];
+      if (this.roundTripSearch) {
+        const q = this.roundTripSearch.toLowerCase();
+        filtered = filtered.filter(rt =>
+          (rt.name || '').toLowerCase().includes(q) ||
+          (rt.ticker || '').toLowerCase().includes(q)
+        );
+      }
+      const sorted = this._sortBy(filtered, this.roundTripSort, {
         hold:   (a, b) => this._cmp(a, b, 'hold_days') || this._cmp(a, b, 'buy_amount', -1),
         amount: (a, b) => this._cmp(a, b, 'buy_amount', -1) || this._cmp(a, b, 'hold_days'),
         name:   (a, b) => this._cmp(a, b, 'name') || this._cmp(a, b, 'hold_days'),
