@@ -64,30 +64,54 @@ var enrichCompaniesCmd = &cobra.Command{
 		}
 		log.Printf("enrich-companies: %d companies need names", len(tickers))
 
-		// Fetch all US tickers from Polygon reference API (paginated)
+		// Fetch tickers from Polygon reference API (paginated).
+		// Pass 1: bulk fetch stocks + OTC (covers most tickers cheaply).
 		client := &http.Client{Timeout: 30 * time.Second}
 		tickerMap := map[string]polygonTicker{}
 
-		nextURL := fmt.Sprintf("https://api.polygon.io/v3/reference/tickers?market=stocks&active=true&limit=1000&apiKey=%s", cfg.PolygonAPIKey)
-		for nextURL != "" {
-			if ctx.Err() != nil {
-				break
+		bulkMarkets := []string{"stocks", "otc"}
+		for _, market := range bulkMarkets {
+			nextURL := fmt.Sprintf("https://api.polygon.io/v3/reference/tickers?market=%s&active=true&limit=1000&apiKey=%s", market, cfg.PolygonAPIKey)
+			for nextURL != "" {
+				if ctx.Err() != nil {
+					break
+				}
+				page, next, ferr := fetchPolygonTickers(ctx, client, nextURL)
+				if ferr != nil {
+					log.Printf("enrich-companies: fetch %s error: %v (continuing)", market, ferr)
+					break
+				}
+				for _, t := range page {
+					tickerMap[t.Ticker] = t
+				}
+				nextURL = next
+				time.Sleep(250 * time.Millisecond)
 			}
-			page, next, ferr := fetchPolygonTickers(ctx, client, nextURL)
-			if ferr != nil {
-				log.Printf("enrich-companies: fetch error: %v (continuing with what we have)", ferr)
-				break
-			}
-			for _, t := range page {
-				tickerMap[t.Ticker] = t
-			}
-			log.Printf("enrich-companies: fetched %d tickers so far", len(tickerMap))
-			nextURL = next
-			// Rate limit: Polygon free tier allows 5 req/min
-			time.Sleep(250 * time.Millisecond)
+			log.Printf("enrich-companies: %d reference tickers after %s bulk", len(tickerMap), market)
 		}
 
-		log.Printf("enrich-companies: %d reference tickers loaded", len(tickerMap))
+		// Pass 2: individual lookups for tickers still missing (ETFs, funds, delisted).
+		var missing []string
+		for _, tk := range tickers {
+			if _, ok := tickerMap[tk]; !ok {
+				missing = append(missing, tk)
+			}
+		}
+		if len(missing) > 0 {
+			log.Printf("enrich-companies: %d tickers not in bulk — trying individual lookups", len(missing))
+			for _, tk := range missing {
+				if ctx.Err() != nil {
+					break
+				}
+				name, ferr := fetchSingleTicker(ctx, client, tk, cfg.PolygonAPIKey)
+				if ferr != nil || name == "" {
+					continue
+				}
+				tickerMap[tk] = polygonTicker{Ticker: tk, Name: name}
+				time.Sleep(250 * time.Millisecond)
+			}
+			log.Printf("enrich-companies: %d reference tickers after individual lookups", len(tickerMap))
+		}
 
 		var updated, notFound int
 		for _, tk := range tickers {
@@ -96,7 +120,6 @@ var enrichCompaniesCmd = &cobra.Command{
 				notFound++
 				continue
 			}
-			// Only update the name — don't clobber existing sector/subsector
 			_, err := d.ExecContext(ctx, `UPDATE companies SET name = ? WHERE ticker = ?`, ref.Name, tk)
 			if err != nil {
 				log.Printf("enrich-companies: update %s: %v", tk, err)
@@ -167,6 +190,40 @@ func fetchPolygonTickers(ctx context.Context, client *http.Client, url string) (
 	}
 
 	return pr.Results, next, nil
+}
+
+// fetchSingleTicker queries Polygon's single-ticker endpoint, which works
+// across all asset types (stocks, ETFs, mutual funds, OTC, etc.).
+func fetchSingleTicker(ctx context.Context, client *http.Client, ticker, apiKey string) (string, error) {
+	url := fmt.Sprintf("https://api.polygon.io/v3/reference/tickers/%s?apiKey=%s", ticker, apiKey)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return "", nil // not found — not an error
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	if err != nil {
+		return "", err
+	}
+
+	var result struct {
+		Results struct {
+			Name string `json:"name"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", err
+	}
+	return result.Results.Name, nil
 }
 
 func contains(s, substr string) bool {

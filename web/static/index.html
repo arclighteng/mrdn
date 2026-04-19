@@ -181,9 +181,9 @@ tailwind.config = {
             <div class="flex items-center gap-6 text-sm">
               <span class="text-neutral-400"><span class="text-white" x-text="row.count"></span> events</span>
               <template x-if="row.total_amount">
-                <span class="text-neutral-400">$<span class="text-white" x-text="formatAmount(row.total_amount)"></span></span>
+                <span class="text-neutral-400"><span class="text-white" x-text="fmtMoney(row.total_amount)"></span></span>
               </template>
-              <span class="text-neutral-500 text-xs" x-text="formatDate(row.first_seen) + ' – ' + formatDate(row.last_seen)"></span>
+              <span class="text-neutral-500 text-xs" x-text="fmtDate(row.first_seen) + ' – ' + fmtDate(row.last_seen)"></span>
             </div>
           </div>
         </template>
@@ -466,7 +466,7 @@ tailwind.config = {
             <div class="flex items-center justify-between mb-1">
               <span class="font-mono text-sm text-white" x-text="s.source_name"></span>
               <span class="text-xs px-1.5 py-0.5 rounded font-semibold"
-                :class="s.status === 'healthy' ? 'bg-up/20 text-up' : s.status === 'stale' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-down/20 text-down'"
+                :class="statusBadge(s.status)"
                 x-text="s.status"></span>
             </div>
             <div class="text-xs text-neutral-400" x-text="s.last_successful_poll ? timeAgo(s.last_successful_poll) : 'never polled'"></div>
@@ -483,16 +483,20 @@ tailwind.config = {
       <p class="text-sm text-neutral-400 mt-1">Every public company, ranked by risk score (0 = calm, 100 = on fire). Switch the dropdown to sort by sub-score: <b>Market</b> (price/volume action), <b>Policy</b> (government activity), or <b>Insider</b> (congressional trades + executive moves). Click any row to see what's driving the number.</p>
     </div>
     <div class="bg-surface-1 rounded-xl border border-white/15 p-5">
-      <div class="flex items-center justify-between mb-4">
+      <div class="flex items-center gap-4 mb-4">
         <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">All Company Rankings</h2>
-        <select x-model="rankSort" @change="fetchRankings()" class="bg-surface-2 border border-white/15 rounded px-2 py-1 text-sm text-neutral-300">
+        <input type="text" x-model="rankSearch" @input.debounce.300ms="rankPage=0; fetchRankings()" placeholder="Filter by ticker, name, sector..."
+          class="bg-surface-2 border border-white/15 rounded px-3 py-1 text-sm flex-1 max-w-xs focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus:outline-none text-neutral-300">
+        <select x-model="rankSort" @change="rankPage=0; fetchRankings()" class="bg-surface-2 border border-white/15 rounded px-2 py-1 text-sm text-neutral-300">
           <option value="composite">Composite</option>
           <option value="market">Market</option>
           <option value="policy">Policy</option>
           <option value="insider">Insider</option>
         </select>
+        <span class="text-xs text-neutral-400 ml-auto" x-text="rankTotal + ' companies'"></span>
       </div>
-      <table class="w-full text-sm">
+      <div x-show="!rankingsLoaded" class="text-neutral-400 text-sm text-center py-12">Loading rankings…</div>
+      <table x-show="rankingsLoaded" class="w-full text-sm">
         <thead>
           <tr class="text-neutral-400 text-xs uppercase border-b border-white/15">
             <th class="text-left py-2 px-2">#</th>
@@ -508,7 +512,7 @@ tailwind.config = {
         <tbody>
           <template x-for="(r, i) in rankings" :key="r.ticker">
             <tr @click="openCompany(r.ticker)" class="border-b border-white/15 hover:bg-surface-2 cursor-pointer transition-colors">
-              <td class="py-2 px-2 text-neutral-400 font-mono" x-text="i+1"></td>
+              <td class="py-2 px-2 text-neutral-400 font-mono" x-text="rankPage * 30 + i + 1"></td>
               <td class="py-2 font-mono font-semibold text-white" x-text="r.ticker"></td>
               <td class="py-2 text-neutral-300" x-text="r.name"></td>
               <td class="py-2 text-neutral-400" x-text="r.sector || '—'"></td>
@@ -520,7 +524,16 @@ tailwind.config = {
           </template>
         </tbody>
       </table>
-      <div x-show="rankings.length === 0" class="text-neutral-400 text-sm text-center py-12">No scores computed yet — run ingestion to generate data</div>
+      <div x-show="rankingsLoaded && rankings.length === 0" class="text-neutral-400 text-sm text-center py-12">No scores computed yet — run ingestion to generate data</div>
+      <div class="flex justify-center gap-2 mt-4" x-show="rankTotal > 30">
+        <button @click="rankPage > 0 && (rankPage--, fetchRankings())"
+          :disabled="rankPage === 0"
+          class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Prev</button>
+        <span class="text-sm text-neutral-400 py-1" x-text="`${rankPage * 30 + 1}–${Math.min((rankPage+1)*30, rankTotal)} of ${rankTotal}`"></span>
+        <button @click="(rankPage+1)*30 < rankTotal && (rankPage++, fetchRankings())"
+          :disabled="(rankPage+1)*30 >= rankTotal"
+          class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Next</button>
+      </div>
     </div>
   </div>
 
@@ -533,10 +546,16 @@ tailwind.config = {
     <div class="bg-surface-1 rounded-xl border border-white/15 p-5">
       <div class="flex items-center gap-4 mb-4">
         <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Companies</h2>
-        <input type="text" x-model="companySearch" @input.debounce.300ms="fetchCompanies()" placeholder="Filter by sector..."
+        <input type="text" x-model="companySearch" @input.debounce.300ms="companyPage=0; fetchCompanies()" placeholder="Filter by sector, ticker, name..."
           class="bg-surface-2 border border-white/15 rounded px-3 py-1 text-sm flex-1 max-w-xs focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus:outline-none text-neutral-300">
+        <select x-model="companySort" @change="companyPage=0; fetchCompanies()" class="bg-surface-2 border border-white/15 rounded px-2 py-1 text-sm text-neutral-300">
+          <option value="name">Name A→Z</option>
+          <option value="ticker">Ticker A→Z</option>
+          <option value="sector">Sector</option>
+        </select>
       </div>
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      <div x-show="!companiesLoaded" class="text-neutral-400 text-sm text-center py-12">Loading companies…</div>
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3" x-show="companiesLoaded">
         <template x-for="c in companies" :key="c.id">
           <div @click="openCompany(c.ticker)" class="bg-surface-2 rounded-lg p-4 hover:bg-surface-3 cursor-pointer transition-colors border border-white/15">
             <div class="flex items-center justify-between mb-2">
@@ -548,6 +567,7 @@ tailwind.config = {
           </div>
         </template>
       </div>
+      <div x-show="companiesLoaded && companies.length === 0" class="text-neutral-400 text-sm text-center py-12">No companies found</div>
       <div class="flex justify-center gap-2 mt-4" x-show="companyTotal > 30">
         <button @click="companyPage > 0 && (companyPage--, fetchCompanies())"
           :disabled="companyPage === 0"
@@ -563,7 +583,7 @@ tailwind.config = {
   <!-- Company Detail -->
   <div x-show="view === 'company'" x-transition class="space-y-6 fade-in">
     <div class="flex items-center gap-3 mb-2">
-      <button @click="navigate('dashboard')" class="text-neutral-400 hover:text-white text-sm">&larr; Back</button>
+      <button @click="navigate('companies')" class="text-neutral-400 hover:text-white text-sm">&larr; Back to companies</button>
       <h1 class="text-2xl font-bold text-white">
         <span x-text="detail.ticker"></span>
         <span class="text-lg text-neutral-400 font-normal ml-2" x-text="detail.name"></span>
@@ -738,11 +758,21 @@ tailwind.config = {
     <div class="bg-surface-1 rounded-xl border border-white/15 p-5">
       <div class="flex items-center gap-4 mb-4">
         <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Political Figures</h2>
-        <select x-model="personBranch" @change="fetchPersons()" class="bg-surface-2 border border-white/15 rounded px-2 py-1 text-sm text-neutral-300">
+        <input type="text" x-model="personSearch" @input.debounce.300ms="personPage=0; fetchPersons()" placeholder="Filter by name, state, party..."
+          class="bg-surface-2 border border-white/15 rounded px-3 py-1 text-sm flex-1 max-w-xs focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus:outline-none text-neutral-300">
+        <select x-model="personBranch" @change="personPage=0; fetchPersons()" class="bg-surface-2 border border-white/15 rounded px-2 py-1 text-sm text-neutral-300">
           <option value="">All branches</option>
           <option value="legislative">Legislative</option>
           <option value="executive">Executive</option>
           <option value="judicial">Judicial</option>
+        </select>
+        <select x-model="personSort" @change="personPage=0; fetchPersons()" class="bg-surface-2 border border-white/15 rounded px-2 py-1 text-sm text-neutral-300">
+          <option value="volume">Most active</option>
+          <option value="trades">Most trades</option>
+          <option value="tickers">Most tickers</option>
+          <option value="name">Name A→Z</option>
+          <option value="party">Party</option>
+          <option value="state">State</option>
         </select>
         <span class="text-xs text-neutral-400 ml-auto" x-text="persons.length + ' people'"></span>
       </div>
@@ -755,7 +785,7 @@ tailwind.config = {
                 <div class="text-sm text-neutral-400 mt-0.5 capitalize" x-text="(p.role || '').replace('_',' ')"></div>
               </div>
               <span class="text-[10px] font-bold px-2 py-1 rounded shrink-0"
-                :class="p.party === 'R' ? 'bg-red-500/15 text-red-300' : p.party === 'D' ? 'bg-blue-500/15 text-blue-300' : 'bg-neutral-500/15 text-neutral-300'"
+                :class="partyBadge(p.party)"
                 x-text="p.party || '—'"></span>
             </div>
             <div class="flex flex-wrap gap-1.5 mt-3">
@@ -781,6 +811,15 @@ tailwind.config = {
             </div>
           </div>
         </template>
+      </div>
+      <div class="flex justify-center gap-2 mt-4" x-show="personTotal > 30">
+        <button @click="personPage > 0 && (personPage--, fetchPersons())"
+          :disabled="personPage === 0"
+          class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Prev</button>
+        <span class="text-sm text-neutral-400 py-1" x-text="`${personPage * 30 + 1}–${Math.min((personPage+1)*30, personTotal)} of ${personTotal}`"></span>
+        <button @click="(personPage+1)*30 < personTotal && (personPage++, fetchPersons())"
+          :disabled="(personPage+1)*30 >= personTotal"
+          class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Next</button>
       </div>
       <div x-show="persons.length === 0" class="text-neutral-400 text-sm text-center py-12">No persons data — run EFDS ingestion</div>
     </div>
@@ -848,8 +887,14 @@ tailwind.config = {
     <div class="bg-surface-1 rounded-xl border border-white/15 overflow-hidden">
       <div class="flex items-center gap-3 p-4 border-b border-white/15">
         <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Worst offenders</h2>
-        <span class="text-xs text-neutral-400">≥10 disclosed trades, sorted by median latency</span>
-        <span class="text-xs text-neutral-400 ml-auto" x-text="compliance.length + ' people'"></span>
+        <select x-model="complianceSort" @change="compliancePage=0; sortCompliance()" class="bg-surface-2 border border-white/15 rounded px-2 py-1 text-sm text-neutral-300">
+          <option value="median">Median latency</option>
+          <option value="worst">Worst single trade</option>
+          <option value="late">% late</option>
+          <option value="trades">Most trades</option>
+          <option value="name">Name A→Z</option>
+        </select>
+        <span class="text-xs text-neutral-400 ml-auto" x-text="complianceTotal + ' people'"></span>
       </div>
       <div x-show="compliance.length === 0" class="text-neutral-400 text-sm text-center py-12">
         No latency data — run <code class="bg-black/40 px-2 py-1 rounded text-[11px]">go run ./cmd/mrdn ingest-house-trades</code>
@@ -870,13 +915,13 @@ tailwind.config = {
           </thead>
           <tbody>
             <template x-for="(c, i) in compliance" :key="c.person_id">
-              <tr class="border-t border-white/15 hover:bg-surface-2/50 cursor-default">
-                <td class="px-4 py-2 text-neutral-400 tabular-nums" x-text="i + 1"></td>
+              <tr class="border-t border-white/15 hover:bg-surface-2/50 cursor-pointer" @click="c.slug && openPerson(c.slug)">
+                <td class="px-4 py-2 text-neutral-400 tabular-nums" x-text="compliancePage * 30 + i + 1"></td>
                 <td class="px-4 py-2">
                   <div class="flex items-center gap-2">
                     <span class="text-white font-medium" x-text="c.name"></span>
                     <span class="text-[10px] font-bold px-1.5 py-0.5 rounded"
-                      :class="c.party === 'R' ? 'bg-red-500/15 text-red-300' : c.party === 'D' ? 'bg-blue-500/15 text-blue-300' : 'bg-neutral-500/15 text-neutral-300'"
+                      :class="partyBadge(c.party)"
                       x-text="c.party || '—'"></span>
                     <span x-show="c.state" class="text-[10px] text-neutral-400" x-text="c.state"></span>
                   </div>
@@ -890,11 +935,20 @@ tailwind.config = {
                   :class="c.late_pct > 0.5 ? 'text-red-400' : c.late_pct > 0.2 ? 'text-yellow-400' : 'text-neutral-400'"
                   x-text="Math.round(c.late_pct * 100) + '%'"></td>
                 <td class="px-4 py-2 text-right tabular-nums text-neutral-400" x-text="c.worst_days.toLocaleString() + 'd'"></td>
-                <td class="px-4 py-2 font-mono text-xs text-neutral-400" x-text="c.worst_ticker || '—'"></td>
+                <td class="px-4 py-2 font-mono text-xs text-accent-light cursor-pointer hover:underline" @click.stop="c.worst_ticker && openTicker(c.worst_ticker)" x-text="c.worst_ticker || '—'"></td>
               </tr>
             </template>
           </tbody>
         </table>
+      </div>
+      <div class="flex justify-center gap-2 px-4 py-3 border-t border-white/15" x-show="complianceTotal > 30">
+        <button @click="compliancePage > 0 && (compliancePage--, fetchCompliance())"
+          :disabled="compliancePage === 0"
+          class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Prev</button>
+        <span class="text-sm text-neutral-400 py-1" x-text="`${compliancePage * 30 + 1}–${Math.min((compliancePage+1)*30, complianceTotal)} of ${complianceTotal}`"></span>
+        <button @click="(compliancePage+1)*30 < complianceTotal && (compliancePage++, fetchCompliance())"
+          :disabled="(compliancePage+1)*30 >= complianceTotal"
+          class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Next</button>
       </div>
       <div class="px-4 py-3 border-t border-white/15 text-[11px] text-neutral-400">
         Source: House Clerk Periodic Transaction Reports. Latency = days between transaction date and filing date. The 45-day threshold comes from the STOCK Act of 2012 (Pub. L. 112-105). Trades missing either date are excluded.
@@ -909,6 +963,16 @@ tailwind.config = {
         A <span class="text-white font-semibold">swarm</span> is when ≥4 distinct representatives traded the same ticker in the same calendar week. Bucketed by ISO week, ordered most-recent first. This is one of the few times you can watch politicians visibly converging on a single stock.
       </div>
       <div class="bg-surface-1 rounded-xl border border-white/15 overflow-hidden">
+        <div class="flex items-center gap-3 p-4 border-b border-white/15">
+          <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Swarm clusters</h2>
+          <select x-model="swarmSort" @change="swarmPage=0; sortSwarms()" class="bg-surface-2 border border-white/15 rounded px-2 py-1 text-sm text-neutral-300">
+            <option value="reps">Most reps</option>
+            <option value="trades">Most trades</option>
+            <option value="week">Most recent</option>
+            <option value="ticker">Ticker A→Z</option>
+          </select>
+          <span class="text-xs text-neutral-400 ml-auto" x-text="swarmTotal + ' swarms'"></span>
+        </div>
         <div x-show="swarms.length === 0" class="text-neutral-400 text-sm text-center py-12">No swarms found</div>
         <div x-show="swarms.length > 0" class="overflow-x-auto">
           <table class="w-full text-sm">
@@ -928,7 +992,7 @@ tailwind.config = {
               <template x-for="(s, i) in swarms" :key="i">
                 <tr class="border-t border-white/15 hover:bg-surface-2/50">
                   <td class="px-4 py-2 font-mono text-xs text-neutral-400" x-text="s.week_start"></td>
-                  <td class="px-4 py-2 font-mono font-semibold text-white" x-text="s.ticker"></td>
+                  <td class="px-4 py-2 font-mono font-semibold text-accent-light cursor-pointer hover:underline" @click="openTicker(s.ticker)" x-text="s.ticker"></td>
                   <td class="px-4 py-2 text-right tabular-nums font-bold text-accent-light" x-text="s.reps"></td>
                   <td class="px-4 py-2 text-right tabular-nums text-neutral-300" x-text="s.trades"></td>
                   <td class="px-4 py-2 text-right tabular-nums text-green-400" x-text="s.buys"></td>
@@ -944,6 +1008,15 @@ tailwind.config = {
             </tbody>
           </table>
         </div>
+        <div class="flex justify-center gap-2 px-4 py-3 border-t border-white/15" x-show="swarmTotal > 30">
+          <button @click="swarmPage > 0 && (swarmPage--, fetchSwarms())"
+            :disabled="swarmPage === 0"
+            class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Prev</button>
+          <span class="text-sm text-neutral-400 py-1" x-text="`${swarmPage * 30 + 1}–${Math.min((swarmPage+1)*30, swarmTotal)} of ${swarmTotal}`"></span>
+          <button @click="(swarmPage+1)*30 < swarmTotal && (swarmPage++, fetchSwarms())"
+            :disabled="(swarmPage+1)*30 >= swarmTotal"
+            class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Next</button>
+        </div>
         <div class="px-4 py-3 border-t border-white/15 text-[11px] text-neutral-400">
           Buckets are ISO calendar weeks. A "rep" is a unique person_id; a "trade" is a row in congressional_trades. Tickers like "--" or empty are excluded.
         </div>
@@ -955,14 +1028,23 @@ tailwind.config = {
       <div class="text-sm text-neutral-400">
         For each ticker bought by ≥4 representatives, who got there <span class="text-white font-semibold">first</span>? The follower lag is computed in days from the first congressional buy. This is chronology, not causation — but it's the closest you can get to "who tipped off whom" using public disclosures alone.
       </div>
-      <div x-show="firstMovers.length === 0" class="text-neutral-400 text-sm text-center py-12">No first-mover data</div>
+      <div class="flex items-center gap-3 mb-2">
+        <select x-model="firstMoverSort" @change="firstMoverPage=0; sortFirstMovers()" class="bg-surface-2 border border-white/15 rounded px-2 py-1 text-sm text-neutral-300">
+          <option value="buyers">Most buyers</option>
+          <option value="recent">Most recent</option>
+          <option value="ticker">Ticker A→Z</option>
+        </select>
+        <span class="text-xs text-neutral-400 ml-auto" x-text="firstMoverTotal + ' tickers'"></span>
+      </div>
+      <div x-show="firstMovers.length === 0 && !_allFirstMovers" class="text-neutral-400 text-sm text-center py-12">Loading first movers…</div>
+      <div x-show="firstMovers.length === 0 && _allFirstMovers" class="text-neutral-400 text-sm text-center py-12">No first-mover data</div>
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <template x-for="fm in firstMovers" :key="fm.ticker">
           <div class="bg-surface-1 rounded-xl border border-white/15 p-4">
             <div class="flex items-center gap-3 mb-3">
-              <span class="font-mono text-lg font-bold text-white" x-text="fm.ticker"></span>
+              <span class="font-mono text-lg font-bold text-accent-light cursor-pointer hover:underline" @click.stop="openTicker(fm.ticker)" x-text="fm.ticker"></span>
               <span class="text-[10px] uppercase tracking-wider text-neutral-400" x-text="fm.total_buyers + ' buyers'"></span>
-              <span class="ml-auto text-[10px] text-neutral-400" x-text="new Date(fm.first_date).toISOString().slice(0,10)"></span>
+              <span class="ml-auto text-[10px] text-neutral-400" x-text="fmtDate(fm.first_date)"></span>
             </div>
             <div class="space-y-1.5">
               <!-- First mover -->
@@ -970,7 +1052,7 @@ tailwind.config = {
                 <span class="text-[10px] font-bold text-accent w-12 shrink-0">FIRST</span>
                 <span class="text-white font-medium truncate" x-text="fm.first_buyer"></span>
                 <span class="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0"
-                  :class="fm.first_party === 'R' ? 'bg-red-500/15 text-red-300' : fm.first_party === 'D' ? 'bg-blue-500/15 text-blue-300' : 'bg-neutral-500/15 text-neutral-300'"
+                  :class="partyBadge(fm.first_party)"
                   x-text="fm.first_party || '—'"></span>
               </div>
               <!-- Followers -->
@@ -979,13 +1061,22 @@ tailwind.config = {
                   <span class="text-[10px] font-mono text-neutral-400 w-12 shrink-0" x-text="'+' + f.lag_days + 'd'"></span>
                   <span class="text-neutral-300 truncate" x-text="f.name"></span>
                   <span class="text-[9px] font-bold px-1 py-0.5 rounded shrink-0"
-                    :class="f.party === 'R' ? 'bg-red-500/15 text-red-300' : f.party === 'D' ? 'bg-blue-500/15 text-blue-300' : 'bg-neutral-500/15 text-neutral-300'"
+                    :class="partyBadge(f.party)"
                     x-text="f.party || '—'"></span>
                 </div>
               </template>
             </div>
           </div>
         </template>
+      </div>
+      <div class="flex justify-center gap-2 mt-4" x-show="firstMoverTotal > 30">
+        <button @click="firstMoverPage > 0 && (firstMoverPage--, fetchFirstMovers())"
+          :disabled="firstMoverPage === 0"
+          class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Prev</button>
+        <span class="text-sm text-neutral-400 py-1" x-text="`${firstMoverPage * 30 + 1}–${Math.min((firstMoverPage+1)*30, firstMoverTotal)} of ${firstMoverTotal}`"></span>
+        <button @click="(firstMoverPage+1)*30 < firstMoverTotal && (firstMoverPage++, fetchFirstMovers())"
+          :disabled="(firstMoverPage+1)*30 >= firstMoverTotal"
+          class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Next</button>
       </div>
     </div>
 
@@ -995,7 +1086,19 @@ tailwind.config = {
         <span class="text-white font-semibold">Fast flips</span> — purchases sold within a short window. Each row pairs a buy with the very next sale of the same ticker by the same rep. No inference of intent — just the calendar gap and the disclosed dollar amounts. Short holds with large dollars are the ones worth reading twice.
       </div>
       <div class="bg-surface-1 rounded-xl border border-white/15 overflow-hidden">
-        <div x-show="roundTrips.length === 0" class="text-neutral-400 text-sm text-center py-12">Loading…</div>
+        <div class="flex items-center gap-3 p-4 border-b border-white/15">
+          <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Fast flips</h2>
+          <select x-model="roundTripSort" @change="roundTripPage=0; sortRoundTrips()" class="bg-surface-2 border border-white/15 rounded px-2 py-1 text-sm text-neutral-300">
+            <option value="hold">Shortest hold</option>
+            <option value="amount">Largest amount</option>
+            <option value="date">Most recent</option>
+            <option value="name">Name A→Z</option>
+            <option value="ticker">Ticker A→Z</option>
+          </select>
+          <span class="text-xs text-neutral-400 ml-auto" x-text="roundTripTotal + ' trades'"></span>
+        </div>
+        <div x-show="roundTrips.length === 0 && !_allRoundTrips" class="text-neutral-400 text-sm text-center py-12">Loading round trips…</div>
+        <div x-show="roundTrips.length === 0 && _allRoundTrips" class="text-neutral-400 text-sm text-center py-12">No round trips found</div>
         <div x-show="roundTrips.length > 0" class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead class="bg-surface-2 text-[10px] uppercase tracking-wider text-neutral-400">
@@ -1015,7 +1118,7 @@ tailwind.config = {
                   <td class="px-4 py-2">
                     <span class="text-white font-medium" x-text="rt.name"></span>
                     <span class="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded"
-                      :class="rt.party === 'R' ? 'bg-red-500/15 text-red-300' : rt.party === 'D' ? 'bg-blue-500/15 text-blue-300' : 'bg-neutral-500/15 text-neutral-300'"
+                      :class="partyBadge(rt.party)"
                       x-text="rt.party || '—'"></span>
                   </td>
                   <td class="px-4 py-2 font-mono font-semibold text-accent-light cursor-pointer hover:underline"
@@ -1032,6 +1135,15 @@ tailwind.config = {
               </template>
             </tbody>
           </table>
+        </div>
+        <div class="flex justify-center gap-2 px-4 py-3 border-t border-white/15" x-show="roundTripTotal > 30">
+          <button @click="roundTripPage > 0 && (roundTripPage--, fetchRoundTrips())"
+            :disabled="roundTripPage === 0"
+            class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Prev</button>
+          <span class="text-sm text-neutral-400 py-1" x-text="`${roundTripPage * 30 + 1}–${Math.min((roundTripPage+1)*30, roundTripTotal)} of ${roundTripTotal}`"></span>
+          <button @click="(roundTripPage+1)*30 < roundTripTotal && (roundTripPage++, fetchRoundTrips())"
+            :disabled="(roundTripPage+1)*30 >= roundTripTotal"
+            class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Next</button>
         </div>
         <div class="px-4 py-3 border-t border-white/15 text-[11px] text-neutral-400">
           Showing buys ≥ $15K with the next sale within 60 days. Buy/sell dollar amounts are midpoints of the disclosed STOCK Act ranges — actual amounts may be higher or lower within the disclosed bracket.
@@ -1051,7 +1163,11 @@ tailwind.config = {
           </template>
         </div>
         <div class="bg-surface-1 rounded-xl border border-white/15 overflow-hidden">
-          <div x-show="partisan.length === 0" class="text-neutral-400 text-sm text-center py-12">Nothing here</div>
+          <div class="flex items-center gap-3 p-4 border-b border-white/15">
+            <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider" x-text="m === 'consensus' ? 'Bipartisan consensus' : 'Contrarian splits'"></h2>
+            <span class="text-xs text-neutral-400 ml-auto" x-text="partisan.length + ' tickers'"></span>
+          </div>
+          <div x-show="partisan.length === 0" class="text-neutral-400 text-sm text-center py-12">No partisan data available</div>
           <div x-show="partisan.length > 0" class="overflow-x-auto">
             <table class="w-full text-sm">
               <thead class="bg-surface-2 text-[10px] uppercase tracking-wider text-neutral-400">
@@ -1068,7 +1184,7 @@ tailwind.config = {
               <tbody>
                 <template x-for="p in partisan" :key="p.ticker">
                   <tr class="border-t border-white/15 hover:bg-surface-2/50">
-                    <td class="px-4 py-2 font-mono font-semibold text-white" x-text="p.ticker"></td>
+                    <td class="px-4 py-2 font-mono font-semibold text-accent-light cursor-pointer hover:underline" @click="openTicker(p.ticker)" x-text="p.ticker"></td>
                     <td class="px-4 py-2 text-right tabular-nums text-neutral-300" x-text="p.total_reps"></td>
                     <td class="px-4 py-2 text-right tabular-nums text-red-300" x-text="p.r_buyers"></td>
                     <td class="px-4 py-2 text-right tabular-nums text-red-300/60" x-text="p.r_sellers"></td>
@@ -1105,14 +1221,14 @@ tailwind.config = {
               <div class="flex items-center gap-3 flex-wrap">
                 <h1 class="text-2xl font-bold text-white" x-text="personProfile.name"></h1>
                 <span class="text-[10px] font-bold px-2 py-1 rounded"
-                  :class="personProfile.party === 'R' ? 'bg-red-500/15 text-red-300' : personProfile.party === 'D' ? 'bg-blue-500/15 text-blue-300' : 'bg-neutral-500/15 text-neutral-300'"
+                  :class="partyBadge(personProfile.party)"
                   x-text="personProfile.party || '—'"></span>
                 <span x-show="personProfile.state" class="text-xs text-neutral-400" x-text="personProfile.state"></span>
                 <span class="text-[10px] px-2 py-0.5 rounded-full bg-accent/15 text-accent-light" x-text="'Tier ' + personProfile.tier"></span>
               </div>
               <div class="text-sm text-neutral-400 mt-1">
-                Active <span class="text-neutral-300" x-text="personProfile.first_trade ? new Date(personProfile.first_trade).toISOString().slice(0,10) : '—'"></span>
-                → <span class="text-neutral-300" x-text="personProfile.last_trade ? new Date(personProfile.last_trade).toISOString().slice(0,10) : '—'"></span>
+                Active <span class="text-neutral-300" x-text="fmtDate(personProfile.first_trade)"></span>
+                → <span class="text-neutral-300" x-text="fmtDate(personProfile.last_trade)"></span>
               </div>
               <!-- Party history (only shown for switchers) -->
               <div x-show="personProfile.party_history && personProfile.party_history.length > 0"
@@ -1122,7 +1238,7 @@ tailwind.config = {
                   <template x-for="(ph, i) in (personProfile.party_history || [])" :key="i">
                     <div class="flex items-center gap-2">
                       <span class="text-[10px] font-bold px-2 py-0.5 rounded"
-                        :class="ph.party === 'R' ? 'bg-red-500/15 text-red-300' : ph.party === 'D' ? 'bg-blue-500/15 text-blue-300' : ph.party === 'L' ? 'bg-yellow-500/15 text-yellow-300' : 'bg-neutral-500/15 text-neutral-300'"
+                        :class="partyBadge(ph.party)"
                         x-text="ph.party"></span>
                       <span class="text-neutral-400 tabular-nums" x-text="(ph.started_at || '…') + ' → ' + (ph.ended_at || 'present')"></span>
                       <span x-show="i < personProfile.party_history.length - 1" class="text-neutral-700">›</span>
@@ -1226,7 +1342,7 @@ tailwind.config = {
             <span class="text-sm uppercase tracking-wider"
               :class="personProfile.biggest_trade?.trade_type === 'purchase' ? 'text-green-400' : 'text-red-400'"
               x-text="personProfile.biggest_trade?.trade_type?.replace('_', ' ')"></span>
-            <span class="text-sm text-neutral-400 ml-auto" x-text="personProfile.biggest_trade?.traded_at ? new Date(personProfile.biggest_trade.traded_at).toISOString().slice(0,10) : ''"></span>
+            <span class="text-sm text-neutral-400 ml-auto" x-text="fmtDate(personProfile.biggest_trade?.traded_at)"></span>
           </div>
         </div>
 
@@ -1291,7 +1407,7 @@ tailwind.config = {
                     <td class="py-1.5 text-white font-medium" x-text="c.name"></td>
                     <td class="py-1.5">
                       <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold"
-                            :class="c.party === 'R' ? 'bg-red-500/15 text-red-300' : c.party === 'D' ? 'bg-blue-500/15 text-blue-300' : 'bg-neutral-500/15 text-neutral-300'"
+                            :class="partyBadge(c.party)"
                             x-text="c.party || '—'"></span>
                     </td>
                     <td class="py-1.5 text-neutral-400" x-text="c.state || '—'"></td>
@@ -1319,7 +1435,22 @@ tailwind.config = {
       <p class="text-sm text-neutral-400 mt-1">Every public company touched by a House Clerk PTR filing, ranked by how many distinct representatives have bought or sold it. Click any ticker to see who, when, and how much. Bipartisan crowd-favorites at the top.</p>
     </div>
     <div class="bg-surface-1 rounded-xl border border-white/15 overflow-hidden">
-      <div x-show="topTickers.length === 0" class="text-neutral-400 text-sm text-center py-12">Loading…</div>
+      <div class="flex items-center gap-4 p-4 border-b border-white/15">
+        <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Top Tickers</h2>
+        <input type="text" x-model="tickerSearch" @input.debounce.300ms="tickerPage=0; fetchTopTickers()" placeholder="Filter by ticker or sector..."
+          class="bg-surface-2 border border-white/15 rounded px-3 py-1 text-sm flex-1 max-w-xs focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus:outline-none text-neutral-300">
+        <select x-model="tickerSort" @change="tickerPage=0; sortTickers()" class="bg-surface-2 border border-white/15 rounded px-2 py-1 text-sm text-neutral-300">
+          <option value="reps">Most reps</option>
+          <option value="trades">Most trades</option>
+          <option value="buy">Buy volume</option>
+          <option value="sell">Sell volume</option>
+          <option value="ticker">Ticker A→Z</option>
+          <option value="recent">Most recent</option>
+        </select>
+        <span class="text-xs text-neutral-400 ml-auto" x-text="tickerTotal + ' tickers'"></span>
+      </div>
+      <div x-show="topTickers.length === 0 && !_allTopTickers" class="text-neutral-400 text-sm text-center py-12">Loading tickers…</div>
+      <div x-show="topTickers.length === 0 && _allTopTickers" class="text-neutral-400 text-sm text-center py-12">No ticker data available</div>
       <div x-show="topTickers.length > 0" class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead class="bg-surface-2 text-[10px] uppercase tracking-wider text-neutral-400">
@@ -1352,6 +1483,15 @@ tailwind.config = {
           </tbody>
         </table>
       </div>
+      <div class="flex justify-center gap-2 px-4 py-3 border-t border-white/15" x-show="tickerTotal > 30">
+        <button @click="tickerPage > 0 && (tickerPage--, fetchTopTickers())"
+          :disabled="tickerPage === 0"
+          class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Prev</button>
+        <span class="text-sm text-neutral-400 py-1" x-text="`${tickerPage * 30 + 1}–${Math.min((tickerPage+1)*30, tickerTotal)} of ${tickerTotal}`"></span>
+        <button @click="(tickerPage+1)*30 < tickerTotal && (tickerPage++, fetchTopTickers())"
+          :disabled="(tickerPage+1)*30 >= tickerTotal"
+          class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Next</button>
+      </div>
       <div class="px-4 py-3 border-t border-white/15 text-[11px] text-neutral-400">
         Buy/sell dollar amounts are midpoints of the disclosed STOCK Act ranges. R/D columns count distinct buyers per party — Independents and unflagged reps are excluded from those columns only.
       </div>
@@ -1370,8 +1510,10 @@ tailwind.config = {
         <div class="bg-surface-1 rounded-xl border border-white/15 p-5">
           <div class="flex items-baseline gap-4 flex-wrap">
             <h1 class="text-3xl font-mono font-bold text-white" x-text="tickerDetail.ticker"></h1>
+            <span x-show="tickerDetail.summary.company_name" class="text-lg text-neutral-400 font-normal" x-text="tickerDetail.summary.company_name"></span>
             <span class="text-xs text-neutral-400" x-text="tickerDetail.summary.first_trade + ' → ' + tickerDetail.summary.last_trade"></span>
           </div>
+          <div x-show="tickerDetail.summary.sector" class="text-xs text-neutral-400 mt-1" x-text="tickerDetail.summary.sector"></div>
         </div>
 
         <!-- Headline tiles -->
@@ -1432,7 +1574,7 @@ tailwind.config = {
                     <td class="px-4 py-2">
                       <span class="text-white font-medium hover:underline" x-text="r.name"></span>
                       <span class="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded"
-                        :class="r.party === 'R' ? 'bg-red-500/15 text-red-300' : r.party === 'D' ? 'bg-blue-500/15 text-blue-300' : 'bg-neutral-500/15 text-neutral-300'"
+                        :class="partyBadge(r.party)"
                         x-text="r.party || '—'"></span>
                       <span x-show="r.state" class="text-[10px] text-neutral-400 ml-1" x-text="r.state"></span>
                     </td>
@@ -1460,7 +1602,7 @@ tailwind.config = {
                   x-text="e.trade_type === 'purchase' ? 'BUY' : 'SELL'"></span>
                 <span class="text-white hover:underline cursor-pointer" @click="openPerson(e.slug)" x-text="e.name"></span>
                 <span class="text-[10px] font-bold px-1.5 py-0.5 rounded"
-                  :class="e.party === 'R' ? 'bg-red-500/15 text-red-300' : e.party === 'D' ? 'bg-blue-500/15 text-blue-300' : 'bg-neutral-500/15 text-neutral-300'"
+                  :class="partyBadge(e.party)"
                   x-text="e.party || '—'"></span>
                 <span x-show="e.owner_type && e.owner_type !== '--'" class="text-[10px] text-neutral-400 capitalize" x-text="e.owner_type"></span>
                 <span class="ml-auto tabular-nums text-accent-light" x-text="fmtMoney(e.est_amount)"></span>
@@ -1486,7 +1628,7 @@ tailwind.config = {
             <div class="flex items-center justify-between mb-2">
               <span class="font-mono font-bold text-white" x-text="s.source_name"></span>
               <span class="text-xs px-2 py-0.5 rounded font-semibold"
-                :class="s.status === 'healthy' ? 'bg-up/20 text-up' : (s.status === 'down' ? 'bg-down/20 text-down' : 'bg-yellow-500/20 text-yellow-400')"
+                :class="statusBadge(s.status)"
                 x-text="s.status"></span>
             </div>
             <div class="grid grid-cols-2 md:grid-cols-6 gap-4 text-sm">
@@ -1496,11 +1638,11 @@ tailwind.config = {
               </div>
               <div>
                 <div class="text-xs text-neutral-400">Last Attempt</div>
-                <div class="text-neutral-300" x-text="s.last_attempt_at ? new Date(s.last_attempt_at).toLocaleString() : (s.last_successful_poll ? new Date(s.last_successful_poll).toLocaleString() : 'Never')"></div>
+                <div class="text-neutral-300" x-text="s.last_attempt_at ? fmtDate(s.last_attempt_at) : (s.last_successful_poll ? fmtDate(s.last_successful_poll) : 'Never')"></div>
               </div>
               <div>
                 <div class="text-xs text-neutral-400">Last New Data</div>
-                <div class="text-neutral-300" x-text="s.last_new_data_at ? new Date(s.last_new_data_at).toLocaleString() : '—'"></div>
+                <div class="text-neutral-300" x-text="fmtDate(s.last_new_data_at)"></div>
               </div>
               <div>
                 <div class="text-xs text-neutral-400">HTTP</div>
@@ -1558,7 +1700,7 @@ tailwind.config = {
                 <td class="px-4 py-2">
                   <span class="text-white hover:underline cursor-pointer" @click="closeDrill(); openPerson(t.person_slug)" x-text="t.person_name"></span>
                   <span class="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded"
-                        :class="t.party === 'R' ? 'bg-red-500/15 text-red-300' : t.party === 'D' ? 'bg-blue-500/15 text-blue-300' : 'bg-neutral-500/15 text-neutral-300'"
+                        :class="partyBadge(t.party)"
                         x-text="t.party || '—'"></span>
                   <span x-show="t.state" class="text-[10px] text-neutral-400 ml-1" x-text="t.state"></span>
                 </td>
@@ -1643,6 +1785,8 @@ function app() {
 
     // Companies list
     allCompanies: [],
+    companiesLoaded: false,
+    companySort: 'name',
     companies: [],
     companySearch: '',
     companyPage: 0,
@@ -1657,12 +1801,25 @@ function app() {
     // Persons
     persons: [],
     personBranch: '',
+    personSort: 'volume',
+    personSearch: '',
+    personPage: 0,
+    personTotal: 0,
 
     // Signals — STOCK Act latency, swarms, partisan tickers, first movers
     signalsTab: 'compliance',
     compliance: [],
+    complianceSort: 'median',
     complianceSummary: null,
+    compliancePage: 0,
+    complianceTotal: 0,
     swarms: [],
+    swarmSort: 'reps',
+    swarmPage: 0,
+    swarmTotal: 0,
+    firstMoverSort: 'buyers',
+    firstMoverPage: 0,
+    firstMoverTotal: 0,
     partisan: [],
     firstMovers: [],
 
@@ -1671,12 +1828,23 @@ function app() {
 
     // Tickers
     topTickers: [],
+    tickerSort: 'reps',
+    tickerSearch: '',
+    tickerPage: 0,
+    tickerTotal: 0,
     tickerDetail: null,
     roundTrips: [],
+    roundTripSort: 'hold',
+    roundTripPage: 0,
+    roundTripTotal: 0,
     coTraders: [],
 
     // Rankings
     rankSort: 'composite',
+    rankSearch: '',
+    rankPage: 0,
+    rankTotal: 0,
+    rankingsLoaded: false,
 
     // MQL query state
     mqlQuery: '',
@@ -1693,12 +1861,31 @@ function app() {
     mqlWorkerUrl: document.querySelector('meta[name="mql-worker-url"]')?.content || 'https://mrdn-query.mrdn.workers.dev',
 
     init() {
-      this.loadDashboard();
+      window.addEventListener('hashchange', () => this._handleHash());
+      this._handleHash();
       this.loadQueryIndex();
       const urlQ = new URLSearchParams(window.location.search).get('q');
       if (urlQ) {
         this.mqlQuery = urlQ;
         this.executeMql();
+      }
+    },
+
+    _handleHash() {
+      const hash = window.location.hash.slice(1) || '/dashboard';
+      const parts = hash.split('/').filter(Boolean);
+      const page = parts[0];
+      const id = parts[1];
+
+      if (page === 'company' && id) { this.openCompany(id); return; }
+      if (page === 'person' && id) { this.openPerson(id); return; }
+      if (page === 'ticker' && id) { this.openTicker(id); return; }
+
+      const views = ['dashboard','rankings','companies','persons','tickers','signals','status'];
+      if (views.includes(page)) {
+        this.navigate(page, true);
+      } else {
+        this.navigate('dashboard', true);
       }
     },
 
@@ -1833,7 +2020,7 @@ function app() {
         visualMap: { min: 0, max: max || 1, calculable: false, orient: 'horizontal', left: 'center', bottom: 0, textStyle: { color: '#737373', fontSize: 10 }, inRange: { color: ['#1a1a1a','#1e3a8a','#2563eb','#f59e0b','#ef4444'] } },
         series: [{ type: 'heatmap', data, label: { show: false }, itemStyle: { borderColor: '#0a0a0a', borderWidth: 1 } }]
       });
-      window.addEventListener('resize', () => chart.resize());
+      this._bindResize('activity-heatmap', chart);
     },
 
     async openDrillDowMonth(dow, month, title, subtitle) {
@@ -1861,25 +2048,59 @@ function app() {
       return String(n);
     },
 
+    _cmp(a, b, k, dir = 1) {
+      const av = a[k] ?? '', bv = b[k] ?? '';
+      return av < bv ? -dir : av > bv ? dir : 0;
+    },
+    _sortBy(list, sortKey, defs) {
+      const fn = defs[sortKey] || Object.values(defs)[0];
+      list.sort(fn);
+      return list;
+    },
+
     async fetchRankings() {
-      const res = await this.api(`/scores/rankings?limit=100&sort=${this.rankSort}`);
-      this.rankings = res?.data || [];
+      if (!this._allRankings || this._rankSortCache !== this.rankSort) {
+        this.rankingsLoaded = false;
+        const res = await this.api(`/scores/rankings?limit=100&sort=${this.rankSort}`);
+        this._allRankings = res?.data || [];
+        this._rankSortCache = this.rankSort;
+        this.rankingsLoaded = true;
+      }
+      let filtered = [...this._allRankings];
+      if (this.rankSearch) {
+        const q = this.rankSearch.toLowerCase();
+        filtered = filtered.filter(r =>
+          (r.ticker || '').toLowerCase().includes(q) ||
+          (r.name || '').toLowerCase().includes(q) ||
+          (r.sector || '').toLowerCase().includes(q)
+        );
+      }
+      this.rankTotal = filtered.length;
+      const start = this.rankPage * 30;
+      this.rankings = filtered.slice(start, start + 30);
     },
 
     async fetchCompanies() {
-      if (this.allCompanies.length === 0) {
+      if (!this.companiesLoaded) {
         const res = await this.api('/companies');
         this.allCompanies = res?.data || [];
+        this.companiesLoaded = true;
       }
       let filtered = this.allCompanies;
       if (this.companySearch) {
         const q = this.companySearch.toLowerCase();
-        filtered = this.allCompanies.filter(c =>
+        filtered = filtered.filter(c =>
           (c.sector || '').toLowerCase().includes(q) ||
           (c.ticker || '').toLowerCase().includes(q) ||
           (c.name || '').toLowerCase().includes(q)
         );
       }
+      filtered = [...filtered];
+      this._sortBy(filtered, this.companySort, {
+        name:   (a, b) => this._cmp(a, b, 'name'),
+        ticker: (a, b) => this._cmp(a, b, 'ticker'),
+        sector: (a, b) => this._cmp(a, b, 'sector') || this._cmp(a, b, 'name'),
+      });
       this.companyTotal = filtered.length;
       const start = this.companyPage * 30;
       this.companies = filtered.slice(start, start + 30);
@@ -1890,23 +2111,65 @@ function app() {
         const res = await this.api('/persons');
         this._allPersons = res?.data || [];
       }
-      if (this.personBranch) {
-        this.persons = this._allPersons.filter(p => p.branch === this.personBranch);
-      } else {
-        this.persons = this._allPersons;
+      let list = this.personBranch
+        ? this._allPersons.filter(p => p.branch === this.personBranch)
+        : [...this._allPersons];
+      if (this.personSearch) {
+        const q = this.personSearch.toLowerCase();
+        list = list.filter(p =>
+          (p.name || '').toLowerCase().includes(q) ||
+          (p.state || '').toLowerCase().includes(q) ||
+          (p.party || '').toLowerCase().includes(q)
+        );
       }
+      this._sortBy(list, this.personSort, {
+        volume:  (a, b) => this._cmp(a, b, 'est_volume_usd', -1) || this._cmp(a, b, 'trade_count', -1) || this._cmp(a, b, 'name'),
+        trades:  (a, b) => this._cmp(a, b, 'trade_count', -1) || this._cmp(a, b, 'est_volume_usd', -1) || this._cmp(a, b, 'name'),
+        tickers: (a, b) => this._cmp(a, b, 'tickers_touched', -1) || this._cmp(a, b, 'trade_count', -1) || this._cmp(a, b, 'name'),
+        name:    (a, b) => this._cmp(a, b, 'name'),
+        party:   (a, b) => this._cmp(a, b, 'party') || this._cmp(a, b, 'est_volume_usd', -1) || this._cmp(a, b, 'name'),
+        state:   (a, b) => this._cmp(a, b, 'state') || this._cmp(a, b, 'name'),
+      });
+      this.personTotal = list.length;
+      const start = this.personPage * 30;
+      this.persons = list.slice(start, start + 30);
     },
 
     async fetchCompliance() {
-      const res = await this.api(`/compliance/latency?limit=50&min_trades=10`);
-      this.compliance = res?.data || [];
-      this.complianceSummary = res?.summary || null;
+      if (!this._allCompliance) {
+        const res = await this.api(`/compliance/latency?limit=50&min_trades=10`);
+        this._allCompliance = res?.data || [];
+        this.complianceSummary = res?.summary || null;
+      }
+      const sorted = this._sortBy([...this._allCompliance], this.complianceSort, {
+        median: (a, b) => this._cmp(a, b, 'median_days', -1) || this._cmp(a, b, 'name'),
+        worst:  (a, b) => this._cmp(a, b, 'worst_days', -1) || this._cmp(a, b, 'name'),
+        late:   (a, b) => this._cmp(a, b, 'late_pct', -1) || this._cmp(a, b, 'name'),
+        trades: (a, b) => this._cmp(a, b, 'trades', -1) || this._cmp(a, b, 'median_days', -1),
+        name:   (a, b) => this._cmp(a, b, 'name'),
+      });
+      this.complianceTotal = sorted.length;
+      const start = this.compliancePage * 30;
+      this.compliance = sorted.slice(start, start + 30);
     },
+    sortCompliance() { if (this._allCompliance) this.fetchCompliance(); },
 
     async fetchSwarms() {
-      const res = await this.api(`/signals/swarms?limit=100&min_reps=4`);
-      this.swarms = res?.data || [];
+      if (!this._allSwarms) {
+        const res = await this.api(`/signals/swarms?limit=100&min_reps=4`);
+        this._allSwarms = res?.data || [];
+      }
+      const sorted = this._sortBy([...this._allSwarms], this.swarmSort, {
+        reps:   (a, b) => this._cmp(a, b, 'reps', -1) || this._cmp(a, b, 'trades', -1),
+        trades: (a, b) => this._cmp(a, b, 'trades', -1) || this._cmp(a, b, 'reps', -1),
+        week:   (a, b) => this._cmp(a, b, 'week_start', -1) || this._cmp(a, b, 'reps', -1),
+        ticker: (a, b) => this._cmp(a, b, 'ticker') || this._cmp(a, b, 'week_start', -1),
+      });
+      this.swarmTotal = sorted.length;
+      const start = this.swarmPage * 30;
+      this.swarms = sorted.slice(start, start + 30);
     },
+    sortSwarms() { if (this._allSwarms) this.fetchSwarms(); },
 
     async fetchPartisan(mode) {
       const res = await this.api(`/signals/partisan?limit=50&min_reps=4&mode=${mode}`);
@@ -1914,33 +2177,81 @@ function app() {
     },
 
     async fetchFirstMovers() {
-      const res = await this.api(`/signals/first-movers?limit=40&min_buyers=4`);
-      this.firstMovers = res?.data || [];
+      if (!this._allFirstMovers) {
+        const res = await this.api(`/signals/first-movers?limit=40&min_buyers=4`);
+        this._allFirstMovers = res?.data || [];
+      }
+      const sorted = this._sortBy([...this._allFirstMovers], this.firstMoverSort, {
+        buyers: (a, b) => this._cmp(a, b, 'total_buyers', -1) || this._cmp(a, b, 'ticker'),
+        recent: (a, b) => this._cmp(a, b, 'first_date', -1) || this._cmp(a, b, 'total_buyers', -1),
+        ticker: (a, b) => this._cmp(a, b, 'ticker'),
+      });
+      this.firstMoverTotal = sorted.length;
+      const start = this.firstMoverPage * 30;
+      this.firstMovers = sorted.slice(start, start + 30);
     },
+    sortFirstMovers() { if (this._allFirstMovers) this.fetchFirstMovers(); },
 
     selectSignalsTab(tab) {
       this.signalsTab = tab;
-      if (tab === 'compliance' && this.compliance.length === 0) this.fetchCompliance();
-      if (tab === 'swarms' && this.swarms.length === 0) this.fetchSwarms();
-      if (tab === 'first-movers' && this.firstMovers.length === 0) this.fetchFirstMovers();
+      if (tab === 'compliance' && !this._allCompliance) this.fetchCompliance();
+      if (tab === 'swarms' && !this._allSwarms) this.fetchSwarms();
+      if (tab === 'first-movers' && !this._allFirstMovers) this.fetchFirstMovers();
       if (tab === 'consensus') this.fetchPartisan('consensus');
       if (tab === 'contrarian') this.fetchPartisan('contrarian');
-      if (tab === 'round-trips' && this.roundTrips.length === 0) this.fetchRoundTrips();
+      if (tab === 'round-trips' && !this._allRoundTrips) this.fetchRoundTrips();
     },
 
     async fetchTopTickers() {
-      const res = await this.api(`/tickers/top?limit=100`);
-      this.topTickers = res?.data || [];
+      if (!this._allTopTickers) {
+        const res = await this.api(`/tickers/top?limit=100`);
+        this._allTopTickers = res?.data || [];
+      }
+      let filtered = this._allTopTickers;
+      if (this.tickerSearch) {
+        const q = this.tickerSearch.toLowerCase();
+        filtered = filtered.filter(t =>
+          (t.ticker || '').toLowerCase().includes(q) ||
+          (t.sector || '').toLowerCase().includes(q)
+        );
+      }
+      const sorted = this._sortBy([...filtered], this.tickerSort, {
+        reps:   (a, b) => this._cmp(a, b, 'distinct_reps', -1) || this._cmp(a, b, 'trades', -1),
+        trades: (a, b) => this._cmp(a, b, 'trades', -1) || this._cmp(a, b, 'distinct_reps', -1),
+        buy:    (a, b) => this._cmp(a, b, 'buy_volume_usd', -1) || this._cmp(a, b, 'ticker'),
+        sell:   (a, b) => this._cmp(a, b, 'sell_volume_usd', -1) || this._cmp(a, b, 'ticker'),
+        ticker: (a, b) => this._cmp(a, b, 'ticker'),
+        recent: (a, b) => this._cmp(a, b, 'last_trade', -1) || this._cmp(a, b, 'distinct_reps', -1),
+      });
+      this.tickerTotal = sorted.length;
+      const start = this.tickerPage * 30;
+      this.topTickers = sorted.slice(start, start + 30);
     },
+    sortTickers() { if (this._allTopTickers) this.fetchTopTickers(); },
 
     async fetchRoundTrips() {
-      const res = await this.api(`/signals/round-trips?limit=100&max_hold_days=60&min_amount=15000`);
-      this.roundTrips = res?.data || [];
+      if (!this._allRoundTrips) {
+        const res = await this.api(`/signals/round-trips?limit=100&max_hold_days=60&min_amount=15000`);
+        this._allRoundTrips = res?.data || [];
+      }
+      const sorted = this._sortBy([...this._allRoundTrips], this.roundTripSort, {
+        hold:   (a, b) => this._cmp(a, b, 'hold_days') || this._cmp(a, b, 'buy_amount', -1),
+        amount: (a, b) => this._cmp(a, b, 'buy_amount', -1) || this._cmp(a, b, 'hold_days'),
+        name:   (a, b) => this._cmp(a, b, 'name') || this._cmp(a, b, 'hold_days'),
+        ticker: (a, b) => this._cmp(a, b, 'ticker') || this._cmp(a, b, 'hold_days'),
+        date:   (a, b) => this._cmp(a, b, 'buy_date', -1) || this._cmp(a, b, 'hold_days'),
+      });
+      this.roundTripTotal = sorted.length;
+      const start = this.roundTripPage * 30;
+      this.roundTrips = sorted.slice(start, start + 30);
     },
+    sortRoundTrips() { if (this._allRoundTrips) this.fetchRoundTrips(); },
 
     async openTicker(symbol) {
       if (!symbol) return;
       this.view = 'ticker';
+      document.title = 'MRDN — ' + symbol;
+      window.location.hash = '#/ticker/' + symbol;
       this.tickerDetail = null;
       const res = await this.api(`/tickers/${encodeURIComponent(symbol)}`);
       this.tickerDetail = res?.data || null;
@@ -1948,6 +2259,8 @@ function app() {
 
     async openPerson(slug) {
       this.view = 'person';
+      document.title = 'MRDN — ' + slug;
+      window.location.hash = '#/person/' + slug;
       this.personProfile = null;
       this.coTraders = [];
       const res = await this.api(`/persons/${slug}/profile`);
@@ -1959,6 +2272,7 @@ function app() {
         // Fallback: live API mode
         this.personProfile = res?.data || null;
       }
+      if (this.personProfile?.name) document.title = 'MRDN — ' + this.personProfile.name;
       this.$nextTick(() => this.renderPersonChart());
     },
 
@@ -2011,6 +2325,7 @@ function app() {
           }
         }]
       });
+      this._bindResize('person-volume-chart', chart);
     },
 
     fmtMoney(n) {
@@ -2023,6 +2338,8 @@ function app() {
 
     async openCompany(ticker) {
       this.view = 'company';
+      document.title = 'MRDN — ' + ticker;
+      window.location.hash = '#/company/' + ticker;
       this.detail = {};
       this.timeline = [];
       this.scoreHistory = [];
@@ -2059,15 +2376,28 @@ function app() {
       }
     },
 
-    navigate(to) {
+    navigate(to, fromHash) {
       this.view = to;
+      document.title = 'MRDN — ' + to.charAt(0).toUpperCase() + to.slice(1);
+      if (!fromHash) window.location.hash = '#/' + to;
       if (to === 'dashboard') this.loadDashboard();
       if (to === 'companies') this.fetchCompanies();
       if (to === 'persons') this.fetchPersons();
       if (to === 'rankings') this.fetchRankings();
       if (to === 'signals') this.selectSignalsTab(this.signalsTab);
       if (to === 'tickers') this.fetchTopTickers();
-      if (to === 'sources') { /* already loaded */ }
+      if (to === 'status' && !this.sources.length) { this.api('/sources').then(r => { this.sources = r?.data || []; }); }
+    },
+
+    // --- Chart resize helper ---
+    _bindResize(key, chart) {
+      this._resizeHandlers = this._resizeHandlers || {};
+      if (this._resizeHandlers[key]) {
+        window.removeEventListener('resize', this._resizeHandlers[key]);
+      }
+      const handler = () => chart.resize();
+      this._resizeHandlers[key] = handler;
+      window.addEventListener('resize', handler);
     },
 
     // --- Charts ---
@@ -2149,7 +2479,7 @@ function app() {
           emphasis: { itemStyle: { borderColor: '#fff', borderWidth: 1.5 }}
         }]
       });
-      window.addEventListener('resize', () => chart.resize());
+      this._bindResize('party-sector-heatmap', chart);
     },
 
     renderRepMonthHeatmap(el) {
@@ -2215,7 +2545,7 @@ function app() {
           emphasis: { itemStyle: { borderColor: '#fff', borderWidth: 1.5 }}
         }]
       });
-      window.addEventListener('resize', () => chart.resize());
+      this._bindResize('rep-month-heatmap', chart);
     },
 
     async openDrillPartySector(party, sector) {
@@ -2252,7 +2582,7 @@ function app() {
         return;
       }
       const sorted = [...this.scoreHistory].reverse();
-      const dates = sorted.map(s => new Date(s.computed_at).toLocaleDateString());
+      const dates = sorted.map(s => this.fmtDate(s.computed_at));
       chart.setOption({
         backgroundColor: 'transparent',
         tooltip: { trigger: 'axis' },
@@ -2267,7 +2597,7 @@ function app() {
           { name: 'Insider', type: 'line', data: sorted.map(s => s.insider_score), smooth: true, lineStyle: { width: 1, color: '#22c55e', type: 'dashed' }, itemStyle: { color: '#22c55e' }, symbol: 'none' },
         ]
       });
-      window.addEventListener('resize', () => chart.resize());
+      this._bindResize('score-history-chart', chart);
     },
 
     renderConnections(graph) {
@@ -2303,10 +2633,28 @@ function app() {
           emphasis: { focus: 'adjacency', lineStyle: { width: 3 }},
         }]
       });
-      window.addEventListener('resize', () => chart.resize());
+      this._bindResize('connections-chart', chart);
     },
 
     // --- Helpers ---
+    partyBadge(p) {
+      if (p === 'R') return 'bg-red-500/15 text-red-300';
+      if (p === 'D') return 'bg-blue-500/15 text-blue-300';
+      if (p === 'L') return 'bg-yellow-500/15 text-yellow-300';
+      return 'bg-neutral-500/15 text-neutral-300';
+    },
+
+    statusBadge(s) {
+      if (s === 'healthy') return 'bg-up/20 text-up';
+      if (s === 'down') return 'bg-down/20 text-down';
+      return 'bg-yellow-500/20 text-yellow-400';
+    },
+
+    fmtDate(d) {
+      if (!d) return '—';
+      try { return new Date(d).toISOString().slice(0, 10); } catch { return '—'; }
+    },
+
     scoreColor(v) {
       if (v == null) return '#525252';
       if (v >= 70) return '#ef4444';
@@ -2418,20 +2766,8 @@ function app() {
     // clean instead of dumping JSON.
     eventDetail(e) {
       const d = e.event_data || {};
-      const fmtMoney = (n) => {
-        if (n == null || isNaN(n)) return '';
-        const a = Math.abs(n);
-        if (a >= 1e9) return '$' + (n/1e9).toFixed(1) + 'B';
-        if (a >= 1e6) return '$' + (n/1e6).toFixed(1) + 'M';
-        if (a >= 1e3) return '$' + (n/1e3).toFixed(0) + 'K';
-        return '$' + n.toFixed(0);
-      };
-      const fmtNum = (n) => {
-        if (n == null || isNaN(n)) return '';
-        if (n >= 1e6) return (n/1e6).toFixed(1) + 'M';
-        if (n >= 1e3) return (n/1e3).toFixed(0) + 'K';
-        return String(n);
-      };
+      const fmtMoney = (n) => (n == null || isNaN(n)) ? '' : this.fmtMoney(n);
+      const fmtNum = (n) => (n == null || isNaN(n)) ? '' : this.fmtNum(n);
       const join = (parts) => parts.filter(Boolean).join(' · ');
 
       switch (e.source) {
@@ -2719,10 +3055,7 @@ function app() {
 
     formatAmount(n) {
       if (n == null) return '—';
-      if (Math.abs(n) >= 1e9) return (n / 1e9).toFixed(1) + 'B';
-      if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(1) + 'M';
-      if (Math.abs(n) >= 1e3) return (n / 1e3).toFixed(0) + 'K';
-      return n.toLocaleString();
+      return this.fmtNum(n);
     },
 
     formatDate(d) {
