@@ -21,6 +21,9 @@ func NewStore(db DBTX) *Store {
 	return &Store{db: db}
 }
 
+// DB returns the underlying DBTX for direct queries.
+func (s *Store) DB() DBTX { return s.db }
+
 type Company struct {
 	ID              int     `json:"id"`
 	Ticker          string  `json:"ticker"`

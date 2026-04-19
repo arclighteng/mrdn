@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/arclighteng/mrdn/internal/db"
+	"github.com/arclighteng/mrdn/internal/insights"
 )
 
 var safeFilename = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
@@ -50,6 +51,11 @@ func Run(ctx context.Context, store *db.Store, outDir string) error {
 	// --- Signals ---
 	if err := exportSignals(ctx, store, outDir); err != nil {
 		return fmt.Errorf("signals: %w", err)
+	}
+
+	// --- Insights ---
+	if err := exportInsights(ctx, store, outDir); err != nil {
+		return fmt.Errorf("insights: %w", err)
 	}
 
 	// --- Tickers ---
@@ -231,6 +237,21 @@ func exportSignals(ctx context.Context, store *db.Store, outDir string) error {
 		return err
 	}
 	return writeJSON(filepath.Join(dir, "round-trips.json"), envelope(roundTrips))
+}
+
+func exportInsights(ctx context.Context, store *db.Store, outDir string) error {
+	findings, err := insights.Detect(ctx, store)
+	if err != nil {
+		return fmt.Errorf("insights: %w", err)
+	}
+	out := insights.InsightsOutput{
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		Findings:    findings,
+	}
+	if out.Findings == nil {
+		out.Findings = []insights.Finding{}
+	}
+	return writeJSON(filepath.Join(outDir, "insights.json"), out)
 }
 
 func exportTickers(ctx context.Context, store *db.Store, outDir string) error {
