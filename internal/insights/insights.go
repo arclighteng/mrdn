@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"sort"
 	"time"
 
@@ -70,9 +71,19 @@ func Detect(ctx context.Context, store *db.Store) ([]Finding, error) {
 		all = append(all, findings...)
 	}
 
-	// Sort by rarity descending, keep top 20
+	// Sort by blended score (rarity + recency) descending, keep top 20.
+	// Recency uses a 7-day half-life so recent findings compete with old high-rarity ones.
+	now := time.Now()
+	blendedScore := func(f Finding) float64 {
+		daysOld := now.Sub(f.Timestamp).Hours() / 24
+		if daysOld < 0 {
+			daysOld = 0
+		}
+		recency := 100.0 * math.Pow(0.5, daysOld/7.0)
+		return 0.6*float64(f.RarityScore) + 0.4*recency
+	}
 	sort.Slice(all, func(i, j int) bool {
-		return all[i].RarityScore > all[j].RarityScore
+		return blendedScore(all[i]) > blendedScore(all[j])
 	})
 	if len(all) > 20 {
 		all = all[:20]

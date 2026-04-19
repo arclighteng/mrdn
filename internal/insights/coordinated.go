@@ -3,6 +3,7 @@ package insights
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/arclighteng/mrdn/internal/db"
@@ -28,6 +29,7 @@ func detectCoordinated(ctx context.Context, store *db.Store) ([]Finding, error) 
 			FROM congressional_trades ct
 			JOIN persons p ON p.id = ct.person_id
 			WHERE ct.traded_at IS NOT NULL
+			  AND ct.ticker IS NOT NULL AND ct.ticker != '' AND ct.ticker != '--'
 		)
 		SELECT ticker, week_start,
 			GROUP_CONCAT(DISTINCT rep_name) AS rep_names,
@@ -61,7 +63,7 @@ func detectCoordinated(ctx context.Context, store *db.Store) ([]Finding, error) 
 		if sameDirection {
 			dirBonus = 10
 		}
-		score := clampScore(40 + (repCount-3)*15 + dirBonus)
+		score := clampScore(int(40 + 20*math.Log2(float64(repCount-2)) + float64(dirBonus)))
 
 		direction := "traded"
 		if sameDirection {

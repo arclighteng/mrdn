@@ -39,6 +39,9 @@ func detectSwarmOutliers(ctx context.Context, store *db.Store) ([]Finding, error
 
 	var findings []Finding
 	for ticker, a := range byTicker {
+		if ticker == "" || ticker == "--" {
+			continue
+		}
 		score := clampScore(30 + a.totalReps*5 + a.distinctWeeks*10)
 		if score < 50 {
 			continue
