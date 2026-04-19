@@ -167,9 +167,7 @@ func (r *Resolver) Resolve(ctx context.Context, evt db.Event) int {
 	case "ofac_sdn":
 		companyID, err = r.resolveOFAC(ctx, evt)
 	case "federal_register":
-		// Federal Register events are regulatory actions — hard to match to a
-		// single company without NLP. Skip entity resolution for now.
-		return 0
+		companyID, err = r.resolveFedRegTariff(ctx, evt)
 	case "efds_senate":
 		companyID, err = r.resolveEFDSTrades(ctx, evt)
 	case "finnhub":
@@ -694,6 +692,22 @@ type secLitEvent struct {
 	URL   string `json:"url"`
 }
 
+type fedRegDoc struct {
+	Type          string         `json:"type"`
+	Title         string         `json:"title"`
+	EffectiveOn   string         `json:"effective_on"`
+	CFRReferences []cfrReference `json:"cfr_references"`
+}
+
+type cfrReference struct {
+	Title int `json:"title"`
+	Part  int `json:"part"`
+}
+
+var tariffCFRParts = map[int]bool{
+	12: true, 134: true, 159: true, 163: true,
+}
+
 func (r *Resolver) resolveEFDSTrades(ctx context.Context, evt db.Event) (int, error) {
 	var disc efdsDisclosure
 	if err := json.Unmarshal(evt.EventData, &disc); err != nil {
@@ -860,6 +874,49 @@ func extractParties(title string) []string {
 		}
 	}
 	return parties
+}
+
+func (r *Resolver) resolveFedRegTariff(ctx context.Context, evt db.Event) (int, error) {
+	var doc fedRegDoc
+	if err := json.Unmarshal(evt.EventData, &doc); err != nil {
+		return 0, fmt.Errorf("unmarshal federal register doc: %w", err)
+	}
+
+	if doc.Type != "Rule" && doc.Type != "Proposed Rule" {
+		return 0, nil
+	}
+
+	isTariff := false
+	for _, ref := range doc.CFRReferences {
+		if ref.Title == 19 && tariffCFRParts[ref.Part] {
+			isTariff = true
+			break
+		}
+	}
+	if !isTariff {
+		return 0, nil
+	}
+
+	var effectiveAt *time.Time
+	if doc.EffectiveOn != "" {
+		if t, err := time.Parse("2006-01-02", doc.EffectiveOn); err == nil {
+			et := t.UTC()
+			effectiveAt = &et
+		}
+	}
+
+	eventID := evt.ID
+	if err := r.store.InsertTariff(ctx, db.Tariff{
+		EventID:     &eventID,
+		ActionType:  strPtr(doc.Title),
+		EffectiveAt: effectiveAt,
+	}); err != nil {
+		if !isDuplicateError(err) {
+			log.Printf("[resolver] federal_register tariff insert: %v", err)
+		}
+	}
+
+	return 0, nil
 }
 
 func intPtr(n int) *int {

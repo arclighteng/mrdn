@@ -1220,6 +1220,91 @@ func TestResolveSecLitigation(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// resolveFedRegTariff
+// ---------------------------------------------------------------------------
+
+func TestResolveFedRegTariff(t *testing.T) {
+	t.Run("tariff-relevant rule — inserts tariff", func(t *testing.T) {
+		st := &mockStore{}
+		r := newTestResolver(t, st)
+
+		data := mustMarshal(map[string]any{
+			"document_number":  "2025-00123",
+			"type":             "Rule",
+			"title":            "Increase in Duties on Steel Products From China",
+			"publication_date": "2025-03-15",
+			"effective_on":     "2025-04-01",
+			"cfr_references": []map[string]any{
+				{"title": 19, "part": 134},
+			},
+		})
+		cid, err := r.resolveFedRegTariff(context.Background(), makeEvent("federal_register", 300, data))
+
+		require.NoError(t, err)
+		assert.Equal(t, 0, cid)
+		require.Len(t, st.insertedTariffs, 1)
+		tf := st.insertedTariffs[0]
+		assert.Equal(t, 300, *tf.EventID)
+		assert.Contains(t, *tf.ActionType, "Increase in Duties")
+	})
+
+	t.Run("non-tariff rule — returns 0, no insert", func(t *testing.T) {
+		st := &mockStore{}
+		r := newTestResolver(t, st)
+
+		data := mustMarshal(map[string]any{
+			"document_number":  "2025-00456",
+			"type":             "Rule",
+			"title":            "Air Quality Standards Update",
+			"publication_date": "2025-03-15",
+			"cfr_references": []map[string]any{
+				{"title": 40, "part": 50},
+			},
+		})
+		cid, err := r.resolveFedRegTariff(context.Background(), makeEvent("federal_register", 301, data))
+
+		require.NoError(t, err)
+		assert.Equal(t, 0, cid)
+		assert.Empty(t, st.insertedTariffs)
+	})
+
+	t.Run("proposed rule with title 19 CFR — inserts tariff", func(t *testing.T) {
+		st := &mockStore{}
+		r := newTestResolver(t, st)
+
+		data := mustMarshal(map[string]any{
+			"document_number": "2025-00789",
+			"type":            "Proposed Rule",
+			"title":           "Proposed Modification of Tariff Rate Quota",
+			"effective_on":    "2025-06-01",
+			"cfr_references": []map[string]any{
+				{"title": 19, "part": 12},
+			},
+		})
+		cid, err := r.resolveFedRegTariff(context.Background(), makeEvent("federal_register", 302, data))
+
+		require.NoError(t, err)
+		assert.Equal(t, 0, cid)
+		require.Len(t, st.insertedTariffs, 1)
+	})
+
+	t.Run("no type field — returns 0", func(t *testing.T) {
+		st := &mockStore{}
+		r := newTestResolver(t, st)
+
+		data := mustMarshal(map[string]any{
+			"document_number": "2025-00999",
+			"title":           "Some Document",
+		})
+		cid, err := r.resolveFedRegTariff(context.Background(), makeEvent("federal_register", 303, data))
+
+		require.NoError(t, err)
+		assert.Equal(t, 0, cid)
+		assert.Empty(t, st.insertedTariffs)
+	})
+}
+
+// ---------------------------------------------------------------------------
 // Compile-time check: *db.Store still satisfies ResolverStore.
 // ---------------------------------------------------------------------------
 
