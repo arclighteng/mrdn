@@ -78,6 +78,7 @@ func detectLoneWolf(ctx context.Context, store *db.Store) ([]Finding, error) {
 			JOIN persons p ON p.id = ct.person_id
 			WHERE ct.person_id = ?
 			  AND ct.traded_at IS NOT NULL
+			  AND ct.ticker IS NOT NULL AND ct.ticker != '' AND ct.ticker != '--'
 			ORDER BY est_amt DESC
 			LIMIT 3
 		`, pm.personID)
@@ -97,7 +98,7 @@ func detectLoneWolf(ctx context.Context, store *db.Store) ([]Finding, error) {
 			if ratio < 4.0 {
 				continue
 			}
-			score := clampScore(50 + int(math.Min(50, (ratio-4)*10)))
+			score := clampScore(int(50 + 25*math.Log10(ratio)))
 
 			headline := fmt.Sprintf("Lone wolf: %s traded $%s in %s — %.0f× their typical size",
 				name, formatDollars(estAmt), ticker, ratio)
