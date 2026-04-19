@@ -3,9 +3,11 @@ package parser
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/arclighteng/mrdn/internal/db"
@@ -13,13 +15,12 @@ import (
 
 const (
 	secLitSourceName = "sec_edgar_lit"
-	// secLitBaseURL is the SEC litigation releases endpoint.
-	// TODO(PHASE2): Validate this URL against the actual SEC EDGAR API response shape
-	// during implementation. The JSON envelope shape ({releases: [...]}) is a placeholder.
-	secLitBaseURL = "https://efts.sec.gov/LATEST/search-index?q=%22litigation+release%22&dateRange=custom&startdt=2024-01-01&enddt=2099-12-31&forms=LR"
+	// secLitBaseURL is the SEC litigation releases RSS feed.
+	// Hardcoded to prevent SSRF; no API key required (public data).
+	secLitBaseURL = "https://www.sec.gov/enforcement-litigation/litigation-releases/rss"
 )
 
-// SECLitigationSource polls the SEC EDGAR full-text search index for litigation releases.
+// SECLitigationSource polls the SEC litigation releases RSS feed.
 type SECLitigationSource struct {
 	client *http.Client
 }
@@ -36,13 +37,14 @@ func NewSECLitigationSource(client *http.Client) *SECLitigationSource {
 // Name implements ingestion.Source.
 func (s *SECLitigationSource) Name() string { return secLitSourceName }
 
-// Poll fetches recent SEC litigation releases from the EDGAR search index.
+// Poll fetches recent SEC litigation releases from the RSS feed.
 // Implements ingestion.Source.
 func (s *SECLitigationSource) Poll(ctx context.Context) ([]db.Event, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, secLitBaseURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("sec_lit: building request: %w", err)
 	}
+	req.Header.Set("User-Agent", "mrdn/1.0 (data-pipeline)")
 
 	resp, err := s.client.Do(req)
 	if err != nil {
@@ -62,55 +64,73 @@ func (s *SECLitigationSource) Poll(ctx context.Context) ([]db.Event, error) {
 	return ParseSECLitigation(body)
 }
 
-// secLitResponse is the top-level envelope from the SEC EDGAR litigation releases endpoint.
-// NOTE: This shape is a placeholder; validate against the real API before relying on it.
-type secLitResponse struct {
-	Releases []json.RawMessage `json:"releases"`
+// secLitRSS mirrors the RSS 2.0 feed structure from sec.gov.
+type secLitRSS struct {
+	XMLName xml.Name       `xml:"rss"`
+	Channel secLitChannel  `xml:"channel"`
 }
 
-// secLitRelease holds the metadata fields needed to build the event.
-type secLitRelease struct {
+type secLitChannel struct {
+	Items []secLitItem `xml:"item"`
+}
+
+type secLitItem struct {
+	Title   string `xml:"title"`
+	Link    string `xml:"link"`
+	PubDate string `xml:"pubDate"`
+	Creator string `xml:"http://purl.org/dc/elements/1.1/ creator"`
+	GUID    string `xml:"guid"`
+}
+
+// secLitEventData is the JSON shape stored in event_data.
+// Must match secLitEvent in the resolver.
+type secLitEventData struct {
 	ID    string `json:"id"`
 	Date  string `json:"date"`
 	Title string `json:"title"`
 	URL   string `json:"url"`
 }
 
-// ParseSECLitigation parses the raw SEC litigation releases JSON response and returns
-// one db.Event per release with EventType "sec_litigation".
-// This function is pure and safe to call independently of any HTTP transport.
+// ParseSECLitigation parses the SEC litigation releases RSS feed and returns
+// one db.Event per item with EventType "sec_litigation".
 func ParseSECLitigation(data []byte) ([]db.Event, error) {
-	var resp secLitResponse
-	if err := json.Unmarshal(data, &resp); err != nil {
-		return nil, fmt.Errorf("sec_lit: unmarshal: %w", err)
+	var rss secLitRSS
+	if err := xml.Unmarshal(data, &rss); err != nil {
+		return nil, fmt.Errorf("sec_lit: unmarshal rss: %w", err)
 	}
 
-	events := make([]db.Event, 0, len(resp.Releases))
-	for i, raw := range resp.Releases {
-		if err := ValidateEventData(raw); err != nil {
-			return nil, fmt.Errorf("sec_lit: release[%d]: %w", i, err)
-		}
-
-		var rel secLitRelease
-		if err := json.Unmarshal(raw, &rel); err != nil {
-			return nil, fmt.Errorf("sec_lit: decoding release[%d]: %w", i, err)
-		}
-
-		sid := rel.ID
-		if sid == "" {
-			sid = rel.Title + "|" + rel.Date
+	events := make([]db.Event, 0, len(rss.Channel.Items))
+	for _, item := range rss.Channel.Items {
+		// dc:creator holds the LR number (e.g., "LR-26531").
+		lrID := strings.TrimSpace(item.Creator)
+		if lrID == "" {
+			lrID = strings.TrimSpace(item.Title) + "|" + strings.TrimSpace(item.PubDate)
 		}
 
 		occurredAt := time.Now().UTC()
-		if rel.Date != "" {
-			if t, err := time.Parse("2006-01-02", rel.Date); err == nil {
+		if item.PubDate != "" {
+			if t, err := time.Parse(time.RFC1123Z, strings.TrimSpace(item.PubDate)); err == nil {
+				occurredAt = t.UTC()
+			} else if t, err := time.Parse(time.RFC1123, strings.TrimSpace(item.PubDate)); err == nil {
 				occurredAt = t.UTC()
 			}
 		}
 
+		eventData := secLitEventData{
+			ID:    lrID,
+			Date:  occurredAt.Format("2006-01-02"),
+			Title: strings.TrimSpace(item.Title),
+			URL:   strings.TrimSpace(item.Link),
+		}
+
+		raw, err := json.Marshal(eventData)
+		if err != nil {
+			return nil, fmt.Errorf("sec_lit: marshaling event data: %w", err)
+		}
+
 		events = append(events, db.Event{
 			Source:     secLitSourceName,
-			SourceID:   sourceID(secLitSourceName, sid),
+			SourceID:   sourceID(secLitSourceName, lrID),
 			EventType:  "sec_litigation",
 			EventData:  raw,
 			OccurredAt: occurredAt,

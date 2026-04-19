@@ -65,14 +65,18 @@ func TestFixture_FedRegister(t *testing.T) {
 
 // TestFixture_SECLitigation verifies the parser→resolver JSON contract.
 func TestFixture_SECLitigation(t *testing.T) {
-	raw := []byte(`{"releases": [
-		{
-			"id": "LR-25832",
-			"date": "2025-04-01",
-			"title": "SEC Charges Acme Corp for Securities Fraud",
-			"url": "https://www.sec.gov/lit/lr25832.htm"
-		}
-	]}`)
+	raw := []byte(`<?xml version="1.0" encoding="utf-8"?>
+<rss xmlns:dc="http://purl.org/dc/elements/1.1/" version="2.0">
+  <channel>
+    <item>
+      <title>SEC Charges Acme Corp for Securities Fraud</title>
+      <link>https://www.sec.gov/enforcement-litigation/litigation-releases/lr-25832</link>
+      <pubDate>Tue, 01 Apr 2025 12:00:00 -0400</pubDate>
+      <dc:creator>LR-25832</dc:creator>
+      <guid isPermaLink="false">abc-123</guid>
+    </item>
+  </channel>
+</rss>`)
 
 	events, err := parser.ParseSECLitigation(raw)
 	require.NoError(t, err)
@@ -87,4 +91,5 @@ func TestFixture_SECLitigation(t *testing.T) {
 	err = json.Unmarshal(evt.EventData, &rel)
 	require.NoError(t, err)
 	assert.Equal(t, "LR-25832", rel.ID)
+	assert.Equal(t, "SEC Charges Acme Corp for Securities Fraud", rel.Title)
 }

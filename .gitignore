@@ -27,6 +27,9 @@ node_modules/
 .DS_Store
 Thumbs.db
 
+# Local SQLite database
+*.db
+
 # Agent / tooling caches
 .claude/
 .serena/

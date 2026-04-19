@@ -3,6 +3,7 @@ package db_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/arclighteng/mrdn/internal/db"
 	"github.com/stretchr/testify/assert"
@@ -69,14 +70,17 @@ func TestGetScoreMovers(t *testing.T) {
 	c, err := store.UpsertCompany(ctx, db.Company{Ticker: "MVR1", Name: "Mover Test", Sector: db.StrPtr("TestSector_Mover")})
 	require.NoError(t, err)
 
-	// Insert scores with explicit timestamps so computed_at values differ
+	// Insert scores with timestamps relative to now so they stay within the 24h window.
+	now := time.Now().UTC()
+	earlier := now.Add(-6 * time.Hour).Format(time.RFC3339)
+	later := now.Add(-1 * time.Hour).Format(time.RFC3339)
 	_, err = d.ExecContext(ctx,
 		"INSERT INTO scores (company_id, composite_score, weight_version, computed_at) VALUES (?, ?, ?, ?)",
-		c.ID, 40.0, 1, "2026-04-18T10:00:00Z")
+		c.ID, 40.0, 1, earlier)
 	require.NoError(t, err)
 	_, err = d.ExecContext(ctx,
 		"INSERT INTO scores (company_id, composite_score, weight_version, computed_at) VALUES (?, ?, ?, ?)",
-		c.ID, 70.0, 1, "2026-04-18T16:00:00Z")
+		c.ID, 70.0, 1, later)
 	require.NoError(t, err)
 
 	movers, err := store.GetScoreMovers(ctx, 24, 20)

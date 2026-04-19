@@ -42,6 +42,11 @@ jobs:
           DATABASE_URL: file:mrdn.db
           MRDN_POLYGON_API_KEY: ${{ secrets.MRDN_POLYGON_API_KEY }}
 
+      - name: Generate company aliases
+        run: ./mrdn generate-aliases
+        env:
+          DATABASE_URL: file:mrdn.db
+
       - name: Backfill sectors from HSW data
         run: ./mrdn backfill-sectors --file data/seed/house_trades.json
         env:
