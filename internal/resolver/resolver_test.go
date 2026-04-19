@@ -1006,6 +1006,31 @@ func TestIsDuplicateError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// resolveEdgar — alias hit (4th tier)
+// ---------------------------------------------------------------------------
+
+func TestResolveEdgar_AliasHit(t *testing.T) {
+	st := &mockStore{
+		companies:    []db.CompanyLookup{},
+		searchResult: nil,
+		searchErr:    errors.New("not found"),
+		aliasByName: map[string]db.CompanyLookup{
+			"meta platforms": {ID: 50, Ticker: "META", Name: "Meta Platforms Inc"},
+		},
+	}
+	r := newTestResolver(t, st)
+
+	data := mustMarshal(edgarFiling{
+		DisplayNames: []string{"Person", "Meta Platforms"},
+	})
+	cid, err := r.resolveEdgar(context.Background(), makeEvent("edgar_form4", 10, data))
+
+	require.NoError(t, err)
+	assert.Equal(t, 50, cid)
+	assert.Equal(t, 50, r.lookupName("meta platforms"))
+}
+
+// ---------------------------------------------------------------------------
 // Compile-time check: *db.Store still satisfies ResolverStore.
 // ---------------------------------------------------------------------------
 

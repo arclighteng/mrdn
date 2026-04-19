@@ -100,6 +100,19 @@ func (r *Resolver) lookupName(name string) int {
 	return r.byNameLower[normalizeName(lower)]
 }
 
+// lookupByAlias queries the entity_aliases table for a case-insensitive match.
+// On hit, caches the result in byNameLower. Returns 0 if no alias matches.
+func (r *Resolver) lookupByAlias(ctx context.Context, name string) int {
+	c, err := r.store.GetCompanyByAlias(ctx, name)
+	if err != nil {
+		return 0
+	}
+	r.mu.Lock()
+	r.byNameLower[strings.ToLower(name)] = c.ID
+	r.mu.Unlock()
+	return c.ID
+}
+
 // ensureCompany looks up a ticker in cache; if missing, upserts the company
 // into the database and adds it to the cache. Returns the company ID.
 func (r *Resolver) ensureCompany(ctx context.Context, ticker, name string) (int, error) {
@@ -287,6 +300,9 @@ func (r *Resolver) resolveEdgar(ctx context.Context, evt db.Event) (int, error) 
 				r.mu.Unlock()
 			}
 		}
+		if companyID == 0 {
+			companyID = r.lookupByAlias(ctx, companyName)
+		}
 	}
 
 	if companyID == 0 {
@@ -363,6 +379,9 @@ func (r *Resolver) resolveFEC(ctx context.Context, evt db.Event) (int, error) {
 			r.mu.Unlock()
 		}
 	}
+	if companyID == 0 {
+		companyID = r.lookupByAlias(ctx, employer)
+	}
 
 	if companyID == 0 {
 		return 0, nil
@@ -425,6 +444,9 @@ func (r *Resolver) resolveUSASpending(ctx context.Context, evt db.Event) (int, e
 			r.byNameLower[strings.ToLower(recipient)] = companyID
 			r.mu.Unlock()
 		}
+	}
+	if companyID == 0 {
+		companyID = r.lookupByAlias(ctx, recipient)
 	}
 
 	if companyID == 0 {
@@ -505,6 +527,9 @@ func (r *Resolver) resolveOFAC(ctx context.Context, evt db.Event) (int, error) {
 		if err == nil && c != nil {
 			companyID = c.ID
 		}
+	}
+	if companyID == 0 {
+		companyID = r.lookupByAlias(ctx, entityName)
 	}
 
 	var companyIDPtr *int
