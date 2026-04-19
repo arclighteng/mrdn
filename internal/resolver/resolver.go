@@ -176,6 +176,8 @@ func (r *Resolver) Resolve(ctx context.Context, evt db.Event) int {
 		companyID, err = r.resolveFinnhub(ctx, evt)
 	case "warn":
 		companyID, err = r.resolveWarn(ctx, evt)
+	case "sec_edgar_lit":
+		companyID, err = r.resolveSecLitigation(ctx, evt)
 	default:
 		return 0
 	}
@@ -685,6 +687,13 @@ type efdsTransaction struct {
 	TradedAt   string `json:"traded_at"`
 }
 
+type secLitEvent struct {
+	ID    string `json:"id"`
+	Date  string `json:"date"`
+	Title string `json:"title"`
+	URL   string `json:"url"`
+}
+
 func (r *Resolver) resolveEFDSTrades(ctx context.Context, evt db.Event) (int, error) {
 	var disc efdsDisclosure
 	if err := json.Unmarshal(evt.EventData, &disc); err != nil {
@@ -761,6 +770,96 @@ func (r *Resolver) resolveEFDSTrades(ctx context.Context, evt db.Event) (int, er
 	}
 
 	return firstCompanyID, nil
+}
+
+func (r *Resolver) resolveSecLitigation(ctx context.Context, evt db.Event) (int, error) {
+	var rel secLitEvent
+	if err := json.Unmarshal(evt.EventData, &rel); err != nil {
+		return 0, fmt.Errorf("unmarshal sec litigation: %w", err)
+	}
+
+	parties := extractParties(rel.Title)
+
+	var companyID int
+	for _, party := range parties {
+		cid := r.lookupName(party)
+		if cid == 0 {
+			c, err := r.store.SearchCompanyByName(ctx, party)
+			if err == nil && c != nil {
+				cid = c.ID
+				r.mu.Lock()
+				r.byNameLower[strings.ToLower(party)] = cid
+				r.mu.Unlock()
+			}
+		}
+		if cid == 0 {
+			cid = r.lookupByAlias(ctx, party)
+		}
+		if cid > 0 {
+			companyID = cid
+			break
+		}
+	}
+
+	var companyIDPtr *int
+	if companyID > 0 {
+		companyIDPtr = &companyID
+	}
+
+	var filedAt *time.Time
+	if rel.Date != "" {
+		if t, err := time.Parse("2006-01-02", rel.Date); err == nil {
+			ft := t.UTC()
+			filedAt = &ft
+		}
+	}
+
+	eventID := evt.ID
+	if err := r.store.InsertCourtFiling(ctx, db.CourtFiling{
+		EventID:    &eventID,
+		CompanyID:  companyIDPtr,
+		CaseNumber: strPtr(rel.ID),
+		Court:      strPtr("SEC"),
+		FilingType: strPtr("sec_litigation"),
+		Parties:    parties,
+		FiledAt:    filedAt,
+	}); err != nil {
+		if !isDuplicateError(err) {
+			log.Printf("[resolver] sec litigation court_filing insert: %v", err)
+		}
+	}
+
+	return companyID, nil
+}
+
+func extractParties(title string) []string {
+	title = strings.TrimPrefix(title, "SEC ")
+	for _, verb := range []string{
+		"Charges ", "Files Action Against ", "Obtains ", "Announces ",
+		"Settles With ", "Orders ", "Sues ",
+	} {
+		if strings.HasPrefix(title, verb) {
+			title = strings.TrimPrefix(title, verb)
+			break
+		}
+	}
+
+	for _, sep := range []string{" for ", " with ", " in ", " Related to "} {
+		if idx := strings.Index(title, sep); idx > 0 {
+			title = title[:idx]
+			break
+		}
+	}
+
+	parts := strings.Split(title, " and ")
+	parties := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			parties = append(parties, p)
+		}
+	}
+	return parties
 }
 
 func intPtr(n int) *int {

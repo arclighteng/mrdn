@@ -778,6 +778,19 @@ func TestResolve_Dispatch(t *testing.T) {
 		assert.Equal(t, 0, st.updateCalls)
 	})
 
+	t.Run("source sec_edgar_lit — dispatches to resolveSecLitigation", func(t *testing.T) {
+		st := &mockStore{
+			companies: []db.CompanyLookup{aaplCompany},
+		}
+		r := newTestResolver(t, st)
+		data := mustMarshal(map[string]any{
+			"id":    "LR-00001",
+			"title": "SEC Charges Apple Inc for Violations",
+		})
+		cid := r.Resolve(context.Background(), makeEvent("sec_edgar_lit", 600, data))
+		assert.Equal(t, 7, cid)
+	})
+
 	t.Run("source unknown — returns 0", func(t *testing.T) {
 		st := &mockStore{}
 		r := newTestResolver(t, st)
@@ -1150,6 +1163,59 @@ func TestResolveEFDSTrades(t *testing.T) {
 		assert.Equal(t, 7, cid)
 		require.Len(t, st.insertedCongTrades, 1)
 		assert.Nil(t, st.insertedCongTrades[0].PersonID)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// resolveSecLitigation
+// ---------------------------------------------------------------------------
+
+func TestResolveSecLitigation(t *testing.T) {
+	t.Run("release with company match — inserts court_filing", func(t *testing.T) {
+		st := &mockStore{
+			companies: []db.CompanyLookup{
+				{ID: 55, Ticker: "ACME", Name: "Acme Corp"},
+			},
+		}
+		r := newTestResolver(t, st)
+
+		data := mustMarshal(map[string]any{
+			"id":    "LR-25832",
+			"date":  "2025-04-01",
+			"title": "SEC Charges Acme Corp for Securities Fraud",
+			"url":   "https://www.sec.gov/litigation/litreleases/2025/lr25832.htm",
+		})
+		cid, err := r.resolveSecLitigation(context.Background(), makeEvent("sec_edgar_lit", 200, data))
+
+		require.NoError(t, err)
+		assert.Equal(t, 55, cid)
+		require.Len(t, st.insertedCourtFilings, 1)
+		cf := st.insertedCourtFilings[0]
+		assert.Equal(t, 200, *cf.EventID)
+		assert.Equal(t, 55, *cf.CompanyID)
+		assert.Equal(t, "LR-25832", *cf.CaseNumber)
+		assert.Equal(t, "sec_litigation", *cf.FilingType)
+		assert.Contains(t, cf.Parties, "Acme Corp")
+	})
+
+	t.Run("no company match — inserts filing without company_id", func(t *testing.T) {
+		st := &mockStore{
+			companies:    []db.CompanyLookup{},
+			searchResult: nil,
+			searchErr:    errors.New("not found"),
+		}
+		r := newTestResolver(t, st)
+
+		data := mustMarshal(map[string]any{
+			"id":    "LR-99999",
+			"title": "SEC Files Action Against Unknown Person",
+		})
+		cid, err := r.resolveSecLitigation(context.Background(), makeEvent("sec_edgar_lit", 201, data))
+
+		require.NoError(t, err)
+		assert.Equal(t, 0, cid)
+		require.Len(t, st.insertedCourtFilings, 1)
+		assert.Nil(t, st.insertedCourtFilings[0].CompanyID)
 	})
 }
 
