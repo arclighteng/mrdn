@@ -439,12 +439,12 @@ func (r *Resolver) resolveUSASpending(ctx context.Context, evt db.Event) (int, e
 	return companyID, nil
 }
 
-// ofacEntry mirrors the JSON stored by the OFAC parser.
+// ofacEntry mirrors the JSON stored by the OFAC parser (camelCase keys).
 type ofacEntry struct {
 	UID       int      `json:"uid"`
-	FirstName string   `json:"first_name"`
-	LastName  string   `json:"last_name"`
-	SDNType   string   `json:"sdn_type"`
+	FirstName string   `json:"firstName"`
+	LastName  string   `json:"lastName"`
+	SDNType   string   `json:"sdnType"`
 	Programs  []string `json:"programs"`
 }
 

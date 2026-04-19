@@ -264,7 +264,8 @@ function buildBranch(
     if (table.name === "lobbying") {
       joins.push(`LEFT JOIN companies c ON c.id = ${table.alias}.client_company_id`);
     } else {
-      joins.push(`JOIN companies c ON c.id = ${table.alias}.company_id`);
+      // LEFT JOIN: some typed records (e.g. sanctions for individuals) have NULL company_id.
+      joins.push(`LEFT JOIN companies c ON c.id = ${table.alias}.company_id`);
     }
   } else if (table.customJoins) {
     joins.push(table.customJoins);
