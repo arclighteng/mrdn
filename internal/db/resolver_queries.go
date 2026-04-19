@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -73,11 +74,13 @@ func (s *Store) ListUnresolvedEventsAfter(ctx context.Context, source string, af
 	var events []Event
 	for rows.Next() {
 		var e Event
+		var eventDataStr string
 		var occurredAtStr, ingestedAtStr string
 		if err := rows.Scan(&e.ID, &e.Source, &e.SourceID, &e.CompanyID, &e.EventType,
-			&e.EventData, &occurredAtStr, &ingestedAtStr); err != nil {
+			&eventDataStr, &occurredAtStr, &ingestedAtStr); err != nil {
 			return nil, fmt.Errorf("scanning unresolved event: %w", err)
 		}
+		e.EventData = json.RawMessage(eventDataStr)
 		e.OccurredAt, _ = scanTime(occurredAtStr)
 		e.IngestedAt, _ = scanTime(ingestedAtStr)
 		events = append(events, e)
