@@ -142,6 +142,9 @@ type ScoreMover struct {
 	CurrentScore  float64 `json:"composite"`
 	Change        float64 `json:"delta"`
 	AbsChange     float64 `json:"abs_change"`
+	Market        float64 `json:"market"`
+	Policy        float64 `json:"policy"`
+	Insider       float64 `json:"insider"`
 }
 
 // GetScoreMovers returns up to limit companies with the largest absolute
@@ -157,7 +160,7 @@ func (s *Store) GetScoreMovers(ctx context.Context, hours int, limit int) ([]Sco
 	cutoff := time.Now().UTC().Add(-time.Duration(hours) * time.Hour).Format(time.RFC3339)
 	rows, err := s.db.QueryContext(ctx, `
 		WITH recent AS (
-			SELECT company_id, composite_score, computed_at,
+			SELECT company_id, composite_score, market_score, policy_score, insider_score, computed_at,
 				ROW_NUMBER() OVER (PARTITION BY company_id ORDER BY computed_at DESC) AS rn
 			FROM scores
 			WHERE computed_at >= ?
@@ -173,7 +176,10 @@ func (s *Store) GetScoreMovers(ctx context.Context, hours int, limit int) ([]Sco
 			p.composite_score AS previous_score,
 			r.composite_score AS current_score,
 			r.composite_score - p.composite_score AS change,
-			ABS(r.composite_score - p.composite_score) AS abs_change
+			ABS(r.composite_score - p.composite_score) AS abs_change,
+			COALESCE(r.market_score, 0),
+			COALESCE(r.policy_score, 0),
+			COALESCE(r.insider_score, 0)
 		FROM recent r
 		JOIN previous p ON p.company_id = r.company_id AND p.rn = 1
 		JOIN companies c ON c.id = r.company_id
@@ -190,7 +196,7 @@ func (s *Store) GetScoreMovers(ctx context.Context, hours int, limit int) ([]Sco
 	for rows.Next() {
 		var m ScoreMover
 		if err := rows.Scan(&m.Ticker, &m.CompanyName, &m.PreviousScore,
-			&m.CurrentScore, &m.Change, &m.AbsChange); err != nil {
+			&m.CurrentScore, &m.Change, &m.AbsChange, &m.Market, &m.Policy, &m.Insider); err != nil {
 			return nil, fmt.Errorf("scanning score mover: %w", err)
 		}
 		movers = append(movers, m)

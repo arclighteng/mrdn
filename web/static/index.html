@@ -271,22 +271,6 @@ tailwind.config = {
   </div>
 </template>
 
-<!-- Score Legend (dismissable) -->
-<div x-data="{ show: !localStorage.getItem('mrdn_legend_dismissed') }" x-show="show" x-transition
-  class="max-w-7xl mx-auto px-4 mt-3">
-  <div class="bg-surface-1 border border-white/15 rounded-lg px-4 py-3 flex items-center gap-6 text-xs text-neutral-400">
-    <span class="text-neutral-400 font-semibold uppercase tracking-wider shrink-0">Risk Scale</span>
-    <div class="flex items-center gap-4">
-      <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-up"></span> 0–39 Low</span>
-      <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-yellow-500"></span> 40–69 Moderate</span>
-      <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-down"></span> 70–100 High</span>
-    </div>
-    <span class="text-neutral-400 mx-2">|</span>
-    <span>Scores measure political risk exposure from market signals, policy actions, and insider activity. Hover any <span class="text-neutral-300">&#9432;</span> for details.</span>
-    <button @click="show = false; localStorage.setItem('mrdn_legend_dismissed', '1')"
-      class="ml-auto text-neutral-400 hover:text-white shrink-0">&times;</button>
-  </div>
-</div>
 
 <!-- Main -->
 <main class="max-w-7xl mx-auto px-4 py-6" :class="mqlResults !== null ? 'opacity-30' : ''">
@@ -311,6 +295,62 @@ tailwind.config = {
         </div>
       </div>
     </div>
+    <!-- Insights Card -->
+    <div x-show="insightHero" class="bg-surface-1 rounded-xl border border-white/15 p-5">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="text-[10px] uppercase tracking-widest text-accent font-semibold">Insights</span>
+        <span class="text-[10px] text-neutral-500" x-show="insights.length" x-text="'· ' + insights.length + ' patterns detected'"></span>
+      </div>
+      <div class="flex gap-5" style="align-items:stretch">
+        <!-- Hero -->
+        <div @click="insightClick(insightHero)" class="flex-[1.5] bg-surface-2 rounded-lg p-4 border-l-[3px] border-accent cursor-pointer hover:bg-surface-3 transition-colors">
+          <div class="text-sm text-neutral-200 font-medium mb-2" x-text="insightHero?.headline"></div>
+          <div class="space-y-1">
+            <template x-if="Array.isArray(insightHero?.data)">
+              <div>
+                <template x-for="(row, i) in (insightHero?.data || []).slice(0, 4)" :key="i">
+                  <div class="flex items-center gap-3 text-[11px] text-neutral-400">
+                    <span class="text-neutral-300" x-text="row.name"></span>
+                    <span x-text="row.action || row.trade_type || ''"></span>
+                    <span x-text="row.amount || ''"></span>
+                    <span class="text-neutral-500 ml-auto" x-text="row.date || ''"></span>
+                  </div>
+                </template>
+                <div x-show="(insightHero?.data || []).length > 4" class="text-[10px] text-neutral-500" x-text="'+' + ((insightHero?.data || []).length - 4) + ' more'"></div>
+              </div>
+            </template>
+            <template x-if="insightHero?.data && !Array.isArray(insightHero?.data)">
+              <div class="flex flex-wrap gap-3 text-[11px] text-neutral-400">
+                <template x-for="(val, key) in insightHero.data" :key="key">
+                  <span><span class="text-neutral-500" x-text="key.replace(/_/g, ' ') + ': '"></span><span class="text-neutral-300" x-text="val"></span></span>
+                </template>
+              </div>
+            </template>
+          </div>
+          <div class="text-[10px] text-neutral-500 mt-2">
+            <span x-text="insightHero?.type?.replace(/_/g, ' ')"></span>
+            <span class="mx-1">·</span>
+            <span>rarity <span class="text-accent" x-text="insightHero?.rarity_score"></span></span>
+            <span class="mx-1">·</span>
+            <span x-text="insightAge(insightHero)"></span>
+          </div>
+        </div>
+        <!-- Secondaries -->
+        <div class="flex-1 flex flex-col gap-3">
+          <template x-for="sec in insightSecondaries" :key="sec.id">
+            <div @click="insightClick(sec)" class="bg-surface-2 rounded-lg p-3 cursor-pointer hover:bg-surface-3 transition-colors flex-1">
+              <div class="text-[11px] text-accent mb-1" x-text="sec.type?.replace(/_/g, ' ')"></div>
+              <div class="text-xs text-neutral-300" x-text="sec.headline"></div>
+              <div class="text-[10px] text-neutral-500 mt-1.5">
+                <span>rarity <span class="text-accent" x-text="sec.rarity_score"></span></span>
+                <span class="mx-1">·</span>
+                <span x-text="insightAge(sec)"></span>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
     <!-- Activity Strip -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3" x-show="stats">
       <div class="bg-surface-1 border border-white/15 rounded-xl px-4 py-3">
@@ -331,7 +371,7 @@ tailwind.config = {
         <div class="text-[11px] text-neutral-400 mb-1.5">What kinds of events we ingested in the last 24 hours — a quick read on which signals are firing.</div>
         <div class="flex flex-wrap gap-1.5">
           <template x-for="c in stats?.categories_last_24h || []" :key="c.category">
-            <span class="text-[11px] px-2 py-0.5 rounded-full" :class="eventBadge(c.category)">
+            <span @click="latestRange='7d'; navigate('signals')" class="text-[11px] px-2 py-0.5 rounded-full cursor-pointer hover:ring-1 hover:ring-white/30 transition" :class="eventBadge(c.category)">
               <span x-text="prettyEventType(c.category)"></span>
               <span class="font-mono opacity-70 ml-1" x-text="c.count.toLocaleString()"></span>
             </span>
@@ -364,14 +404,21 @@ tailwind.config = {
         <div class="space-y-2">
           <template x-for="m in movers" :key="m.ticker">
             <div @click="openCompany(m.ticker)" class="flex items-center justify-between p-2.5 rounded-lg bg-surface-2 hover:bg-surface-3 cursor-pointer transition-colors">
-              <div>
+              <div class="min-w-0">
                 <span class="font-mono text-sm font-semibold text-white" x-text="m.ticker"></span>
-                <span class="text-xs text-neutral-400 ml-2" x-text="m.name"></span>
+                <span class="text-xs text-neutral-400 ml-2 truncate" x-text="m.name"></span>
               </div>
-              <div class="text-right">
-                <span class="font-mono text-sm" :class="m.delta >= 0 ? 'text-up' : 'text-down'"
-                  x-text="(m.delta >= 0 ? '+' : '') + m.delta.toFixed(1)"></span>
-                <div class="text-xs text-neutral-400" x-text="m.composite.toFixed(1)"></div>
+              <div class="flex items-center gap-3">
+                <div class="hidden sm:flex items-center gap-1.5 text-[10px] text-neutral-400">
+                  <span>M:<span class="font-mono" :style="`color:${scoreColor(m.market)}`" x-text="m.market?.toFixed(0) ?? '—'"></span></span>
+                  <span>P:<span class="font-mono" :style="`color:${scoreColor(m.policy)}`" x-text="m.policy?.toFixed(0) ?? '—'"></span></span>
+                  <span>I:<span class="font-mono" :style="`color:${scoreColor(m.insider)}`" x-text="m.insider?.toFixed(0) ?? '—'"></span></span>
+                </div>
+                <div class="text-right">
+                  <span class="font-mono text-sm" :class="m.delta >= 0 ? 'text-up' : 'text-down'"
+                    x-text="(m.delta >= 0 ? '+' : '') + m.delta.toFixed(1)"></span>
+                  <div class="text-xs text-neutral-400" x-text="m.composite.toFixed(1)"></div>
+                </div>
               </div>
             </div>
           </template>
@@ -484,7 +531,7 @@ tailwind.config = {
   <div x-show="view === 'rankings'" x-transition class="fade-in space-y-4">
     <div class="border-l-2 border-accent pl-4 py-1">
       <h1 class="text-xl font-bold text-white">Who's the most politically exposed right now?</h1>
-      <p class="text-sm text-neutral-400 mt-1">Every public company, ranked by risk score (0 = calm, 100 = on fire). Switch the dropdown to sort by sub-score: <b>Market</b> (price/volume action), <b>Policy</b> (government activity), or <b>Insider</b> (congressional trades + executive moves). Click any row to see what's driving the number.</p>
+      <p class="text-sm text-neutral-400 mt-1">Every public company, ranked by risk score (0 = calm, 100 = on fire). Switch the dropdown to sort by sub-score: <b>Market</b> (price/volume action), <b>Policy</b> (government activity), or <b>Insider</b> (congressional trades + executive moves). Click any row to see what's driving the number. <span class="tip tip-right" data-tip="Risk Scale: 0–39 Low (green), 40–69 Moderate (yellow), 70–100 High (red). Scores measure political risk from market signals, policy actions, and insider activity.">&#9432;</span></p>
     </div>
     <div class="bg-surface-1 rounded-xl border border-white/15 p-5">
       <div class="flex items-center gap-4 mb-4">
@@ -1789,6 +1836,9 @@ function app() {
 
     // Dashboard data
     movers: [],
+    insights: [],
+    insightHero: null,
+    insightSecondaries: [],
     rankings: [],
     latestEvents: [],
     latestRange: (localStorage.getItem('mrdn_latest_range') || '7d'),
@@ -1960,6 +2010,7 @@ function app() {
         'signals/first-movers': 'signals/first-movers.json',
         'signals/round-trips': 'signals/round-trips.json',
         'tickers/top': 'tickers/_top.json',
+        'insights': 'insights.json',
       };
 
       // Strip query params for mapping
@@ -2015,6 +2066,67 @@ function app() {
         this.renderHeatmap();
         this.renderActivityHeatmap();
       });
+
+      this.fetchInsights();
+    },
+
+    async fetchInsights() {
+      try {
+        const res = await this.api('/insights');
+        this.insights = res?.findings || [];
+        this.selectInsights();
+      } catch(e) {
+        this.insights = [];
+      }
+    },
+
+    selectInsights() {
+      const findings = this.insights;
+      if (!findings.length) { this.insightHero = null; this.insightSecondaries = []; return; }
+      let heroIdx = 0;
+      for (let i = 1; i < findings.length; i++) {
+        if (findings[i].rarity_score > findings[heroIdx].rarity_score) heroIdx = i;
+      }
+      this.insightHero = findings[heroIdx];
+      const rest = findings.filter((_, i) => i !== heroIdx);
+      if (!rest.length) { this.insightSecondaries = []; return; }
+      const now = Date.now();
+      const halfLife = 7 * 24 * 60 * 60 * 1000;
+      const scored = rest.map(f => {
+        const age = now - new Date(f.timestamp).getTime();
+        const recency = 100 * Math.pow(0.5, age / halfLife);
+        return { f, score: f.rarity_score * 0.55 + recency * 0.40 + Math.random() * 5 };
+      });
+      scored.sort((a, b) => b.score - a.score);
+      this.insightSecondaries = scored.slice(0, 2).map(s => s.f);
+    },
+
+    insightClick(f) {
+      const link = typeof f.link === 'string' ? JSON.parse(f.link) : f.link;
+      if (link.view === 'signals') {
+        this.signalsTab = link.tab;
+        const searchFields = {
+          'swarms': 'swarmSearch', 'round-trips': 'roundTripSearch',
+          'compliance': 'complianceSearch', 'consensus': 'partisanSearch', 'contrarian': 'partisanSearch'
+        };
+        const field = searchFields[link.tab];
+        if (field && link.search) this[field] = link.search;
+        this.navigate('signals');
+      } else if (link.view === 'company') {
+        this.openCompany(link.ticker);
+      } else if (link.view === 'person') {
+        this.openPerson(link.slug);
+      }
+    },
+
+    insightAge(f) {
+      if (!f?.timestamp) return '';
+      const days = Math.floor((Date.now() - new Date(f.timestamp).getTime()) / 86400000);
+      if (days === 0) return 'today';
+      if (days === 1) return 'yesterday';
+      if (days < 7) return days + 'd ago';
+      if (days < 30) return Math.floor(days / 7) + 'w ago';
+      return Math.floor(days / 30) + 'mo ago';
     },
 
     latestRangeQuery() {
