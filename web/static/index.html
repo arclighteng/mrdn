@@ -61,7 +61,7 @@ tailwind.config = {
       <div class="hidden md:flex gap-1">
         <template x-for="tab in ['dashboard','rankings','companies','persons','tickers','signals','status']" :key="tab">
           <button @click="navigate(tab)"
-            :class="view === tab ? 'bg-surface-3 text-white' : 'text-neutral-400 hover:text-white hover:bg-surface-2'"
+            :class="(view === tab || (tab === 'companies' && view === 'company') || (tab === 'persons' && view === 'person') || (tab === 'tickers' && view === 'ticker')) ? 'bg-surface-3 text-white' : 'text-neutral-400 hover:text-white hover:bg-surface-2'"
             class="px-3 py-1.5 rounded-md text-sm font-medium transition-colors capitalize"
             x-text="tab"></button>
         </template>
@@ -70,7 +70,7 @@ tailwind.config = {
       <select class="md:hidden bg-surface-2 border border-white/15 rounded px-2 py-1 text-sm text-neutral-200 capitalize"
         @change="navigate($event.target.value)">
         <template x-for="tab in ['dashboard','rankings','companies','persons','tickers','signals','status']" :key="tab">
-          <option :value="tab" :selected="view === tab" x-text="tab"></option>
+          <option :value="tab" :selected="view === tab || (tab === 'companies' && view === 'company') || (tab === 'persons' && view === 'person') || (tab === 'tickers' && view === 'ticker')" x-text="tab"></option>
         </template>
       </select>
     </div>
@@ -375,7 +375,8 @@ tailwind.config = {
               </div>
             </div>
           </template>
-          <div x-show="movers.length === 0" class="text-neutral-400 text-sm text-center py-8">No score data yet — run ingestion first</div>
+          <div x-show="movers.length === 0 && !stats" class="text-neutral-400 text-sm text-center py-8">Loading…</div>
+          <div x-show="movers.length === 0 && stats" class="text-neutral-400 text-sm text-center py-8">No score data yet — run ingestion first</div>
         </div>
       </div>
     </div>
@@ -503,13 +504,13 @@ tailwind.config = {
         <thead>
           <tr class="text-neutral-400 text-xs uppercase border-b border-white/15">
             <th class="text-left py-2 px-2">#</th>
-            <th class="text-left py-2">Ticker</th>
+            <th class="text-left py-2 cursor-pointer hover:text-white" @click="rankSort='ticker'; rankPage=0; fetchRankings()">Ticker</th>
             <th class="text-left py-2">Name</th>
             <th class="text-left py-2">Sector</th>
-            <th class="text-right py-2"><span class="tip" data-tip="Market risk signal from abnormal stock movements, volume spikes, and options activity around political events.">Market</span></th>
-            <th class="text-right py-2"><span class="tip" data-tip="Policy risk from government contracts, sanctions exposure, regulatory actions, and lobbying connections.">Policy</span></th>
-            <th class="text-right py-2"><span class="tip" data-tip="Insider risk from congressional trading, executive financial disclosures, and related-party transactions.">Insider</span></th>
-            <th class="text-right py-2 px-2"><span class="tip tip-left" data-tip="Weighted combination of Market, Policy, and Insider scores. 0-39 = low risk (green), 40-69 = moderate (yellow), 70-100 = high (red).">Composite</span></th>
+            <th class="text-right py-2 cursor-pointer hover:text-white" @click="rankSort='market'; rankPage=0; fetchRankings()"><span class="tip" data-tip="Market risk signal from abnormal stock movements, volume spikes, and options activity around political events.">Market</span></th>
+            <th class="text-right py-2 cursor-pointer hover:text-white" @click="rankSort='policy'; rankPage=0; fetchRankings()"><span class="tip" data-tip="Policy risk from government contracts, sanctions exposure, regulatory actions, and lobbying connections.">Policy</span></th>
+            <th class="text-right py-2 cursor-pointer hover:text-white" @click="rankSort='insider'; rankPage=0; fetchRankings()"><span class="tip" data-tip="Insider risk from congressional trading, executive financial disclosures, and related-party transactions.">Insider</span></th>
+            <th class="text-right py-2 px-2 cursor-pointer hover:text-white" @click="rankSort='composite'; rankPage=0; fetchRankings()"><span class="tip tip-left" data-tip="Weighted combination of Market, Policy, and Insider scores. 0-39 = low risk (green), 40-69 = moderate (yellow), 70-100 = high (red).">Composite</span></th>
           </tr>
         </thead>
         <tbody>
@@ -591,6 +592,7 @@ tailwind.config = {
         <span x-text="detail.ticker"></span>
         <span class="text-lg text-neutral-400 font-normal ml-2" x-text="detail.name"></span>
       </h1>
+      <button @click="openTicker(detail.ticker)" class="text-xs text-accent hover:text-accent-light ml-2">View congressional trades →</button>
     </div>
     <div class="border-l-2 border-accent pl-4 py-1">
       <p class="text-sm text-neutral-400">Everything MRDN knows about this company: current risk score and how it broke down (Market / Policy / Insider), score history over time, recent events that moved the number, and the political figures connected to it. Use this to understand <i>why</i> a company is hot — not just that it is.</p>
@@ -777,7 +779,7 @@ tailwind.config = {
           <option value="party">Party</option>
           <option value="state">State</option>
         </select>
-        <span class="text-xs text-neutral-400 ml-auto" x-text="persons.length + ' people'"></span>
+        <span class="text-xs text-neutral-400 ml-auto" x-text="personTotal + ' people'"></span>
       </div>
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         <template x-for="p in persons" :key="p.id">
@@ -1483,15 +1485,15 @@ tailwind.config = {
         <table class="w-full text-sm">
           <thead class="bg-surface-2 text-[10px] uppercase tracking-wider text-neutral-400">
             <tr>
-              <th class="text-left px-4 py-2">Ticker</th>
+              <th class="text-left px-4 py-2 cursor-pointer hover:text-white" @click="tickerSort='ticker'; tickerPage=0; sortTickers()">Ticker</th>
               <th class="text-left px-4 py-2 text-neutral-400">Sector</th>
-              <th class="text-right px-4 py-2 tip" data-tip="Distinct representatives who bought or sold this ticker">Reps</th>
-              <th class="text-right px-4 py-2">Trades</th>
-              <th class="text-right px-4 py-2 text-green-400">Buy $</th>
-              <th class="text-right px-4 py-2 text-red-400">Sell $</th>
+              <th class="text-right px-4 py-2 cursor-pointer hover:text-white tip" data-tip="Distinct representatives who bought or sold this ticker" @click="tickerSort='reps'; tickerPage=0; sortTickers()">Reps</th>
+              <th class="text-right px-4 py-2 cursor-pointer hover:text-white" @click="tickerSort='trades'; tickerPage=0; sortTickers()">Trades</th>
+              <th class="text-right px-4 py-2 text-green-400 cursor-pointer hover:text-green-300" @click="tickerSort='buy'; tickerPage=0; sortTickers()">Buy $</th>
+              <th class="text-right px-4 py-2 text-red-400 cursor-pointer hover:text-red-300" @click="tickerSort='sell'; tickerPage=0; sortTickers()">Sell $</th>
               <th class="text-right px-4 py-2 text-red-300">R buyers</th>
               <th class="text-right px-4 py-2 text-blue-300">D buyers</th>
-              <th class="text-right px-4 py-2 text-neutral-400">Last trade</th>
+              <th class="text-right px-4 py-2 cursor-pointer hover:text-white" @click="tickerSort='recent'; tickerPage=0; sortTickers()">Last trade</th>
             </tr>
           </thead>
           <tbody>
@@ -1542,6 +1544,7 @@ tailwind.config = {
             <span class="text-xs text-neutral-400" x-text="tickerDetail.summary.first_trade + ' → ' + tickerDetail.summary.last_trade"></span>
           </div>
           <div x-show="tickerDetail.summary.sector" class="text-xs text-neutral-400 mt-1" x-text="tickerDetail.summary.sector"></div>
+          <button @click="openCompany(tickerDetail.ticker)" class="text-xs text-accent hover:text-accent-light mt-2">View risk score & events →</button>
         </div>
 
         <!-- Headline tiles -->
