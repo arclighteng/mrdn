@@ -746,7 +746,29 @@ func TestResolve_Dispatch(t *testing.T) {
 		assert.Equal(t, 0, st.updateCalls)
 	})
 
-	t.Run("source efds_senate — returns 0 (skipped)", func(t *testing.T) {
+	t.Run("source efds_senate with transactions — returns non-zero companyID", func(t *testing.T) {
+		st := &mockStore{
+			companies: []db.CompanyLookup{
+				{ID: 7, Ticker: "AAPL", Name: "Apple Inc"},
+			},
+			personBySlug: map[string]db.Person{},
+		}
+		r := newTestResolver(t, st)
+
+		data := mustMarshal(map[string]any{
+			"first_name": "Test",
+			"last_name":  "Senator",
+			"transactions": []map[string]any{
+				{"ticker": "AAPL", "trade_type": "Purchase", "amount_low": 1001, "amount_high": 15000},
+			},
+		})
+		cid := r.Resolve(context.Background(), makeEvent("efds_senate", 3, data))
+
+		assert.Equal(t, 7, cid)
+		assert.Equal(t, 1, st.updateCalls)
+	})
+
+	t.Run("source efds_senate with no transactions — returns 0", func(t *testing.T) {
 		st := &mockStore{}
 		r := newTestResolver(t, st)
 
@@ -1028,6 +1050,107 @@ func TestResolveEdgar_AliasHit(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 50, cid)
 	assert.Equal(t, 50, r.lookupName("meta platforms"))
+}
+
+// ---------------------------------------------------------------------------
+// resolveEFDSTrades
+// ---------------------------------------------------------------------------
+
+func TestResolveEFDSTrades(t *testing.T) {
+	t.Run("valid filing with trades — inserts congressional_trades", func(t *testing.T) {
+		pelosiSlug := "nancy-pelosi"
+		st := &mockStore{
+			companies: []db.CompanyLookup{
+				{ID: 7, Ticker: "AAPL", Name: "Apple Inc"},
+				{ID: 8, Ticker: "MSFT", Name: "Microsoft Corp"},
+			},
+			personBySlug: map[string]db.Person{
+				pelosiSlug: {ID: 1, Slug: pelosiSlug, Name: "Nancy Pelosi"},
+			},
+		}
+		r := newTestResolver(t, st)
+
+		data := mustMarshal(map[string]any{
+			"first_name":  "Nancy",
+			"last_name":   "Pelosi",
+			"filing_type": "Periodic Transaction Report",
+			"filing_date": "01/15/2025",
+			"report_id":   "abc123",
+			"transactions": []map[string]any{
+				{
+					"ticker":      "AAPL",
+					"trade_type":  "Purchase",
+					"amount_low":  1001,
+					"amount_high": 15000,
+					"owner":       "SP",
+					"traded_at":   "2025-01-10",
+				},
+				{
+					"ticker":      "MSFT",
+					"trade_type":  "Sale (Full)",
+					"amount_low":  15001,
+					"amount_high": 50000,
+					"owner":       "JT",
+					"traded_at":   "2025-01-12",
+				},
+			},
+		})
+		cid, err := r.resolveEFDSTrades(context.Background(), makeEvent("efds_senate", 100, data))
+
+		require.NoError(t, err)
+		assert.Equal(t, 7, cid)
+		require.Len(t, st.insertedCongTrades, 2)
+
+		trade1 := st.insertedCongTrades[0]
+		assert.Equal(t, 100, *trade1.EventID)
+		assert.Equal(t, 1, *trade1.PersonID)
+		assert.Equal(t, 7, *trade1.CompanyID)
+		assert.Equal(t, "AAPL", *trade1.Ticker)
+		assert.Equal(t, "Purchase", *trade1.TradeType)
+		assert.Equal(t, 1001, *trade1.AmountRangeLow)
+		assert.Equal(t, 15000, *trade1.AmountRangeHigh)
+	})
+
+	t.Run("no transactions field — returns 0", func(t *testing.T) {
+		st := &mockStore{}
+		r := newTestResolver(t, st)
+
+		data := mustMarshal(map[string]any{
+			"first_name":  "Unknown",
+			"last_name":   "Senator",
+			"filing_type": "Annual Report",
+			"report_id":   "xyz",
+		})
+		cid, err := r.resolveEFDSTrades(context.Background(), makeEvent("efds_senate", 101, data))
+
+		require.NoError(t, err)
+		assert.Equal(t, 0, cid)
+		assert.Empty(t, st.insertedCongTrades)
+	})
+
+	t.Run("person not found — still inserts trades without person_id", func(t *testing.T) {
+		st := &mockStore{
+			companies: []db.CompanyLookup{
+				{ID: 7, Ticker: "AAPL", Name: "Apple Inc"},
+			},
+			personBySlug: map[string]db.Person{},
+		}
+		r := newTestResolver(t, st)
+
+		data := mustMarshal(map[string]any{
+			"first_name": "Unknown",
+			"last_name":  "NewSenator",
+			"transactions": []map[string]any{
+				{"ticker": "AAPL", "trade_type": "Purchase", "amount_low": 1001, "amount_high": 15000},
+			},
+		})
+		cid, err := r.resolveEFDSTrades(context.Background(), makeEvent("efds_senate", 102, data))
+
+		require.NoError(t, err)
+		assert.Equal(t, 7, cid)
+		require.Len(t, st.insertedCongTrades, 1)
+		assert.Nil(t, st.insertedCongTrades[0].PersonID)
+	})
 }
 
 // ---------------------------------------------------------------------------

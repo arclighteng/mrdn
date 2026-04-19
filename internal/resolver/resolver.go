@@ -171,8 +171,7 @@ func (r *Resolver) Resolve(ctx context.Context, evt db.Event) int {
 		// single company without NLP. Skip entity resolution for now.
 		return 0
 	case "efds_senate":
-		// Senate financial disclosures need person-level resolution, not company.
-		return 0
+		companyID, err = r.resolveEFDSTrades(ctx, evt)
 	case "finnhub":
 		companyID, err = r.resolveFinnhub(ctx, evt)
 	case "warn":
@@ -665,6 +664,107 @@ func (r *Resolver) resolveWarn(ctx context.Context, evt db.Event) (int, error) {
 	}
 
 	return companyID, nil
+}
+
+// efdsDisclosure mirrors the JSON stored by the EFDS Senate parser.
+type efdsDisclosure struct {
+	FirstName    string            `json:"first_name"`
+	LastName     string            `json:"last_name"`
+	FilingType   string            `json:"filing_type"`
+	FilingDate   string            `json:"filing_date"`
+	ReportID     string            `json:"report_id"`
+	Transactions []efdsTransaction `json:"transactions"`
+}
+
+type efdsTransaction struct {
+	Ticker     string `json:"ticker"`
+	TradeType  string `json:"trade_type"`
+	AmountLow  int    `json:"amount_low"`
+	AmountHigh int    `json:"amount_high"`
+	Owner      string `json:"owner"`
+	TradedAt   string `json:"traded_at"`
+}
+
+func (r *Resolver) resolveEFDSTrades(ctx context.Context, evt db.Event) (int, error) {
+	var disc efdsDisclosure
+	if err := json.Unmarshal(evt.EventData, &disc); err != nil {
+		return 0, fmt.Errorf("unmarshal efds disclosure: %w", err)
+	}
+
+	if len(disc.Transactions) == 0 {
+		return 0, nil
+	}
+
+	slug := strings.ToLower(strings.TrimSpace(disc.FirstName) + "-" + strings.TrimSpace(disc.LastName))
+	slug = strings.ReplaceAll(slug, " ", "-")
+	var personID *int
+	if p, err := r.store.GetPersonBySlug(ctx, slug); err == nil {
+		personID = &p.ID
+	}
+
+	var filedAt *time.Time
+	if disc.FilingDate != "" {
+		if t, err := time.Parse("01/02/2006", disc.FilingDate); err == nil {
+			ft := t.UTC()
+			filedAt = &ft
+		}
+	}
+
+	var firstCompanyID int
+	eventID := evt.ID
+	for _, tx := range disc.Transactions {
+		ticker := strings.ToUpper(strings.TrimSpace(tx.Ticker))
+		if ticker == "" || ticker == "--" || ticker == "N/A" {
+			continue
+		}
+
+		companyID, err := r.ensureCompany(ctx, ticker, "")
+		if err != nil {
+			log.Printf("[resolver] efds trade ticker %s: %v", ticker, err)
+			continue
+		}
+		if firstCompanyID == 0 && companyID > 0 {
+			firstCompanyID = companyID
+		}
+
+		var companyIDPtr *int
+		if companyID > 0 {
+			companyIDPtr = &companyID
+		}
+
+		var tradedAt *time.Time
+		if tx.TradedAt != "" {
+			if t, err := time.Parse("2006-01-02", tx.TradedAt); err == nil {
+				tt := t.UTC()
+				tradedAt = &tt
+			}
+		}
+
+		trade := db.CongressionalTrade{
+			EventID:         &eventID,
+			PersonID:        personID,
+			CompanyID:       companyIDPtr,
+			OwnerType:       strPtr(tx.Owner),
+			Ticker:          strPtr(ticker),
+			TradeType:       strPtr(tx.TradeType),
+			AmountRangeLow:  intPtr(tx.AmountLow),
+			AmountRangeHigh: intPtr(tx.AmountHigh),
+			FiledAt:         filedAt,
+			TradedAt:        tradedAt,
+		}
+
+		if err := r.store.InsertCongressionalTrade(ctx, trade); err != nil {
+			if !isDuplicateError(err) {
+				log.Printf("[resolver] efds congressional_trade insert: %v", err)
+			}
+		}
+	}
+
+	return firstCompanyID, nil
+}
+
+func intPtr(n int) *int {
+	return &n
 }
 
 // Backfill processes all unresolved events for a given source (or all sources
