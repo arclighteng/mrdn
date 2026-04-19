@@ -2,8 +2,11 @@ package resolver
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -39,6 +42,16 @@ type mockStore struct {
 	insertedContracts []db.Contract
 	insertedSanctions    []db.Sanction
 	insertedWarnFilings  []db.WarnFiling
+
+	insertedCongTrades   []db.CongressionalTrade
+	insertedCourtFilings []db.CourtFiling
+	insertedTariffs      []db.Tariff
+
+	aliasByName map[string]db.CompanyLookup
+	aliasErr    error
+
+	personBySlug map[string]db.Person
+	personErr    error
 
 	// unresolvedBatches is consumed in order; each call pops the first slice.
 	unresolvedBatches [][]db.Event
@@ -131,6 +144,51 @@ func (m *mockStore) InsertWarnFiling(_ context.Context, w db.WarnFiling) error {
 	m.insertedWarnFilings = append(m.insertedWarnFilings, w)
 	m.mu.Unlock()
 	return nil
+}
+
+func (m *mockStore) InsertCongressionalTrade(_ context.Context, t db.CongressionalTrade) error {
+	m.mu.Lock()
+	m.insertedCongTrades = append(m.insertedCongTrades, t)
+	m.mu.Unlock()
+	return nil
+}
+
+func (m *mockStore) InsertCourtFiling(_ context.Context, cf db.CourtFiling) error {
+	m.mu.Lock()
+	m.insertedCourtFilings = append(m.insertedCourtFilings, cf)
+	m.mu.Unlock()
+	return nil
+}
+
+func (m *mockStore) InsertTariff(_ context.Context, t db.Tariff) error {
+	m.mu.Lock()
+	m.insertedTariffs = append(m.insertedTariffs, t)
+	m.mu.Unlock()
+	return nil
+}
+
+func (m *mockStore) GetCompanyByAlias(_ context.Context, alias string) (db.CompanyLookup, error) {
+	if m.aliasErr != nil {
+		return db.CompanyLookup{}, m.aliasErr
+	}
+	if m.aliasByName != nil {
+		if c, ok := m.aliasByName[strings.ToLower(alias)]; ok {
+			return c, nil
+		}
+	}
+	return db.CompanyLookup{}, fmt.Errorf("getting company by alias %q: %w", alias, sql.ErrNoRows)
+}
+
+func (m *mockStore) GetPersonBySlug(_ context.Context, slug string) (db.Person, error) {
+	if m.personErr != nil {
+		return db.Person{}, m.personErr
+	}
+	if m.personBySlug != nil {
+		if p, ok := m.personBySlug[slug]; ok {
+			return p, nil
+		}
+	}
+	return db.Person{}, fmt.Errorf("getting person %s: %w", slug, sql.ErrNoRows)
 }
 
 func (m *mockStore) ListUnresolvedEventsAfter(_ context.Context, _ string, _ int, _ int) ([]db.Event, error) {
@@ -1044,6 +1102,21 @@ func (c *cancellingStore) InsertSanction(ctx context.Context, s db.Sanction) err
 }
 func (c *cancellingStore) InsertWarnFiling(ctx context.Context, w db.WarnFiling) error {
 	return c.inner.InsertWarnFiling(ctx, w)
+}
+func (c *cancellingStore) InsertCongressionalTrade(ctx context.Context, t db.CongressionalTrade) error {
+	return c.inner.InsertCongressionalTrade(ctx, t)
+}
+func (c *cancellingStore) InsertCourtFiling(ctx context.Context, cf db.CourtFiling) error {
+	return c.inner.InsertCourtFiling(ctx, cf)
+}
+func (c *cancellingStore) InsertTariff(ctx context.Context, t db.Tariff) error {
+	return c.inner.InsertTariff(ctx, t)
+}
+func (c *cancellingStore) GetCompanyByAlias(ctx context.Context, alias string) (db.CompanyLookup, error) {
+	return c.inner.GetCompanyByAlias(ctx, alias)
+}
+func (c *cancellingStore) GetPersonBySlug(ctx context.Context, slug string) (db.Person, error) {
+	return c.inner.GetPersonBySlug(ctx, slug)
 }
 func (c *cancellingStore) ListUnresolvedEventsAfter(ctx context.Context, source string, afterID, batchSize int) ([]db.Event, error) {
 	n := c.calls.Add(1)

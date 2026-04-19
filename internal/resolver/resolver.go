@@ -28,6 +28,11 @@ type ResolverStore interface {
 	InsertSanction(ctx context.Context, sn db.Sanction) error
 	InsertWarnFiling(ctx context.Context, w db.WarnFiling) error
 	ListUnresolvedEventsAfter(ctx context.Context, source string, afterID, batchSize int) ([]db.Event, error)
+	InsertCongressionalTrade(ctx context.Context, t db.CongressionalTrade) error
+	InsertCourtFiling(ctx context.Context, cf db.CourtFiling) error
+	InsertTariff(ctx context.Context, t db.Tariff) error
+	GetCompanyByAlias(ctx context.Context, alias string) (db.CompanyLookup, error)
+	GetPersonBySlug(ctx context.Context, slug string) (db.Person, error)
 }
 
 // Resolver matches events to companies and extracts typed records into domain
