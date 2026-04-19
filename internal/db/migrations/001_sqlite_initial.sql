@@ -322,6 +322,7 @@ INSERT OR IGNORE INTO source_meta (source_name, expected_lag, poll_interval_seco
     ('fec', '1-7 days', 86400, 'healthy'),
     ('efds_senate', '30-45 days', 3600, 'healthy'),
     ('house_clerk_ptr', '1-30 days', 86400, 'healthy'),
+    ('sec_edgar_lit', '1 day', 86400, 'healthy'),
     ('score_engine', 'on-demand', 86400, 'healthy');
 
 -- Seed 20 initial congress members

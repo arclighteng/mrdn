@@ -73,6 +73,7 @@ func (s *Supervisor) RegisterSources() []Source {
 		parser.NewUSAspendingSource(client),
 		parser.NewFedRegisterSource(client),
 		parser.NewWarnSource(client),
+		parser.NewSECLitigationSource(client),
 	}
 
 	if s.cfg.PolygonAPIKey != "" {
