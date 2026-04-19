@@ -47,7 +47,7 @@ Does NOT run the score engine — run score-backfill separately.`,
 		sup := ingestion.NewSupervisor(cfg, store, nil, ingestion.RealClock())
 		sources := sup.RegisterSources()
 
-		var totalNew int
+		var totalNew, totalResolved, totalUnresolved int
 		for _, src := range sources {
 			log.Printf("[ingest-once] polling %s...", src.Name())
 			started := time.Now()
@@ -80,9 +80,12 @@ Does NOT run the score engine — run score-backfill separately.`,
 				}
 				newCount++
 				evt.ID = id
-				// Resolve() persists the company link internally via
-				// store.UpdateEventCompanyID — no need to capture the return.
-				res.Resolve(ctx, evt)
+				cid := res.Resolve(ctx, evt)
+				if cid > 0 {
+					totalResolved++
+				} else {
+					totalUnresolved++
+				}
 			}
 			totalNew += newCount
 
@@ -97,6 +100,7 @@ Does NOT run the score engine — run score-backfill separately.`,
 		}
 
 		log.Printf("[ingest-once] done — %d new events total", totalNew)
+		log.Printf("[ingest-once] resolution: %d resolved, %d unresolved (of %d new)", totalResolved, totalUnresolved, totalNew)
 
 		// Backfill any events whose typed-table insertion failed on prior runs.
 		backfilled, berr := res.Backfill(ctx, "")
