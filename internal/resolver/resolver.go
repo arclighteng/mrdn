@@ -34,6 +34,7 @@ type ResolverStore interface {
 	InsertTariff(ctx context.Context, t db.Tariff) error
 	GetCompanyByAlias(ctx context.Context, alias string) (db.CompanyLookup, error)
 	GetPersonBySlug(ctx context.Context, slug string) (db.Person, error)
+	UpsertPerson(ctx context.Context, p db.Person) (db.Person, error)
 }
 
 // Resolver matches events to companies and extracts typed records into domain
@@ -822,7 +823,6 @@ func (r *Resolver) resolveFMPCongress(ctx context.Context, evt db.Event) (int, e
 	if trade.Chamber == "house" {
 		role = "representative"
 	}
-	_ = role // used when person is created in future enrichment; slug lookup is the primary path
 
 	var personID *int
 	fullName := strings.TrimSpace(trade.FirstName + " " + trade.LastName)
@@ -830,6 +830,21 @@ func (r *Resolver) resolveFMPCongress(ctx context.Context, evt db.Event) (int, e
 		slug := slugifyName(fullName)
 		if p, err := r.store.GetPersonBySlug(ctx, slug); err == nil {
 			personID = &p.ID
+		} else {
+			// Person not found — create them from FMP data.
+			branch := "legislative"
+			state := trade.District
+			p, err := r.store.UpsertPerson(ctx, db.Person{
+				Slug:   slug,
+				Name:   fullName,
+				Role:   role,
+				Tier:   2,
+				Branch: &branch,
+				State:  &state,
+			})
+			if err == nil {
+				personID = &p.ID
+			}
 		}
 	}
 

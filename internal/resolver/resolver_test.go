@@ -191,6 +191,17 @@ func (m *mockStore) GetPersonBySlug(_ context.Context, slug string) (db.Person, 
 	return db.Person{}, fmt.Errorf("getting person %s: %w", slug, sql.ErrNoRows)
 }
 
+func (m *mockStore) UpsertPerson(_ context.Context, p db.Person) (db.Person, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.personBySlug == nil {
+		m.personBySlug = map[string]db.Person{}
+	}
+	p.ID = len(m.personBySlug) + 1000
+	m.personBySlug[p.Slug] = p
+	return p, nil
+}
+
 func (m *mockStore) ListUnresolvedEventsAfter(_ context.Context, _ string, _ int, _ int) ([]db.Event, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -1416,6 +1427,9 @@ func (c *cancellingStore) GetCompanyByAlias(ctx context.Context, alias string) (
 }
 func (c *cancellingStore) GetPersonBySlug(ctx context.Context, slug string) (db.Person, error) {
 	return c.inner.GetPersonBySlug(ctx, slug)
+}
+func (c *cancellingStore) UpsertPerson(ctx context.Context, p db.Person) (db.Person, error) {
+	return c.inner.UpsertPerson(ctx, p)
 }
 func (c *cancellingStore) ListUnresolvedEventsAfter(ctx context.Context, source string, afterID, batchSize int) ([]db.Event, error) {
 	n := c.calls.Add(1)
