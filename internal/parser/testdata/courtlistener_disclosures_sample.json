@@ -1,0 +1,36 @@
+{
+  "count": 1,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": 34211,
+      "person": "https://www.courtlistener.com/api/rest/v4/people/1234/",
+      "year": 2024,
+      "date_created": "2025-03-15T08:00:00-07:00",
+      "has_been_extracted": true,
+      "investments": [
+        {
+          "id": 99001,
+          "description": "Apple Inc (AAPL) - Stock",
+          "redacted": false,
+          "gross_value_code": "K",
+          "transaction_during_reporting_period": "Purchase",
+          "transaction_date": "2024-06-15",
+          "transaction_value_code": "J",
+          "financial_disclosure": "https://www.courtlistener.com/api/rest/v4/financial-disclosures/34211/"
+        },
+        {
+          "id": 99002,
+          "description": "Vanguard S&P 500 ETF (VOO)",
+          "redacted": false,
+          "gross_value_code": "N",
+          "transaction_during_reporting_period": "",
+          "transaction_date": null,
+          "transaction_value_code": "",
+          "financial_disclosure": "https://www.courtlistener.com/api/rest/v4/financial-disclosures/34211/"
+        }
+      ]
+    }
+  ]
+}
