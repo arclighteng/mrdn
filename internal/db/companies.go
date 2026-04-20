@@ -199,3 +199,22 @@ func (s *Store) DeleteCompany(ctx context.Context, id int) error {
 	_, err := s.db.ExecContext(ctx, "DELETE FROM companies WHERE id = ?", id)
 	return err
 }
+
+// ListTickers returns all company tickers from the companies table, sorted
+// alphabetically. It implements the parser.TickerLister interface.
+func (s *Store) ListTickers(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT ticker FROM companies ORDER BY ticker`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var tickers []string
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		tickers = append(tickers, t)
+	}
+	return tickers, rows.Err()
+}

@@ -1,0 +1,29 @@
+{
+  "data": [
+    {
+      "amountFrom": 1001,
+      "amountTo": 15000,
+      "assetName": "Apple Inc",
+      "filingDate": "2025-03-15",
+      "name": "Nancy Pelosi",
+      "ownerType": "joint",
+      "position": "Representative",
+      "symbol": "AAPL",
+      "transactionDate": "2025-03-01",
+      "transactionType": "Purchase"
+    },
+    {
+      "amountFrom": 15001,
+      "amountTo": 50000,
+      "assetName": "Microsoft Corp",
+      "filingDate": "2025-03-15",
+      "name": "Tommy Tuberville",
+      "ownerType": "self",
+      "position": "Senator",
+      "symbol": "MSFT",
+      "transactionDate": "2025-02-28",
+      "transactionType": "Sale"
+    }
+  ],
+  "symbol": "AAPL"
+}
