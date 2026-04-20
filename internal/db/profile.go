@@ -413,7 +413,7 @@ WITH first_buy AS (
     WHERE ct.trade_type = 'purchase'
       AND ct.ticker IS NOT NULL AND ct.ticker <> '' AND ct.ticker <> '--'
       AND ct.traded_at IS NOT NULL
-      AND ct.traded_at >= '2000-01-01'
+      AND ct.traded_at >= date('now', '-12 months')
       AND ct.traded_at <  '2100-01-01'
   ) sub
   WHERE rn = 1

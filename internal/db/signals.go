@@ -28,6 +28,7 @@ type SwarmRow struct {
 // minReps is the minimum number of distinct representatives required to
 // surface a cluster (default 4). Results are ordered by week descending,
 // then by reps descending — most recent + biggest first.
+// Only considers trades from the last 12 months to keep results fresh.
 func (s *Store) SwarmDetector(ctx context.Context, minReps, limit int) ([]SwarmRow, error) {
 	if minReps < 2 {
 		minReps = 4
@@ -51,7 +52,7 @@ WITH t AS (
     AND ct.ticker <> ''
     AND ct.ticker <> '--'
     AND ct.traded_at IS NOT NULL
-    AND ct.traded_at >= '2000-01-01'
+    AND ct.traded_at >= date('now', '-12 months')
     AND ct.traded_at <  '2100-01-01'
 )
 SELECT
@@ -148,6 +149,7 @@ WITH t AS (
     AND ct.ticker <> '--'
     AND p.party IN ('R', 'D')
     AND ct.trade_type IS NOT NULL
+    AND ct.traded_at >= date('now', '-12 months')
 )
 SELECT
   ticker,

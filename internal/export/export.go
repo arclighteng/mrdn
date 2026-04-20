@@ -198,7 +198,7 @@ func exportSignals(ctx context.Context, store *db.Store, outDir string) error {
 		return err
 	}
 
-	swarms, err := store.SwarmDetector(ctx, 4, 100)
+	swarms, err := store.SwarmDetector(ctx, 2, 100)
 	if err != nil {
 		return err
 	}
@@ -206,7 +206,7 @@ func exportSignals(ctx context.Context, store *db.Store, outDir string) error {
 		return err
 	}
 
-	consensus, err := store.PartisanTickers(ctx, "consensus", 4, 50)
+	consensus, err := store.PartisanTickers(ctx, "consensus", 2, 50)
 	if err != nil {
 		return err
 	}
@@ -215,7 +215,7 @@ func exportSignals(ctx context.Context, store *db.Store, outDir string) error {
 		return err
 	}
 
-	contrarian, err := store.PartisanTickers(ctx, "contrarian", 4, 50)
+	contrarian, err := store.PartisanTickers(ctx, "contrarian", 2, 50)
 	if err != nil {
 		return err
 	}
@@ -224,7 +224,7 @@ func exportSignals(ctx context.Context, store *db.Store, outDir string) error {
 		return err
 	}
 
-	firstMovers, err := store.FirstMovers(ctx, 4, 40)
+	firstMovers, err := store.FirstMovers(ctx, 2, 40)
 	if err != nil {
 		return err
 	}
@@ -232,7 +232,7 @@ func exportSignals(ctx context.Context, store *db.Store, outDir string) error {
 		return err
 	}
 
-	roundTrips, err := store.RoundTrips(ctx, 60, 15000, 100)
+	roundTrips, err := store.RoundTrips(ctx, 90, 1000, 100)
 	if err != nil {
 		return err
 	}
