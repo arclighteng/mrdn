@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MRDN — Political Risk Intelligence</title>
+<script>
+// Apply theme immediately to prevent flash
+if (localStorage.getItem('mrdn_theme') === 'light') {
+  document.documentElement.classList.remove('dark');
+}
+</script>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
@@ -24,27 +30,59 @@ tailwind.config = {
 </script>
 <style>
   [x-cloak] { display: none !important; }
-  body { background: #0f0f0f; color: #e5e5e5; font-family: system-ui, -apple-system, sans-serif; }
+  body { font-family: system-ui, -apple-system, sans-serif; transition: background-color 0.2s, color 0.2s; }
+  .dark body { background: #0f0f0f; color: #e5e5e5; }
+  html:not(.dark) body { background: #fafafa; color: #1c1c1c; }
   .fade-in { animation: fadeIn 0.2s ease-in; }
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
   ::-webkit-scrollbar { width: 6px; }
-  ::-webkit-scrollbar-track { background: #171717; }
-  ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+  .dark ::-webkit-scrollbar-track { background: #171717; }
+  .dark ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+  html:not(.dark) ::-webkit-scrollbar-track { background: #e5e5e5; }
+  html:not(.dark) ::-webkit-scrollbar-thumb { background: #c4c4c4; border-radius: 3px; }
   .tip { position: relative; cursor: help; }
   .tip::after {
     content: attr(data-tip);
     position: absolute; left: 50%; bottom: calc(100% + 8px);
     transform: translateX(-50%); white-space: normal; width: 260px;
-    background: #292929; color: #d4d4d4; font-size: 12px; font-weight: 400;
+    font-size: 12px; font-weight: 400;
     line-height: 1.5; padding: 10px 12px; border-radius: 8px;
-    border: 1px solid rgba(255,255,255,0.08);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
     pointer-events: none; opacity: 0; transition: opacity 0.15s;
     z-index: 50; text-transform: none; letter-spacing: normal;
+  }
+  .dark .tip::after {
+    background: #292929; color: #d4d4d4;
+    border: 1px solid rgba(255,255,255,0.08);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  }
+  html:not(.dark) .tip::after {
+    background: #ffffff; color: #374151;
+    border: 1px solid rgba(0,0,0,0.1);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
   }
   .tip:hover::after { opacity: 1; }
   .tip-right::after { left: 0; transform: none; }
   .tip-left::after { left: auto; right: 0; transform: none; }
+
+  /* Light mode overrides for Tailwind utility classes */
+  html:not(.dark) .bg-surface { background-color: #ffffff; }
+  html:not(.dark) .bg-surface-1 { background-color: #ffffff; }
+  html:not(.dark) .bg-surface-2 { background-color: #f3f4f6; }
+  html:not(.dark) .bg-surface-3 { background-color: #e5e7eb; }
+  html:not(.dark) .bg-surface-1\/80 { background-color: rgba(255,255,255,0.85); }
+  html:not(.dark) .text-white { color: #111827; }
+  html:not(.dark) .text-neutral-200 { color: #374151; }
+  html:not(.dark) .text-neutral-300 { color: #4b5563; }
+  html:not(.dark) .text-neutral-400 { color: #6b7280; }
+  html:not(.dark) .text-neutral-500 { color: #9ca3af; }
+  html:not(.dark) .border-white\/15, html:not(.dark) .border-white\/10 { border-color: rgba(0,0,0,0.1); }
+  html:not(.dark) .border-white\/30 { border-color: rgba(0,0,0,0.15); }
+  html:not(.dark) .border-neutral-800 { border-color: #e5e7eb; }
+  html:not(.dark) .hover\:bg-surface-2:hover { background-color: #f3f4f6; }
+  html:not(.dark) .hover\:bg-surface-3:hover { background-color: #e5e7eb; }
+  html:not(.dark) .hover\:text-white:hover { color: #111827; }
+  html:not(.dark) .bg-black\/40 { background-color: rgba(0,0,0,0.05); }
+  html:not(.dark) .focus-within\:border-accent\/50:focus-within { border-color: rgba(129,140,248,0.5); }
 </style>
 </head>
 <body x-data="app()" x-cloak>
@@ -55,7 +93,7 @@ tailwind.config = {
     <div class="flex items-center gap-4 md:gap-6 min-w-0">
       <div class="flex items-baseline gap-2 shrink-0">
         <span class="text-lg font-bold tracking-tight text-white">MRDN</span>
-        <span class="hidden sm:inline text-[11px] uppercase tracking-wider text-neutral-400">Meridian</span>
+        <span class="hidden sm:inline text-xs uppercase tracking-wider text-neutral-400">Meridian</span>
       </div>
       <!-- Desktop tabs -->
       <div class="hidden md:flex gap-1">
@@ -75,11 +113,15 @@ tailwind.config = {
       </select>
     </div>
     <div class="flex items-center gap-3 shrink-0">
+      <button @click="toggleTheme()" class="p-1.5 rounded-md hover:bg-surface-2 transition-colors text-neutral-400 hover:text-white" aria-label="Toggle light/dark mode">
+        <svg x-show="darkMode" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+        <svg x-show="!darkMode" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+      </button>
       <div class="w-2 h-2 rounded-full" :class="connected ? 'bg-up' : 'bg-down'"></div>
     </div>
   </div>
   <div class="max-w-7xl mx-auto px-4 pb-2 -mt-1">
-    <p class="text-[11px] uppercase tracking-wider text-neutral-400">Trades that move with policy, people that move with both</p>
+    <p class="text-xs uppercase tracking-wider text-neutral-400">Trades that move with policy, people that move with both</p>
   </div>
 </nav>
 
@@ -123,7 +165,7 @@ tailwind.config = {
           :id="'mql-s-' + i"
           :aria-selected="i === mqlSuggestIdx"
           class="w-full text-left px-3 py-2 text-sm font-mono flex items-center gap-2">
-          <span class="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded"
+          <span class="text-xs uppercase tracking-wider px-1.5 py-0.5 rounded"
             :class="{
               'bg-accent/20 text-accent': s.type === 'key',
               'bg-up/20 text-up': s.type === 'value',
@@ -196,7 +238,7 @@ tailwind.config = {
         <template x-for="(row, idx) in mqlResults" :key="row.event_type + '-' + row.event_id + '-' + idx">
           <div class="bg-surface-1 border border-white/10 rounded-lg px-4 py-3">
             <div class="flex items-center gap-3 mb-1">
-              <span class="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded font-semibold"
+              <span class="text-xs uppercase tracking-wider px-1.5 py-0.5 rounded font-semibold"
                 :class="{
                   'bg-accent/20 text-accent': row.event_type === 'trade',
                   'bg-up/20 text-up': row.event_type === 'contract',
@@ -298,8 +340,8 @@ tailwind.config = {
     <!-- Insights Card -->
     <div x-show="insightHero" class="bg-surface-1 rounded-xl border border-white/15 p-5">
       <div class="flex items-center gap-2 mb-3">
-        <span class="text-[10px] uppercase tracking-widest text-accent font-semibold">Insights</span>
-        <span class="text-[10px] text-neutral-500" x-show="insights.length" x-text="'· ' + insights.length + ' patterns detected'"></span>
+        <span class="text-xs uppercase tracking-widest text-accent font-semibold">Insights</span>
+        <span class="text-xs text-neutral-500" x-show="insights.length" x-text="'· ' + insights.length + ' patterns detected'"></span>
       </div>
       <div class="flex gap-5" style="align-items:stretch">
         <!-- Hero -->
@@ -309,25 +351,25 @@ tailwind.config = {
             <template x-if="Array.isArray(insightHero?.data)">
               <div>
                 <template x-for="(row, i) in (insightHero?.data || []).slice(0, 4)" :key="i">
-                  <div class="flex items-center gap-3 text-[11px] text-neutral-400">
+                  <div class="flex items-center gap-3 text-xs text-neutral-400">
                     <span class="text-neutral-300" x-text="row.name"></span>
                     <span x-text="row.action || row.trade_type || ''"></span>
                     <span x-text="row.amount || ''"></span>
                     <span class="text-neutral-500 ml-auto" x-text="row.date || ''"></span>
                   </div>
                 </template>
-                <div x-show="(insightHero?.data || []).length > 4" class="text-[10px] text-neutral-500" x-text="'+' + ((insightHero?.data || []).length - 4) + ' more'"></div>
+                <div x-show="(insightHero?.data || []).length > 4" class="text-xs text-neutral-500" x-text="'+' + ((insightHero?.data || []).length - 4) + ' more'"></div>
               </div>
             </template>
             <template x-if="insightHero?.data && !Array.isArray(insightHero?.data)">
-              <div class="flex flex-wrap gap-3 text-[11px] text-neutral-400">
+              <div class="flex flex-wrap gap-3 text-xs text-neutral-400">
                 <template x-for="(val, key) in insightHero.data" :key="key">
                   <span><span class="text-neutral-500" x-text="key.replace(/_/g, ' ') + ': '"></span><span class="text-neutral-300" x-text="val"></span></span>
                 </template>
               </div>
             </template>
           </div>
-          <div class="text-[10px] text-neutral-500 mt-2">
+          <div class="text-xs text-neutral-500 mt-2">
             <span x-text="insightHero?.type?.replace(/_/g, ' ')"></span>
             <span class="mx-1">·</span>
             <span>rarity <span class="text-accent" x-text="insightHero?.rarity_score"></span></span>
@@ -339,9 +381,9 @@ tailwind.config = {
         <div class="flex-1 flex flex-col gap-3">
           <template x-for="sec in insightSecondaries" :key="sec.id">
             <div @click="insightClick(sec)" class="bg-surface-2 rounded-lg p-3 cursor-pointer hover:bg-surface-3 transition-colors flex-1">
-              <div class="text-[11px] text-accent mb-1" x-text="sec.type?.replace(/_/g, ' ')"></div>
+              <div class="text-xs text-accent mb-1" x-text="sec.type?.replace(/_/g, ' ')"></div>
               <div class="text-xs text-neutral-300" x-text="sec.headline"></div>
-              <div class="text-[10px] text-neutral-500 mt-1.5">
+              <div class="text-xs text-neutral-500 mt-1.5">
                 <span>rarity <span class="text-accent" x-text="sec.rarity_score"></span></span>
                 <span class="mx-1">·</span>
                 <span x-text="insightAge(sec)"></span>
@@ -354,12 +396,12 @@ tailwind.config = {
     <!-- Activity Strip -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3" x-show="stats">
       <div class="bg-surface-1 border border-white/15 rounded-xl px-4 py-3">
-        <div class="text-[10px] uppercase tracking-wider text-neutral-400">Events / 24h</div>
+        <div class="text-xs uppercase tracking-wider text-neutral-400">Events / 24h</div>
         <div class="text-2xl font-bold font-mono text-white" x-text="stats?.events_last_24h?.toLocaleString() || '0'"></div>
         <div class="text-xs text-neutral-400" x-text="(stats?.events_last_7d?.toLocaleString() || '0') + ' this week'"></div>
       </div>
       <div class="bg-surface-1 border border-white/15 rounded-xl px-4 py-3">
-        <div class="text-[10px] uppercase tracking-wider text-neutral-400">Companies Scored</div>
+        <div class="text-xs uppercase tracking-wider text-neutral-400">Companies Scored</div>
         <div class="text-2xl font-bold font-mono text-white">
           <span x-text="stats?.companies_scored?.toLocaleString() || '0'"></span>
           <span class="text-sm text-neutral-400 font-normal">/ <span x-text="stats?.companies_total?.toLocaleString() || '0'"></span></span>
@@ -367,11 +409,11 @@ tailwind.config = {
         <div class="text-xs text-neutral-400">tracked universe</div>
       </div>
       <div class="bg-surface-1 border border-white/15 rounded-xl px-4 py-3 md:col-span-2">
-        <div class="text-[10px] uppercase tracking-wider text-neutral-400">Activity Mix (24h)</div>
-        <div class="text-[11px] text-neutral-400 mb-1.5">What kinds of events we ingested in the last 24 hours — a quick read on which signals are firing.</div>
+        <div class="text-xs uppercase tracking-wider text-neutral-400">Activity Mix (24h)</div>
+        <div class="text-xs text-neutral-400 mb-1.5">What kinds of events we ingested in the last 24 hours — a quick read on which signals are firing.</div>
         <div class="flex flex-wrap gap-1.5">
           <template x-for="c in stats?.categories_last_24h || []" :key="c.category">
-            <span @click="latestRange='7d'; navigate('signals')" class="text-[11px] px-2 py-0.5 rounded-full cursor-pointer hover:ring-1 hover:ring-white/30 transition" :class="eventBadge(c.category)">
+            <span @click="latestRange='7d'; navigate('signals')" class="text-xs px-2 py-0.5 rounded-full cursor-pointer hover:ring-1 hover:ring-white/30 transition" :class="eventBadge(c.category)">
               <span x-text="prettyEventType(c.category)"></span>
               <span class="font-mono opacity-70 ml-1" x-text="c.count.toLocaleString()"></span>
             </span>
@@ -389,7 +431,7 @@ tailwind.config = {
             <p class="text-xs text-neutral-400 mt-0.5" x-text="heatmapMode === 'party' ? 'Congressional trade counts by party and GICS sector. Click a cell to drill into the underlying trades.' : 'Trade counts for the 15 most active representatives across the last 12 months. Click a cell to drill in.'"></p>
           </div>
           <div class="flex items-center gap-2 shrink-0">
-            <div class="flex items-center rounded-md bg-surface-2 border border-white/15 p-0.5 text-[11px] font-medium">
+            <div class="flex items-center rounded-md bg-surface-2 border border-white/15 p-0.5 text-xs font-medium">
               <button @click="setHeatmapMode('party')" :class="heatmapMode === 'party' ? 'bg-surface-3 text-white' : 'text-neutral-400 hover:text-white'" class="px-2.5 py-1 rounded transition-colors">Party × Sector</button>
               <button @click="setHeatmapMode('repmonth')" :class="heatmapMode === 'repmonth' ? 'bg-surface-3 text-white' : 'text-neutral-400 hover:text-white'" class="px-2.5 py-1 rounded transition-colors">Reps × Months</button>
             </div>
@@ -409,7 +451,7 @@ tailwind.config = {
                 <span class="text-xs text-neutral-400 ml-2 truncate" x-text="m.name"></span>
               </div>
               <div class="flex items-center gap-3">
-                <div class="hidden sm:flex items-center gap-1.5 text-[10px] text-neutral-400">
+                <div class="hidden sm:flex items-center gap-1.5 text-xs text-neutral-400">
                   <span>M:<span class="font-mono" :style="`color:${scoreColor(m.market)}`" x-text="m.market?.toFixed(0) ?? '—'"></span></span>
                   <span>P:<span class="font-mono" :style="`color:${scoreColor(m.policy)}`" x-text="m.policy?.toFixed(0) ?? '—'"></span></span>
                   <span>I:<span class="font-mono" :style="`color:${scoreColor(m.insider)}`" x-text="m.insider?.toFixed(0) ?? '—'"></span></span>
@@ -451,7 +493,7 @@ tailwind.config = {
             <template x-for="r in timeRangeOptions" :key="r.key">
               <button @click="setLatestRange(r.key)"
                 :class="latestRange === r.key ? 'bg-surface-3 text-white border-white/30' : 'bg-surface-2 text-neutral-300 border-white/15 hover:bg-surface-3'"
-                class="text-[11px] font-mono px-2 py-1 rounded border transition-colors"
+                class="text-xs font-mono px-2 py-1 rounded border transition-colors"
                 :aria-pressed="latestRange === r.key"
                 x-text="r.label"></button>
             </template>
@@ -462,7 +504,7 @@ tailwind.config = {
             <div @click="eventTicker(e) && openCompany(eventTicker(e))"
               :class="eventTicker(e) ? 'cursor-pointer' : ''"
               class="flex items-center gap-3 p-2 rounded-lg hover:bg-surface-2 transition-colors">
-              <span class="shrink-0 text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded w-24 text-center"
+              <span class="shrink-0 text-xs font-semibold uppercase tracking-wide px-2 py-0.5 rounded w-24 text-center"
                 :class="eventBadge(e.event_type)"
                 x-text="eventCategory(e.event_type)"></span>
               <div class="flex-1 min-w-0">
@@ -664,7 +706,7 @@ tailwind.config = {
                 <div class="h-full" :style="`width:${scoreContribution('policy')}%;background:#a78bfa`" :title="`Policy contributes ${scoreContribution('policy').toFixed(1)} to the composite`"></div>
                 <div class="h-full" :style="`width:${scoreContribution('insider')}%;background:#fbbf24`" :title="`Insider contributes ${scoreContribution('insider').toFixed(1)} to the composite`"></div>
               </div>
-              <div class="flex justify-between text-[10px] text-neutral-400 mt-1 font-mono">
+              <div class="flex justify-between text-xs text-neutral-400 mt-1 font-mono">
                 <span><span class="text-[#60a5fa]">&#9632;</span> M <span x-text="scoreContribution('market').toFixed(0)"></span></span>
                 <span><span class="text-[#a78bfa]">&#9632;</span> P <span x-text="scoreContribution('policy').toFixed(0)"></span></span>
                 <span><span class="text-[#fbbf24]">&#9632;</span> I <span x-text="scoreContribution('insider').toFixed(0)"></span></span>
@@ -803,7 +845,7 @@ tailwind.config = {
       <div class="flex-1 text-sm">
         <div class="text-yellow-200 font-semibold">No trading disclosures ingested yet</div>
         <div class="text-yellow-200/70 mt-1">The persons table is seeded with <span x-text="persons.length"></span> high-profile figures, but no congressional trades, committee assignments, or external IDs have been loaded. Until then, this page is just a roster — sorting by "influence" is meaningless because every score is zero. Run an EFDS / House PTR ingester to bring it to life.</div>
-        <code class="inline-block mt-2 bg-black/40 text-yellow-100 px-2 py-1 rounded text-[11px] font-mono">go run ./cmd/mrdn ingest-efds</code>
+        <code class="inline-block mt-2 bg-black/40 text-yellow-100 px-2 py-1 rounded text-xs font-mono">go run ./cmd/mrdn ingest-efds</code>
       </div>
     </div>
 
@@ -836,29 +878,29 @@ tailwind.config = {
                 <div class="font-semibold text-white truncate" x-text="p.name"></div>
                 <div class="text-sm text-neutral-400 mt-0.5 capitalize" x-text="(p.role || '').replace('_',' ')"></div>
               </div>
-              <span class="text-[10px] font-bold px-2 py-1 rounded shrink-0"
+              <span class="text-xs font-bold px-2 py-1 rounded shrink-0"
                 :class="partyBadge(p.party)"
                 x-text="p.party || '—'"></span>
             </div>
             <div class="flex flex-wrap gap-1.5 mt-3">
-              <span class="text-[10px] px-2 py-0.5 rounded-full bg-surface-3 text-neutral-300 capitalize" x-text="p.branch || '—'"></span>
-              <span x-show="p.state" class="text-[10px] px-2 py-0.5 rounded-full bg-surface-3 text-neutral-300" x-text="p.state"></span>
-              <span class="text-[10px] px-2 py-0.5 rounded-full bg-accent/15 text-accent-light tip"
+              <span class="text-xs px-2 py-0.5 rounded-full bg-surface-3 text-neutral-300 capitalize" x-text="p.branch || '—'"></span>
+              <span x-show="p.state" class="text-xs px-2 py-0.5 rounded-full bg-surface-3 text-neutral-300" x-text="p.state"></span>
+              <span class="text-xs px-2 py-0.5 rounded-full bg-accent/15 text-accent-light tip"
                 :data-tip="'Tier ' + p.tier + ' — ' + (p.tier === 1 ? 'top influence (party leadership, key committees)' : p.tier === 2 ? 'high influence (active traders, swing votes)' : 'tracked but lower-impact')"
                 x-text="'T' + p.tier"></span>
             </div>
             <div x-show="(p.trade_count || 0) > 0" class="mt-3 pt-3 border-t border-white/15 flex items-baseline gap-4">
               <div>
                 <div class="text-lg font-bold text-accent-light tabular-nums" x-text="fmtMoney(p.est_volume_usd)"></div>
-                <div class="text-[10px] uppercase tracking-wider text-neutral-400">est. volume</div>
+                <div class="text-xs uppercase tracking-wider text-neutral-400">est. volume</div>
               </div>
               <div>
                 <div class="text-lg font-bold text-white tabular-nums" x-text="(p.trade_count || 0).toLocaleString()"></div>
-                <div class="text-[10px] uppercase tracking-wider text-neutral-400">trades</div>
+                <div class="text-xs uppercase tracking-wider text-neutral-400">trades</div>
               </div>
               <div>
                 <div class="text-lg font-bold text-white tabular-nums" x-text="(p.tickers_touched || 0).toLocaleString()"></div>
-                <div class="text-[10px] uppercase tracking-wider text-neutral-400">tickers</div>
+                <div class="text-xs uppercase tracking-wider text-neutral-400">tickers</div>
               </div>
             </div>
           </div>
@@ -914,23 +956,23 @@ tailwind.config = {
     <!-- Headline summary -->
     <div x-show="complianceSummary" class="grid grid-cols-2 md:grid-cols-4 gap-3">
       <div class="bg-surface-1 rounded-xl border border-white/15 p-4">
-        <div class="text-[10px] uppercase tracking-wider text-neutral-400">Trades scored</div>
+        <div class="text-xs uppercase tracking-wider text-neutral-400">Trades scored</div>
         <div class="text-2xl font-bold text-white tabular-nums mt-1" x-text="(complianceSummary?.total_scoreable || 0).toLocaleString()"></div>
       </div>
       <div class="bg-surface-1 rounded-xl border border-white/15 p-4">
-        <div class="text-[10px] uppercase tracking-wider text-neutral-400">Median latency</div>
+        <div class="text-xs uppercase tracking-wider text-neutral-400">Median latency</div>
         <div class="text-2xl font-bold text-white tabular-nums mt-1"><span x-text="complianceSummary?.median_days || 0"></span><span class="text-sm text-neutral-400 ml-1">days</span></div>
       </div>
       <div class="bg-surface-1 rounded-xl border border-white/15 p-4">
-        <div class="text-[10px] uppercase tracking-wider text-neutral-400">Filed late (>45d)</div>
+        <div class="text-xs uppercase tracking-wider text-neutral-400">Filed late (>45d)</div>
         <div class="text-2xl font-bold tabular-nums mt-1"
           :class="(complianceSummary?.late_pct || 0) > 0.25 ? 'text-red-400' : (complianceSummary?.late_pct || 0) > 0.1 ? 'text-yellow-400' : 'text-white'">
           <span x-text="Math.round((complianceSummary?.late_pct || 0) * 100)"></span>%
         </div>
-        <div class="text-[10px] text-neutral-400 mt-0.5"><span x-text="(complianceSummary?.late_count || 0).toLocaleString()"></span> trades</div>
+        <div class="text-xs text-neutral-400 mt-0.5"><span x-text="(complianceSummary?.late_count || 0).toLocaleString()"></span> trades</div>
       </div>
       <div class="bg-surface-1 rounded-xl border border-white/15 p-4">
-        <div class="text-[10px] uppercase tracking-wider text-neutral-400">Worst single trade</div>
+        <div class="text-xs uppercase tracking-wider text-neutral-400">Worst single trade</div>
         <div class="text-2xl font-bold text-red-400 tabular-nums mt-1"><span x-text="(complianceSummary?.worst_days || 0).toLocaleString()"></span><span class="text-sm text-neutral-400 ml-1">days late</span></div>
       </div>
     </div>
@@ -951,11 +993,11 @@ tailwind.config = {
         <span class="text-xs text-neutral-400 ml-auto" x-text="complianceTotal + ' people'"></span>
       </div>
       <div x-show="compliance.length === 0" class="text-neutral-400 text-sm text-center py-12">
-        No latency data — run <code class="bg-black/40 px-2 py-1 rounded text-[11px]">go run ./cmd/mrdn ingest-house-trades</code>
+        No latency data — run <code class="bg-black/40 px-2 py-1 rounded text-xs">go run ./cmd/mrdn ingest-house-trades</code>
       </div>
       <div x-show="compliance.length > 0" class="overflow-x-auto">
         <table class="w-full text-sm">
-          <thead class="bg-surface-2 text-[10px] uppercase tracking-wider text-neutral-400">
+          <thead class="bg-surface-2 text-xs uppercase tracking-wider text-neutral-400">
             <tr>
               <th class="text-left px-4 py-2">#</th>
               <th class="text-left px-4 py-2">Representative</th>
@@ -974,10 +1016,10 @@ tailwind.config = {
                 <td class="px-4 py-2">
                   <div class="flex items-center gap-2">
                     <span class="text-white font-medium" x-text="c.name"></span>
-                    <span class="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                    <span class="text-xs font-bold px-1.5 py-0.5 rounded"
                       :class="partyBadge(c.party)"
                       x-text="c.party || '—'"></span>
-                    <span x-show="c.state" class="text-[10px] text-neutral-400" x-text="c.state"></span>
+                    <span x-show="c.state" class="text-xs text-neutral-400" x-text="c.state"></span>
                   </div>
                 </td>
                 <td class="px-4 py-2 text-right tabular-nums text-neutral-300" x-text="c.trades.toLocaleString()"></td>
@@ -1004,7 +1046,7 @@ tailwind.config = {
           :disabled="(compliancePage+1)*30 >= complianceTotal"
           class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Next</button>
       </div>
-      <div class="px-4 py-3 border-t border-white/15 text-[11px] text-neutral-400">
+      <div class="px-4 py-3 border-t border-white/15 text-xs text-neutral-400">
         Source: House Clerk Periodic Transaction Reports. Latency = days between transaction date and filing date. The 45-day threshold comes from the STOCK Act of 2012 (Pub. L. 112-105). Trades missing either date are excluded.
       </div>
     </div>
@@ -1032,7 +1074,7 @@ tailwind.config = {
         <div x-show="swarms.length === 0" class="text-neutral-400 text-sm text-center py-12">No swarms found</div>
         <div x-show="swarms.length > 0" class="overflow-x-auto">
           <table class="w-full text-sm">
-            <thead class="bg-surface-2 text-[10px] uppercase tracking-wider text-neutral-400">
+            <thead class="bg-surface-2 text-xs uppercase tracking-wider text-neutral-400">
               <tr>
                 <th class="text-left px-4 py-2">Week of</th>
                 <th class="text-left px-4 py-2">Ticker</th>
@@ -1073,7 +1115,7 @@ tailwind.config = {
             :disabled="(swarmPage+1)*30 >= swarmTotal"
             class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Next</button>
         </div>
-        <div class="px-4 py-3 border-t border-white/15 text-[11px] text-neutral-400">
+        <div class="px-4 py-3 border-t border-white/15 text-xs text-neutral-400">
           Buckets are ISO calendar weeks. A "rep" is a unique person_id; a "trade" is a row in congressional_trades. Tickers like "--" or empty are excluded.
         </div>
       </div>
@@ -1102,22 +1144,22 @@ tailwind.config = {
               <div class="bg-surface-2 rounded-xl border border-white/15 p-4">
                 <div class="flex items-center gap-3 mb-3">
                   <span class="font-mono text-lg font-bold text-accent-light cursor-pointer hover:underline" @click.stop="openTicker(fm.ticker)" x-text="fm.ticker"></span>
-                  <span class="text-[10px] uppercase tracking-wider text-neutral-400" x-text="fm.total_buyers + ' buyers'"></span>
-                  <span class="ml-auto text-[10px] text-neutral-400" x-text="fmtDate(fm.first_date)"></span>
+                  <span class="text-xs uppercase tracking-wider text-neutral-400" x-text="fm.total_buyers + ' buyers'"></span>
+                  <span class="ml-auto text-xs text-neutral-400" x-text="fmtDate(fm.first_date)"></span>
                 </div>
                 <div class="space-y-1.5">
                   <div class="flex items-center gap-2 text-sm">
-                    <span class="text-[10px] font-bold text-accent w-12 shrink-0">FIRST</span>
+                    <span class="text-xs font-bold text-accent w-12 shrink-0">FIRST</span>
                     <span class="text-white font-medium truncate" x-text="fm.first_buyer"></span>
-                    <span class="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0"
+                    <span class="text-xs font-bold px-1.5 py-0.5 rounded shrink-0"
                       :class="partyBadge(fm.first_party)"
                       x-text="fm.first_party || '—'"></span>
                   </div>
                   <template x-for="(f, fi) in (fm.followers || [])" :key="fi">
                     <div class="flex items-center gap-2 text-xs pl-2 border-l border-white/15">
-                      <span class="text-[10px] font-mono text-neutral-400 w-12 shrink-0" x-text="'+' + f.lag_days + 'd'"></span>
+                      <span class="text-xs font-mono text-neutral-400 w-12 shrink-0" x-text="'+' + f.lag_days + 'd'"></span>
                       <span class="text-neutral-300 truncate" x-text="f.name"></span>
-                      <span class="text-[9px] font-bold px-1 py-0.5 rounded shrink-0"
+                      <span class="text-xs font-bold px-1 py-0.5 rounded shrink-0"
                         :class="partyBadge(f.party)"
                         x-text="f.party || '—'"></span>
                     </div>
@@ -1162,7 +1204,7 @@ tailwind.config = {
         <div x-show="roundTrips.length === 0 && _allRoundTrips" class="text-neutral-400 text-sm text-center py-12">No round trips found</div>
         <div x-show="roundTrips.length > 0" class="overflow-x-auto">
           <table class="w-full text-sm">
-            <thead class="bg-surface-2 text-[10px] uppercase tracking-wider text-neutral-400">
+            <thead class="bg-surface-2 text-xs uppercase tracking-wider text-neutral-400">
               <tr>
                 <th class="text-left px-4 py-2">Representative</th>
                 <th class="text-left px-4 py-2">Ticker</th>
@@ -1178,7 +1220,7 @@ tailwind.config = {
                 <tr class="border-t border-white/15 hover:bg-surface-2/50 cursor-pointer" @click="openPerson(rt.slug)">
                   <td class="px-4 py-2">
                     <span class="text-white font-medium" x-text="rt.name"></span>
-                    <span class="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded"
+                    <span class="ml-2 text-xs font-bold px-1.5 py-0.5 rounded"
                       :class="partyBadge(rt.party)"
                       x-text="rt.party || '—'"></span>
                   </td>
@@ -1206,7 +1248,7 @@ tailwind.config = {
             :disabled="(roundTripPage+1)*30 >= roundTripTotal"
             class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Next</button>
         </div>
-        <div class="px-4 py-3 border-t border-white/15 text-[11px] text-neutral-400">
+        <div class="px-4 py-3 border-t border-white/15 text-xs text-neutral-400">
           Showing buys ≥ $15K with the next sale within 60 days. Buy/sell dollar amounts are midpoints of the disclosed STOCK Act ranges — actual amounts may be higher or lower within the disclosed bracket.
         </div>
       </div>
@@ -1238,7 +1280,7 @@ tailwind.config = {
           <div x-show="partisan.length === 0" class="text-neutral-400 text-sm text-center py-12">No partisan data available</div>
           <div x-show="partisan.length > 0" class="overflow-x-auto">
             <table class="w-full text-sm">
-              <thead class="bg-surface-2 text-[10px] uppercase tracking-wider text-neutral-400">
+              <thead class="bg-surface-2 text-xs uppercase tracking-wider text-neutral-400">
                 <tr>
                   <th class="text-left px-4 py-2">Ticker</th>
                   <th class="text-right px-4 py-2">Total reps</th>
@@ -1275,7 +1317,7 @@ tailwind.config = {
               :disabled="(partisanPage+1)*30 >= partisanTotal"
               class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Next</button>
           </div>
-          <div class="px-4 py-3 border-t border-white/15 text-[11px] text-neutral-400">
+          <div class="px-4 py-3 border-t border-white/15 text-xs text-neutral-400">
             Counts are distinct representatives, not trade rows — one rep buying NVDA ten times counts as one buyer. Independents and reps with no party flag are excluded. Minimum 4 reps total.
           </div>
         </div>
@@ -1297,11 +1339,11 @@ tailwind.config = {
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-3 flex-wrap">
                 <h1 class="text-2xl font-bold text-white" x-text="personProfile.name"></h1>
-                <span class="text-[10px] font-bold px-2 py-1 rounded"
+                <span class="text-xs font-bold px-2 py-1 rounded"
                   :class="partyBadge(personProfile.party)"
                   x-text="personProfile.party || '—'"></span>
                 <span x-show="personProfile.state" class="text-xs text-neutral-400" x-text="personProfile.state"></span>
-                <span class="text-[10px] px-2 py-0.5 rounded-full bg-accent/15 text-accent-light" x-text="'Tier ' + personProfile.tier"></span>
+                <span class="text-xs px-2 py-0.5 rounded-full bg-accent/15 text-accent-light" x-text="'Tier ' + personProfile.tier"></span>
               </div>
               <div class="text-sm text-neutral-400 mt-1">
                 Active <span class="text-neutral-300" x-text="fmtDate(personProfile.first_trade)"></span>
@@ -1310,11 +1352,11 @@ tailwind.config = {
               <!-- Party history (only shown for switchers) -->
               <div x-show="personProfile.party_history && personProfile.party_history.length > 0"
                    class="mt-3 pt-3 border-t border-white/15">
-                <div class="text-[10px] uppercase tracking-wider text-neutral-400 mb-1.5">Party history</div>
+                <div class="text-xs uppercase tracking-wider text-neutral-400 mb-1.5">Party history</div>
                 <div class="flex items-center gap-2 flex-wrap text-xs">
                   <template x-for="(ph, i) in (personProfile.party_history || [])" :key="i">
                     <div class="flex items-center gap-2">
-                      <span class="text-[10px] font-bold px-2 py-0.5 rounded"
+                      <span class="text-xs font-bold px-2 py-0.5 rounded"
                         :class="partyBadge(ph.party)"
                         x-text="ph.party"></span>
                       <span class="text-neutral-400 tabular-nums" x-text="(ph.started_at || '…') + ' → ' + (ph.ended_at || 'present')"></span>
@@ -1330,35 +1372,35 @@ tailwind.config = {
         <!-- Headline tiles -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div class="bg-surface-1 rounded-xl border border-white/15 p-4">
-            <div class="text-[10px] uppercase tracking-wider text-neutral-400">Estimated volume</div>
+            <div class="text-xs uppercase tracking-wider text-neutral-400">Estimated volume</div>
             <div class="text-2xl font-bold text-accent-light tabular-nums mt-1" x-text="fmtMoney(personProfile.est_volume_usd)"></div>
-            <div class="text-[10px] text-neutral-400 mt-0.5">midpoint of disclosed ranges</div>
+            <div class="text-xs text-neutral-400 mt-0.5">midpoint of disclosed ranges</div>
           </div>
           <div class="bg-surface-1 rounded-xl border border-white/15 p-4">
-            <div class="text-[10px] uppercase tracking-wider text-neutral-400">Trades · tickers</div>
+            <div class="text-xs uppercase tracking-wider text-neutral-400">Trades · tickers</div>
             <div class="text-2xl font-bold text-white tabular-nums mt-1">
               <span x-text="personProfile.trades.toLocaleString()"></span>
               <span class="text-neutral-400 text-base mx-1">·</span>
               <span x-text="personProfile.tickers.toLocaleString()"></span>
             </div>
-            <div class="text-[10px] text-neutral-400 mt-0.5">
+            <div class="text-xs text-neutral-400 mt-0.5">
               <span class="text-green-400" x-text="personProfile.buys + ' buys'"></span>
               <span class="text-neutral-400 mx-1">/</span>
               <span class="text-red-400" x-text="personProfile.sells + ' sells'"></span>
             </div>
           </div>
           <div class="bg-surface-1 rounded-xl border border-white/15 p-4">
-            <div class="text-[10px] uppercase tracking-wider text-neutral-400">Median STOCK Act lag</div>
+            <div class="text-xs uppercase tracking-wider text-neutral-400">Median STOCK Act lag</div>
             <div class="text-2xl font-bold tabular-nums mt-1"
               :class="personProfile.median_latency_days > 90 ? 'text-red-400' : personProfile.median_latency_days > 45 ? 'text-yellow-400' : 'text-white'">
               <span x-text="personProfile.median_latency_days"></span><span class="text-sm text-neutral-400 ml-1">days</span>
             </div>
-            <div class="text-[10px] text-neutral-400 mt-0.5"><span x-text="Math.round(personProfile.late_pct * 100)"></span>% past the 45-day deadline</div>
+            <div class="text-xs text-neutral-400 mt-0.5"><span x-text="Math.round(personProfile.late_pct * 100)"></span>% past the 45-day deadline</div>
           </div>
           <div class="bg-surface-1 rounded-xl border border-white/15 p-4">
-            <div class="text-[10px] uppercase tracking-wider text-neutral-400">Swarm appearances</div>
+            <div class="text-xs uppercase tracking-wider text-neutral-400">Swarm appearances</div>
             <div class="text-2xl font-bold text-white tabular-nums mt-1" x-text="personProfile.swarm_count"></div>
-            <div class="text-[10px] text-neutral-400 mt-0.5">weeks where ≥4 reps clustered on the same ticker</div>
+            <div class="text-xs text-neutral-400 mt-0.5">weeks where ≥4 reps clustered on the same ticker</div>
           </div>
         </div>
 
@@ -1370,7 +1412,7 @@ tailwind.config = {
               :class="(personProfile.net_flow_usd || 0) > 0 ? 'text-green-400' : (personProfile.net_flow_usd || 0) < 0 ? 'text-red-400' : 'text-neutral-300'">
               <span x-text="(personProfile.net_flow_usd || 0) >= 0 ? '+' : '−'"></span><span x-text="fmtMoney(Math.abs(personProfile.net_flow_usd || 0))"></span>
             </div>
-            <div class="text-[11px] text-neutral-400 mt-1"
+            <div class="text-xs text-neutral-400 mt-1"
               x-text="(personProfile.net_flow_usd || 0) > 0 ? 'Net accumulator (more buying than selling)' : (personProfile.net_flow_usd || 0) < 0 ? 'Net seller (more dumping than buying)' : 'Balanced'"></div>
           </div>
           <div class="bg-surface-1 rounded-xl border border-white/15 p-5">
@@ -1379,7 +1421,7 @@ tailwind.config = {
               :class="(personProfile.concentration_hhi || 0) > 0.5 ? 'text-yellow-300' : 'text-white'">
               <span x-text="Math.round((personProfile.top_holding_pct || 0) * 100)"></span><span class="text-sm text-neutral-400 ml-1">% in top ticker</span>
             </div>
-            <div class="text-[11px] text-neutral-400 mt-1">
+            <div class="text-xs text-neutral-400 mt-1">
               HHI <span class="tabular-nums" x-text="(personProfile.concentration_hhi || 0).toFixed(2)"></span> — <span x-text="(personProfile.concentration_hhi || 0) > 0.5 ? 'highly concentrated' : (personProfile.concentration_hhi || 0) > 0.15 ? 'moderate' : 'diversified'"></span>
             </div>
           </div>
@@ -1397,14 +1439,14 @@ tailwind.config = {
                 </div>
               </template>
             </div>
-            <div class="text-[11px] text-neutral-400 mt-2">Joint = jointly held with spouse. Dependent = held by a dependent child.</div>
+            <div class="text-xs text-neutral-400 mt-2">Joint = jointly held with spouse. Dependent = held by a dependent child.</div>
           </div>
         </div>
 
         <!-- Volume timeline chart -->
         <div class="bg-surface-1 rounded-xl border border-white/15 p-5">
           <div class="text-xs uppercase tracking-wider text-neutral-400 mb-2">Monthly disclosed volume</div>
-          <div class="text-[11px] text-neutral-400 mb-3">Bars colored green when buys dominate the month, red when sells dominate, gray when balanced.</div>
+          <div class="text-xs text-neutral-400 mb-3">Bars colored green when buys dominate the month, red when sells dominate, gray when balanced.</div>
           <div id="person-volume-chart" style="height: 260px;"></div>
         </div>
 
@@ -1433,8 +1475,8 @@ tailwind.config = {
                 <div class="flex items-center gap-3 text-sm hover:bg-surface-2/40 px-1 -mx-1 rounded cursor-pointer" @click="openTicker(t.ticker)">
                   <span class="font-mono font-semibold text-accent-light w-16 shrink-0 hover:underline" x-text="t.ticker"></span>
                   <span class="text-neutral-400 tabular-nums w-12 shrink-0" x-text="t.trades + 'x'"></span>
-                  <span class="text-[10px] text-green-400 tabular-nums w-10 shrink-0" x-text="t.buys ? '+' + t.buys : ''"></span>
-                  <span class="text-[10px] text-red-400 tabular-nums w-10 shrink-0" x-text="t.sells ? '−' + t.sells : ''"></span>
+                  <span class="text-xs text-green-400 tabular-nums w-10 shrink-0" x-text="t.buys ? '+' + t.buys : ''"></span>
+                  <span class="text-xs text-red-400 tabular-nums w-10 shrink-0" x-text="t.sells ? '−' + t.sells : ''"></span>
                   <span class="text-accent-light tabular-nums ml-auto" x-text="fmtMoney(t.est_volume)"></span>
                 </div>
               </template>
@@ -1443,7 +1485,7 @@ tailwind.config = {
 
           <div class="bg-surface-1 rounded-xl border border-white/15 p-5">
             <div class="text-xs uppercase tracking-wider text-neutral-400 mb-1">Solo plays</div>
-            <div class="text-[11px] text-neutral-400 mb-3">Tickers no other tracked rep ever touched. The lonelier the trade, the more interesting the question.</div>
+            <div class="text-xs text-neutral-400 mb-3">Tickers no other tracked rep ever touched. The lonelier the trade, the more interesting the question.</div>
             <div x-show="!personProfile.solo_tickers?.length" class="text-neutral-400 text-sm text-center py-6">None — every ticker this rep touched was also touched by someone else</div>
             <div class="space-y-1.5">
               <template x-for="t in (personProfile.solo_tickers || [])" :key="t.ticker">
@@ -1462,13 +1504,13 @@ tailwind.config = {
           <div class="flex items-center justify-between mb-3">
             <div>
               <h3 class="text-sm font-semibold text-white">Trading neighbors</h3>
-              <p class="text-[11px] text-neutral-400 mt-0.5">Other representatives whose trades landed on the same ticker within 14 days of this rep's. Pure time proximity — no inference of coordination.</p>
+              <p class="text-xs text-neutral-400 mt-0.5">Other representatives whose trades landed on the same ticker within 14 days of this rep's. Pure time proximity — no inference of coordination.</p>
             </div>
             <button x-show="!coTraders.length" @click="fetchCoTraders(personProfile.slug)" class="text-xs px-3 py-1.5 bg-accent/15 text-accent-light hover:bg-accent/25 rounded transition">Compute</button>
           </div>
           <div x-show="coTraders.length > 0" class="overflow-x-auto">
             <table class="w-full text-xs">
-              <thead class="text-[10px] uppercase tracking-wider text-neutral-400">
+              <thead class="text-xs uppercase tracking-wider text-neutral-400">
                 <tr>
                   <th class="text-left py-1.5">Rep</th>
                   <th class="text-left py-1.5">Party</th>
@@ -1483,7 +1525,7 @@ tailwind.config = {
                   <tr class="border-t border-white/15 hover:bg-surface-2/40 cursor-pointer" @click="openPerson(c.slug)">
                     <td class="py-1.5 text-white font-medium" x-text="c.name"></td>
                     <td class="py-1.5">
-                      <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                      <span class="px-1.5 py-0.5 rounded text-xs font-semibold"
                             :class="partyBadge(c.party)"
                             x-text="c.party || '—'"></span>
                     </td>
@@ -1498,7 +1540,7 @@ tailwind.config = {
           </div>
         </div>
 
-        <div class="text-[11px] text-neutral-400 px-2">
+        <div class="text-xs text-neutral-400 px-2">
           Dollar amounts are estimates. Federal disclosure requires only an amount range (e.g. $1,001–$15,000); we use the midpoint of the disclosed range. Where only one bound is reported, we use that bound. Where neither is reported, the trade contributes $0 to volume.
         </div>
       </div>
@@ -1530,7 +1572,7 @@ tailwind.config = {
       <div x-show="topTickers.length === 0 && _allTopTickers" class="text-neutral-400 text-sm text-center py-12">No ticker data available</div>
       <div x-show="topTickers.length > 0" class="overflow-x-auto">
         <table class="w-full text-sm">
-          <thead class="bg-surface-2 text-[10px] uppercase tracking-wider text-neutral-400">
+          <thead class="bg-surface-2 text-xs uppercase tracking-wider text-neutral-400">
             <tr>
               <th class="text-left px-4 py-2 cursor-pointer hover:text-white" @click="tickerSort='ticker'; tickerPage=0; sortTickers()">Ticker</th>
               <th class="text-left px-4 py-2 text-neutral-400">Sector</th>
@@ -1569,7 +1611,7 @@ tailwind.config = {
           :disabled="(tickerPage+1)*30 >= tickerTotal"
           class="px-3 py-1 rounded text-sm bg-surface-2 hover:bg-surface-3 disabled:opacity-30">Next</button>
       </div>
-      <div class="px-4 py-3 border-t border-white/15 text-[11px] text-neutral-400">
+      <div class="px-4 py-3 border-t border-white/15 text-xs text-neutral-400">
         Buy/sell dollar amounts are midpoints of the disclosed STOCK Act ranges. R/D columns count distinct buyers per party — Independents and unflagged reps are excluded from those columns only.
       </div>
     </div>
@@ -1597,21 +1639,21 @@ tailwind.config = {
         <!-- Headline tiles -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div class="bg-surface-1 rounded-xl border border-white/15 p-4">
-            <div class="text-[10px] uppercase tracking-wider text-neutral-400">Total disclosed volume</div>
+            <div class="text-xs uppercase tracking-wider text-neutral-400">Total disclosed volume</div>
             <div class="text-2xl font-bold text-accent-light tabular-nums mt-1" x-text="fmtMoney(tickerDetail.summary.est_volume_usd)"></div>
-            <div class="text-[10px] text-neutral-400 mt-0.5"><span x-text="tickerDetail.summary.trades.toLocaleString()"></span> trades</div>
+            <div class="text-xs text-neutral-400 mt-0.5"><span x-text="tickerDetail.summary.trades.toLocaleString()"></span> trades</div>
           </div>
           <div class="bg-surface-1 rounded-xl border border-white/15 p-4">
-            <div class="text-[10px] uppercase tracking-wider text-neutral-400">Distinct reps</div>
+            <div class="text-xs uppercase tracking-wider text-neutral-400">Distinct reps</div>
             <div class="text-2xl font-bold text-white tabular-nums mt-1" x-text="tickerDetail.summary.distinct_reps"></div>
-            <div class="text-[10px] text-neutral-400 mt-0.5">
+            <div class="text-xs text-neutral-400 mt-0.5">
               <span class="text-green-400" x-text="tickerDetail.summary.buyers + ' buyers'"></span>
               <span class="text-neutral-400 mx-1">/</span>
               <span class="text-red-400" x-text="tickerDetail.summary.sellers + ' sellers'"></span>
             </div>
           </div>
           <div class="bg-surface-1 rounded-xl border border-white/15 p-4">
-            <div class="text-[10px] uppercase tracking-wider text-neutral-400">Buy / Sell $</div>
+            <div class="text-xs uppercase tracking-wider text-neutral-400">Buy / Sell $</div>
             <div class="text-lg font-bold tabular-nums mt-1">
               <span class="text-green-400" x-text="fmtMoney(tickerDetail.summary.buy_volume_usd)"></span>
               <span class="text-neutral-400 mx-1">/</span>
@@ -1619,7 +1661,7 @@ tailwind.config = {
             </div>
           </div>
           <div class="bg-surface-1 rounded-xl border border-white/15 p-4">
-            <div class="text-[10px] uppercase tracking-wider text-neutral-400">Partisan split (buyers)</div>
+            <div class="text-xs uppercase tracking-wider text-neutral-400">Partisan split (buyers)</div>
             <div class="text-lg font-bold tabular-nums mt-1">
               <span class="text-red-300" x-text="tickerDetail.summary.r_buyers + ' R'"></span>
               <span class="text-neutral-400 mx-1">/</span>
@@ -1632,11 +1674,11 @@ tailwind.config = {
         <div class="bg-surface-1 rounded-xl border border-white/15 overflow-hidden">
           <div class="px-5 pt-4 pb-2">
             <div class="text-xs uppercase tracking-wider text-neutral-400">Activity by representative</div>
-            <div class="text-[11px] text-neutral-400 mt-0.5">Sorted by total dollar volume on this ticker. Click any name for the full profile.</div>
+            <div class="text-xs text-neutral-400 mt-0.5">Sorted by total dollar volume on this ticker. Click any name for the full profile.</div>
           </div>
           <div class="overflow-x-auto">
             <table class="w-full text-sm">
-              <thead class="bg-surface-2/50 text-[10px] uppercase tracking-wider text-neutral-400">
+              <thead class="bg-surface-2/50 text-xs uppercase tracking-wider text-neutral-400">
                 <tr>
                   <th class="text-left px-4 py-2">Representative</th>
                   <th class="text-right px-4 py-2">Trades</th>
@@ -1651,10 +1693,10 @@ tailwind.config = {
                   <tr class="border-t border-white/15 hover:bg-surface-2/50 cursor-pointer" @click="openPerson(r.slug)">
                     <td class="px-4 py-2">
                       <span class="text-white font-medium hover:underline" x-text="r.name"></span>
-                      <span class="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded"
+                      <span class="ml-2 text-xs font-bold px-1.5 py-0.5 rounded"
                         :class="partyBadge(r.party)"
                         x-text="r.party || '—'"></span>
-                      <span x-show="r.state" class="text-[10px] text-neutral-400 ml-1" x-text="r.state"></span>
+                      <span x-show="r.state" class="text-xs text-neutral-400 ml-1" x-text="r.state"></span>
                     </td>
                     <td class="px-4 py-2 text-right tabular-nums text-neutral-300" x-text="r.trades"></td>
                     <td class="px-4 py-2 text-right tabular-nums text-green-400" x-text="r.buys || ''"></td>
@@ -1674,15 +1716,15 @@ tailwind.config = {
           <div class="space-y-2">
             <template x-for="(e, i) in (tickerDetail.recent || [])" :key="i">
               <div class="flex items-center gap-3 text-sm border-b border-white/15 last:border-0 pb-2">
-                <span class="text-[10px] tabular-nums text-neutral-400 w-20 shrink-0" x-text="e.traded_at"></span>
-                <span class="text-[10px] uppercase font-bold w-12 shrink-0"
+                <span class="text-xs tabular-nums text-neutral-400 w-20 shrink-0" x-text="e.traded_at"></span>
+                <span class="text-xs uppercase font-bold w-12 shrink-0"
                   :class="e.trade_type === 'purchase' ? 'text-green-400' : 'text-red-400'"
                   x-text="e.trade_type === 'purchase' ? 'BUY' : 'SELL'"></span>
                 <span class="text-white hover:underline cursor-pointer" @click="openPerson(e.slug)" x-text="e.name"></span>
-                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                <span class="text-xs font-bold px-1.5 py-0.5 rounded"
                   :class="partyBadge(e.party)"
                   x-text="e.party || '—'"></span>
-                <span x-show="e.owner_type && e.owner_type !== '--'" class="text-[10px] text-neutral-400 capitalize" x-text="e.owner_type"></span>
+                <span x-show="e.owner_type && e.owner_type !== '--'" class="text-xs text-neutral-400 capitalize" x-text="e.owner_type"></span>
                 <span class="ml-auto tabular-nums text-accent-light" x-text="fmtMoney(e.est_amount)"></span>
               </div>
             </template>
@@ -1762,7 +1804,7 @@ tailwind.config = {
         <!-- Trades mode -->
         <table x-show="!drillLoading && drillRows.length > 0 && drillMode === 'trades'" class="w-full text-sm">
           <thead class="bg-surface-2 sticky top-0">
-            <tr class="text-left text-[11px] uppercase tracking-wider text-neutral-400">
+            <tr class="text-left text-xs uppercase tracking-wider text-neutral-400">
               <th class="px-4 py-2">Traded</th>
               <th class="px-4 py-2">Rep</th>
               <th class="px-4 py-2">Ticker</th>
@@ -1777,10 +1819,10 @@ tailwind.config = {
                 <td class="px-4 py-2 text-neutral-400 tabular-nums" x-text="t.traded_at"></td>
                 <td class="px-4 py-2">
                   <span class="text-white hover:underline cursor-pointer" @click="closeDrill(); openPerson(t.person_slug)" x-text="t.person_name"></span>
-                  <span class="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded"
+                  <span class="ml-1.5 text-xs font-bold px-1.5 py-0.5 rounded"
                         :class="partyBadge(t.party)"
                         x-text="t.party || '—'"></span>
-                  <span x-show="t.state" class="text-[10px] text-neutral-400 ml-1" x-text="t.state"></span>
+                  <span x-show="t.state" class="text-xs text-neutral-400 ml-1" x-text="t.state"></span>
                 </td>
                 <td class="px-4 py-2 font-mono">
                   <span x-show="t.ticker" class="text-accent-light hover:underline cursor-pointer" @click="closeDrill(); openTicker(t.ticker)" x-text="t.ticker"></span>
@@ -1799,7 +1841,7 @@ tailwind.config = {
         <!-- Companies mode -->
         <table x-show="!drillLoading && drillRows.length > 0 && drillMode === 'companies'" class="w-full text-sm">
           <thead class="bg-surface-2 sticky top-0">
-            <tr class="text-left text-[11px] uppercase tracking-wider text-neutral-400">
+            <tr class="text-left text-xs uppercase tracking-wider text-neutral-400">
               <th class="px-4 py-2">Ticker</th>
               <th class="px-4 py-2">Name</th>
               <th class="px-4 py-2">Subsector</th>
@@ -1833,6 +1875,7 @@ function app() {
   return {
     view: 'dashboard',
     connected: false,
+    darkMode: localStorage.getItem('mrdn_theme') !== 'light',
 
     // Dashboard data
     movers: [],
@@ -1948,7 +1991,39 @@ function app() {
     mqlRecent: JSON.parse(localStorage.getItem('mrdn_mql_recent') || '[]'),
     mqlWorkerUrl: document.querySelector('meta[name="mql-worker-url"]')?.content || 'https://mrdn-query.mrdn.workers.dev',
 
+    toggleTheme() {
+      this.darkMode = !this.darkMode;
+      localStorage.setItem('mrdn_theme', this.darkMode ? 'dark' : 'light');
+      document.documentElement.classList.toggle('dark', this.darkMode);
+      // Re-render charts with the correct theme
+      this.$nextTick(() => {
+        if (this.view === 'dashboard') {
+          this.renderHeatmap();
+          this.renderActivityHeatmap();
+        }
+        if (this.view === 'company') {
+          this.renderScoreHistory();
+        }
+        if (this.view === 'person') {
+          this.renderPersonChart();
+        }
+      });
+    },
+
+    _echartsTheme() { return this.darkMode ? 'dark' : null; },
+    _echartsFg() { return this.darkMode ? '#a3a3a3' : '#6b7280'; },
+    _echartsBg() { return 'transparent'; },
+    _echartsGrid() { return this.darkMode ? '#1f1f1f' : '#e5e7eb'; },
+    _echartsBorder() { return this.darkMode ? '#0f0f0f' : '#f3f4f6'; },
+    _echartsLabel() { return this.darkMode ? '#f5f5f5' : '#111827'; },
+    _echartsEmpty() { return this.darkMode ? '#525252' : '#9ca3af'; },
+    _echartsTooltipBg() { return this.darkMode ? '#1f1f1f' : '#ffffff'; },
+    _echartsTooltipBorder() { return this.darkMode ? '#292929' : '#e5e7eb'; },
+    _echartsTooltipText() { return this.darkMode ? '#e5e5e5' : '#111827'; },
+
     init() {
+      // Apply theme class on load
+      document.documentElement.classList.toggle('dark', this.darkMode);
       window.addEventListener('hashchange', () => this._handleHash());
       this._handleHash();
       this.loadQueryIndex();
@@ -2152,23 +2227,24 @@ function app() {
     renderActivityHeatmap() {
       const el = document.getElementById('activity-heatmap');
       if (!el) return;
-      const chart = echarts.init(el, 'dark');
+      const chart = echarts.init(el, this._echartsTheme());
       if (!this.activityHeatmap.length) {
-        chart.setOption({ backgroundColor: 'transparent', graphic: { type: 'text', left: 'center', top: 'middle', style: { text: 'No trade activity yet', fill: '#525252', fontSize: 14 }}});
+        chart.setOption({ backgroundColor: this._echartsBg(), graphic: { type: 'text', left: 'center', top: 'middle', style: { text: 'No trade activity yet', fill: this._echartsEmpty(), fontSize: 14 }}});
         return;
       }
       const dows = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
       const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
       const data = this.activityHeatmap.map(c => [c.month - 1, c.dow, c.count]);
       const max = data.reduce((m, d) => Math.max(m, d[2]), 0);
+      const heatColors = this.darkMode ? ['#1a1a1a','#1e3a8a','#2563eb','#f59e0b','#ef4444'] : ['#f3f4f6','#bfdbfe','#3b82f6','#f59e0b','#ef4444'];
       chart.setOption({
-        backgroundColor: 'transparent',
+        backgroundColor: this._echartsBg(),
         tooltip: { formatter: p => `${dows[p.data[1]]} · ${months[p.data[0]]}<br/><b>${p.data[2]}</b> trades` },
         grid: { left: 50, right: 20, top: 10, bottom: 30 },
-        xAxis: { type: 'category', data: months, axisLabel: { color: '#a3a3a3', fontSize: 11 }, splitArea: { show: true } },
-        yAxis: { type: 'category', data: dows, axisLabel: { color: '#a3a3a3', fontSize: 11 }, splitArea: { show: true } },
-        visualMap: { min: 0, max: max || 1, calculable: false, orient: 'horizontal', left: 'center', bottom: 0, textStyle: { color: '#737373', fontSize: 10 }, inRange: { color: ['#1a1a1a','#1e3a8a','#2563eb','#f59e0b','#ef4444'] } },
-        series: [{ type: 'heatmap', data, label: { show: false }, itemStyle: { borderColor: '#0a0a0a', borderWidth: 1 } }]
+        xAxis: { type: 'category', data: months, axisLabel: { color: this._echartsFg(), fontSize: 12 }, splitArea: { show: true } },
+        yAxis: { type: 'category', data: dows, axisLabel: { color: this._echartsFg(), fontSize: 12 }, splitArea: { show: true } },
+        visualMap: { min: 0, max: max || 1, calculable: false, orient: 'horizontal', left: 'center', bottom: 0, textStyle: { color: this._echartsFg(), fontSize: 12 }, inRange: { color: heatColors } },
+        series: [{ type: 'heatmap', data, label: { show: false }, itemStyle: { borderColor: this._echartsBorder(), borderWidth: 1 } }]
       });
       this._bindResize('activity-heatmap', chart);
     },
@@ -2478,9 +2554,9 @@ function app() {
       const el = document.getElementById('person-volume-chart');
       if (!el || !this.personProfile?.monthly_volume?.length) return;
       const months = this.personProfile.monthly_volume;
-      const chart = echarts.init(el, 'dark');
+      const chart = echarts.init(el, this._echartsTheme());
       chart.setOption({
-        backgroundColor: 'transparent',
+        backgroundColor: this._echartsBg(),
         grid: { left: 50, right: 20, top: 20, bottom: 30 },
         tooltip: {
           trigger: 'axis',
@@ -2492,16 +2568,16 @@ function app() {
         xAxis: {
           type: 'category',
           data: months.map(m => m.month),
-          axisLabel: { color: '#737373', fontSize: 10 },
-          axisLine: { lineStyle: { color: '#262626' } }
+          axisLabel: { color: this._echartsFg(), fontSize: 12 },
+          axisLine: { lineStyle: { color: this._echartsGrid() } }
         },
         yAxis: {
           type: 'value',
           axisLabel: {
-            color: '#737373', fontSize: 10,
+            color: this._echartsFg(), fontSize: 12,
             formatter: (v) => v >= 1e6 ? `$${(v/1e6).toFixed(1)}M` : v >= 1e3 ? `$${(v/1e3).toFixed(0)}K` : `$${v}`
           },
-          splitLine: { lineStyle: { color: '#1f1f1f' } }
+          splitLine: { lineStyle: { color: this._echartsGrid() } }
         },
         series: [{
           type: 'bar',
@@ -2605,9 +2681,9 @@ function app() {
     },
 
     renderPartySectorHeatmap(el) {
-      const chart = echarts.init(el, 'dark');
+      const chart = echarts.init(el, this._echartsTheme());
       if (!this.partySectorHeatmap.length) {
-        chart.setOption({ backgroundColor: 'transparent', graphic: { type: 'text', left: 'center', top: 'middle', style: { text: 'No congressional trades yet — run ingest-house-trades', fill: '#525252', fontSize: 14 }}});
+        chart.setOption({ backgroundColor: this._echartsBg(), graphic: { type: 'text', left: 'center', top: 'middle', style: { text: 'No congressional trades yet — run ingest-house-trades', fill: this._echartsEmpty(), fontSize: 14 }}});
         return;
       }
       // Canonical GICS-11 + Other row order (sectors on the y-axis).
@@ -2623,7 +2699,7 @@ function app() {
       const sectorIdx = Object.fromEntries(sectors.map((s, i) => [s, i]));
       const rawCells = this.partySectorHeatmap
         .filter(c => sectorIdx[c.sector] !== undefined);
-      const palette = ['#1a1a1a','#1e3a8a','#2563eb','#f59e0b','#ef4444'];
+      const palette = this.darkMode ? ['#1a1a1a','#1e3a8a','#2563eb','#f59e0b','#ef4444'] : ['#f3f4f6','#bfdbfe','#3b82f6','#f59e0b','#ef4444'];
       const ranked = [...rawCells].sort((a, b) => a.trade_count - b.trade_count);
       const rankByKey = new Map();
       ranked.forEach((c, i) => {
@@ -2642,42 +2718,43 @@ function app() {
         value: [partyIdx[c.party], sectorIdx[c.sector], c.trade_count, c.volume_mid],
         itemStyle: { color: quantileColor(c) }
       }));
+      const valColor = this.darkMode ? '#fff' : '#111';
       chart.setOption({
-        backgroundColor: 'transparent',
+        backgroundColor: this._echartsBg(),
         tooltip: {
-          backgroundColor: '#1f1f1f', borderColor: '#292929', textStyle: { color: '#e5e5e5', fontSize: 12 },
+          backgroundColor: this._echartsTooltipBg(), borderColor: this._echartsTooltipBorder(), textStyle: { color: this._echartsTooltipText(), fontSize: 12 },
           formatter: p => {
             const party = parties[p.value[0]];
             const label = partyLabel[party] || party;
             const vol = p.value[3] ? ' · ~$' + this.fmtNum(p.value[3]) : '';
-            return `<div style="font-weight:600;margin-bottom:2px">${label} — ${sectors[p.value[1]]}</div><div style="color:#a3a3a3"><span style="color:#fff;font-weight:600">${p.value[2]}</span> trades${vol}</div>`;
+            return `<div style="font-weight:600;margin-bottom:2px">${label} — ${sectors[p.value[1]]}</div><div style="color:${this._echartsFg()}"><span style="color:${valColor};font-weight:600">${p.value[2]}</span> trades${vol}</div>`;
           }
         },
         grid: { top: 28, right: 12, bottom: 8, left: 8, containLabel: true },
         xAxis: {
           type: 'category', data: parties.map(p => partyLabel[p] || p), position: 'top',
           axisLine: { show: false }, axisTick: { show: false },
-          axisLabel: { color: '#a3a3a3', fontSize: 11, fontWeight: 600 }
+          axisLabel: { color: this._echartsFg(), fontSize: 12, fontWeight: 600 }
         },
         yAxis: {
           type: 'category', data: sectors, inverse: true,
           axisLine: { show: false }, axisTick: { show: false },
-          axisLabel: { color: '#a3a3a3', fontSize: 11 }
+          axisLabel: { color: this._echartsFg(), fontSize: 12 }
         },
         series: [{
           type: 'heatmap', data: data,
-          label: { show: true, color: '#f5f5f5', fontSize: 11, fontWeight: 600, formatter: p => p.value[2] || '' },
-          itemStyle: { borderRadius: 3, borderColor: '#0f0f0f', borderWidth: 2 },
-          emphasis: { itemStyle: { borderColor: '#fff', borderWidth: 1.5 }}
+          label: { show: true, color: this._echartsLabel(), fontSize: 12, fontWeight: 600, formatter: p => p.value[2] || '' },
+          itemStyle: { borderRadius: 3, borderColor: this._echartsBorder(), borderWidth: 2 },
+          emphasis: { itemStyle: { borderColor: this.darkMode ? '#fff' : '#111', borderWidth: 1.5 }}
         }]
       });
       this._bindResize('party-sector-heatmap', chart);
     },
 
     renderRepMonthHeatmap(el) {
-      const chart = echarts.init(el, 'dark');
+      const chart = echarts.init(el, this._echartsTheme());
       if (!this.repMonthHeatmap.length) {
-        chart.setOption({ backgroundColor: 'transparent', graphic: { type: 'text', left: 'center', top: 'middle', style: { text: 'No congressional trades yet — run ingest-house-trades', fill: '#525252', fontSize: 14 }}});
+        chart.setOption({ backgroundColor: this._echartsBg(), graphic: { type: 'text', left: 'center', top: 'middle', style: { text: 'No congressional trades yet — run ingest-house-trades', fill: this._echartsEmpty(), fontSize: 14 }}});
         return;
       }
       const repTotals = {}, nameBySlug = {}, partyBySlug = {};
@@ -2691,7 +2768,7 @@ function app() {
       const months = [...new Set(this.repMonthHeatmap.map(c => c.month))].sort();
       const repIdx = Object.fromEntries(reps.map((r, i) => [r, i]));
       const monthIdx = Object.fromEntries(months.map((m, i) => [m, i]));
-      const palette = ['#1a1a1a','#1e3a5f','#1e6091','#f59e0b','#ef4444'];
+      const palette = this.darkMode ? ['#1a1a1a','#1e3a5f','#1e6091','#f59e0b','#ef4444'] : ['#f3f4f6','#bfdbfe','#3b82f6','#f59e0b','#ef4444'];
       const ranked = [...this.repMonthHeatmap].sort((a, b) => a.trade_count - b.trade_count);
       const rankByKey = new Map();
       ranked.forEach((c, i) => {
@@ -2709,32 +2786,33 @@ function app() {
       const maxCount = Math.max(...this.repMonthHeatmap.map(c => c.trade_count));
       const shortName = n => n.length > 20 ? n.slice(0, 19) + '…' : n;
       const partyTag = p => p === 'D' ? ' (D)' : p === 'R' ? ' (R)' : p === 'I' ? ' (I)' : '';
+      const valColor2 = this.darkMode ? '#fff' : '#111';
       chart.setOption({
-        backgroundColor: 'transparent',
+        backgroundColor: this._echartsBg(),
         tooltip: {
-          backgroundColor: '#1f1f1f', borderColor: '#292929', textStyle: { color: '#e5e5e5', fontSize: 12 },
+          backgroundColor: this._echartsTooltipBg(), borderColor: this._echartsTooltipBorder(), textStyle: { color: this._echartsTooltipText(), fontSize: 12 },
           formatter: p => {
             const slug = reps[p.value[1]];
             const vol = p.value[3] ? ' · ~$' + this.fmtNum(p.value[3]) : '';
-            return `<div style="font-weight:600;margin-bottom:2px">${nameBySlug[slug]}${partyTag(partyBySlug[slug])}</div><div style="color:#a3a3a3">${months[p.value[0]]}: <span style="color:#fff;font-weight:600">${p.value[2]}</span> trades${vol}</div>`;
+            return `<div style="font-weight:600;margin-bottom:2px">${nameBySlug[slug]}${partyTag(partyBySlug[slug])}</div><div style="color:${this._echartsFg()}">${months[p.value[0]]}: <span style="color:${valColor2};font-weight:600">${p.value[2]}</span> trades${vol}</div>`;
           }
         },
         grid: { top: 40, right: 8, bottom: 8, left: 160, containLabel: false },
         xAxis: {
           type: 'category', data: months, position: 'top',
           axisLine: { show: false }, axisTick: { show: false },
-          axisLabel: { color: '#a3a3a3', fontSize: 10, fontFamily: 'ui-monospace, monospace' }
+          axisLabel: { color: this._echartsFg(), fontSize: 12, fontFamily: 'ui-monospace, monospace' }
         },
         yAxis: {
           type: 'category', data: reps.map(r => shortName(nameBySlug[r]) + partyTag(partyBySlug[r])),
           axisLine: { show: false }, axisTick: { show: false },
-          axisLabel: { color: '#a3a3a3', fontSize: 10 }
+          axisLabel: { color: this._echartsFg(), fontSize: 12 }
         },
         series: [{
           type: 'heatmap', data: data,
-          label: { show: true, color: '#f5f5f5', fontSize: 9, fontWeight: 600, formatter: p => p.value[2] >= 2 ? p.value[2] : '' },
-          itemStyle: { borderRadius: 2, borderColor: '#0f0f0f', borderWidth: 1 },
-          emphasis: { itemStyle: { borderColor: '#fff', borderWidth: 1.5 }}
+          label: { show: true, color: this._echartsLabel(), fontSize: 12, fontWeight: 600, formatter: p => p.value[2] >= 2 ? p.value[2] : '' },
+          itemStyle: { borderRadius: 2, borderColor: this._echartsBorder(), borderWidth: 1 },
+          emphasis: { itemStyle: { borderColor: this.darkMode ? '#fff' : '#111', borderWidth: 1.5 }}
         }]
       });
       this._bindResize('rep-month-heatmap', chart);
@@ -2768,20 +2846,20 @@ function app() {
     renderScoreHistory() {
       const el = document.getElementById('score-history-chart');
       if (!el) return;
-      const chart = echarts.init(el, 'dark');
+      const chart = echarts.init(el, this._echartsTheme());
       if (this.scoreHistory.length === 0) {
-        chart.setOption({ graphic: { type: 'text', left: 'center', top: 'middle', style: { text: 'No score history yet', fill: '#525252', fontSize: 14 }}});
+        chart.setOption({ graphic: { type: 'text', left: 'center', top: 'middle', style: { text: 'No score history yet', fill: this._echartsEmpty(), fontSize: 14 }}});
         return;
       }
       const sorted = [...this.scoreHistory].reverse();
       const dates = sorted.map(s => this.fmtDate(s.computed_at));
       chart.setOption({
-        backgroundColor: 'transparent',
+        backgroundColor: this._echartsBg(),
         tooltip: { trigger: 'axis' },
-        legend: { data: ['Composite', 'Market', 'Policy', 'Insider'], textStyle: { color: '#737373' }, top: 0 },
+        legend: { data: ['Composite', 'Market', 'Policy', 'Insider'], textStyle: { color: this._echartsFg() }, top: 0 },
         grid: { top: 35, right: 15, bottom: 25, left: 40 },
-        xAxis: { type: 'category', data: dates, axisLabel: { color: '#525252', fontSize: 10 }},
-        yAxis: { type: 'value', min: 0, max: 100, axisLabel: { color: '#525252' }},
+        xAxis: { type: 'category', data: dates, axisLabel: { color: this._echartsFg(), fontSize: 12 }},
+        yAxis: { type: 'value', min: 0, max: 100, axisLabel: { color: this._echartsFg() }},
         series: [
           { name: 'Composite', type: 'line', data: sorted.map(s => s.composite_score), smooth: true, lineStyle: { width: 2.5, color: '#6366f1' }, itemStyle: { color: '#6366f1' }},
           { name: 'Market', type: 'line', data: sorted.map(s => s.market_score), smooth: true, lineStyle: { width: 1, color: '#3b82f6', type: 'dashed' }, itemStyle: { color: '#3b82f6' }, symbol: 'none' },
@@ -2795,9 +2873,9 @@ function app() {
     renderConnections(graph) {
       const el = document.getElementById('connections-chart');
       if (!el) return;
-      const chart = echarts.init(el, 'dark');
+      const chart = echarts.init(el, this._echartsTheme());
       if (!graph.nodes || graph.nodes.length === 0) {
-        chart.setOption({ graphic: { type: 'text', left: 'center', top: 'middle', style: { text: 'No connections found', fill: '#525252', fontSize: 14 }}});
+        chart.setOption({ graphic: { type: 'text', left: 'center', top: 'middle', style: { text: 'No connections found', fill: this._echartsEmpty(), fontSize: 14 }}});
         return;
       }
       const nodes = graph.nodes.map((n, i) => ({
@@ -2811,17 +2889,17 @@ function app() {
         source: `${e.from_type}_${e.from}`,
         target: `${e.to_type}_${e.to}`,
         label: { show: false },
-        lineStyle: { color: '#333', curveness: 0.1 }
+        lineStyle: { color: this.darkMode ? '#333' : '#d1d5db', curveness: 0.1 }
       }));
       chart.setOption({
-        backgroundColor: 'transparent',
+        backgroundColor: this._echartsBg(),
         tooltip: {},
         series: [{
           type: 'graph', layout: 'force', roam: true, draggable: true,
           data: nodes, links: edges,
           categories: [{ name: 'Company' }, { name: 'Person' }],
           force: { repulsion: 200, edgeLength: 120 },
-          label: { show: true, color: '#d4d4d4', fontSize: 10 },
+          label: { show: true, color: this.darkMode ? '#d4d4d4' : '#374151', fontSize: 12 },
           emphasis: { focus: 'adjacency', lineStyle: { width: 3 }},
         }]
       });
