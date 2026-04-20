@@ -93,19 +93,27 @@ jobs:
       - name: Upload data to D1
         run: |
           TABLES="companies persons events congressional_trades contracts sanctions tariffs tariff_hs_codes tariff_countries warn_filings donations lobbying court_filings court_filing_parties market_data insider_trades person_committees company_hs_codes score_weights bills entity_aliases entity_links source_meta scores api_keys party_history"
+
+          # Clean slate: delete all data tables in D1 before re-inserting.
+          # Each CI run re-exports the full dataset from scratch, so stale/colliding
+          # AUTOINCREMENT IDs from previous uploads would cause INSERT OR IGNORE to
+          # silently drop new rows.
+          > d1-delete.sql
+          for TABLE in $TABLES; do
+            echo "DELETE FROM $TABLE;" >> d1-delete.sql
+          done
+          cd workers/query
+          npx wrangler d1 execute mrdn-db --file=../../d1-delete.sql --remote || true
+          cd ../..
+
           > d1-data.sql
           for TABLE in $TABLES; do
             echo "-- $TABLE" >> d1-data.sql
             sqlite3 mrdn.db ".mode insert $TABLE" "SELECT * FROM $TABLE;" >> d1-data.sql 2>/dev/null || true
           done
 
-          # Convert INSERT INTO → INSERT OR IGNORE INTO for append-only data tables
-          # (avoids DELETE+INSERT cascade on AUTOINCREMENT PKs).
-          # Use INSERT OR REPLACE only for seed/config tables where overwrite is safe.
-          REPLACE_TABLES="companies persons score_weights source_meta entity_aliases api_keys"
-          for RT in $REPLACE_TABLES; do
-            sed -i "s/^INSERT INTO $RT /INSERT OR REPLACE INTO $RT /g" d1-data.sql
-          done
+          # Plain INSERT is fine now since tables are empty after DELETE.
+          # Keep INSERT OR IGNORE as safety net against any mid-batch duplicates.
           sed -i 's/^INSERT INTO/INSERT OR IGNORE INTO/g' d1-data.sql
 
           split -l 500 -d d1-data.sql d1-chunk-
