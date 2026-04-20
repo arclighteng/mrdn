@@ -13,9 +13,10 @@ type Config struct {
 	LogLevel    string
 
 	// External API keys — required only for ingestion.
-	FinnhubAPIKey string
-	PolygonAPIKey string
-	FECAPIKey     string
+	FinnhubAPIKey        string
+	PolygonAPIKey        string
+	FECAPIKey            string
+	CourtListenerToken   string
 
 	// SSE connection limits.
 	SSEMaxPerIP  int
@@ -63,9 +64,10 @@ func Load() (*Config, error) {
 		DatabaseURL:   dbURL,
 		Port:          port,
 		LogLevel:      logLevel,
-		FinnhubAPIKey: os.Getenv("MRDN_FINNHUB_API_KEY"),
-		PolygonAPIKey: os.Getenv("MRDN_POLYGON_API_KEY"),
-		FECAPIKey:     os.Getenv("MRDN_FEC_API_KEY"),
+		FinnhubAPIKey:      os.Getenv("MRDN_FINNHUB_API_KEY"),
+		PolygonAPIKey:      os.Getenv("MRDN_POLYGON_API_KEY"),
+		FECAPIKey:          os.Getenv("MRDN_FEC_API_KEY"),
+		CourtListenerToken: os.Getenv("MRDN_COURTLISTENER_TOKEN"),
 		SSEMaxPerIP:   sseMaxPerIP,
 		SSEMaxPerKey:  sseMaxPerKey,
 		SSEMaxGlobal:  sseMaxGlobal,

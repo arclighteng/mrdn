@@ -82,6 +82,12 @@ func (s *Supervisor) RegisterSources() []Source {
 	if s.cfg.FECAPIKey != "" {
 		sources = append(sources, parser.NewFECSource(client, s.cfg.FECAPIKey))
 	}
+	if s.cfg.FinnhubAPIKey != "" {
+		sources = append(sources, parser.NewFinnhubCongressSource(client, s.cfg.FinnhubAPIKey, s.store))
+	}
+	if s.cfg.CourtListenerToken != "" {
+		sources = append(sources, parser.NewCourtListenerSource(client, s.cfg.CourtListenerToken))
+	}
 
 	return sources
 }
