@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -172,6 +173,8 @@ func (r *Resolver) Resolve(ctx context.Context, evt db.Event) int {
 		companyID, err = r.resolveEFDSTrades(ctx, evt)
 	case "finnhub_congress":
 		companyID, err = r.resolveFinnhubCongress(ctx, evt)
+	case "courtlistener":
+		companyID, err = r.resolveCourtListener(ctx, evt)
 	case "finnhub":
 		companyID, err = r.resolveFinnhub(ctx, evt)
 	case "warn":
@@ -1092,6 +1095,148 @@ func strPtr(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// courtListenerEvent mirrors the JSON stored per-trade by the CourtListener
+// judicial financial-disclosure parser (one event per investment record).
+type courtListenerEvent struct {
+	DisclosureID         int    `json:"disclosure_id"`
+	InvestmentID         int    `json:"investment_id"`
+	PersonURL            string `json:"person_url"`
+	Year                 int    `json:"year"`
+	Description          string `json:"description"`
+	TransactionType      string `json:"transaction_type"`
+	TransactionDate      string `json:"transaction_date"`
+	TransactionValueCode string `json:"transaction_value_code"`
+	GrossValueCode       string `json:"gross_value_code"`
+}
+
+// clTickerRe matches a parenthesised 1-5 letter ticker symbol, e.g. "(AAPL)".
+var clTickerRe = regexp.MustCompile(`\(([A-Z]{1,5})\)`)
+
+// extractTickerFromCLDesc extracts "AAPL" from "Apple Inc (AAPL) - Stock".
+// Returns "" if no ticker found.
+func extractTickerFromCLDesc(desc string) string {
+	m := clTickerRe.FindStringSubmatch(desc)
+	if len(m) < 2 {
+		return ""
+	}
+	return m[1]
+}
+
+// clPersonIDRe matches the numeric ID in a CourtListener people URL.
+var clPersonIDRe = regexp.MustCompile(`/people/(\d+)/`)
+
+// extractCLPersonID extracts "1234" from ".../people/1234/".
+// Returns "" if the URL does not match the expected shape.
+func extractCLPersonID(url string) string {
+	m := clPersonIDRe.FindStringSubmatch(url)
+	if len(m) < 2 {
+		return ""
+	}
+	return m[1]
+}
+
+// clValueRange decodes a CourtListener investment/transaction value code into
+// an inclusive dollar range [low, high]. High is 0 when there is no upper bound.
+func clValueRange(code string) (int, int) {
+	switch code {
+	case "J":
+		return 15001, 50000
+	case "K":
+		return 50001, 100000
+	case "L":
+		return 100001, 250000
+	case "M":
+		return 250001, 500000
+	case "N":
+		return 500001, 1000000
+	case "O":
+		return 1000001, 5000000
+	case "P1":
+		return 5000001, 25000000
+	case "P2":
+		return 25000001, 50000000
+	case "P3":
+		return 50000001, 0
+	default:
+		return 0, 0
+	}
+}
+
+// intPtrOrNil returns a pointer to v, or nil if v is 0.
+func intPtrOrNil(v int) *int {
+	if v == 0 {
+		return nil
+	}
+	return &v
+}
+
+func (r *Resolver) resolveCourtListener(ctx context.Context, evt db.Event) (int, error) {
+	var trade courtListenerEvent
+	if err := json.Unmarshal(evt.EventData, &trade); err != nil {
+		return 0, fmt.Errorf("unmarshal courtlistener trade: %w", err)
+	}
+
+	ticker := extractTickerFromCLDesc(trade.Description)
+	if ticker == "" {
+		return 0, nil
+	}
+
+	companyID, err := r.ensureCompany(ctx, ticker, "")
+	if err != nil {
+		return 0, err
+	}
+
+	var companyIDPtr *int
+	if companyID > 0 {
+		companyIDPtr = &companyID
+	}
+
+	// Attempt to link to a person via the stable slug "judge-cl-<id>".
+	// If the person hasn't been created yet (enrichment happens later), that's fine.
+	var personID *int
+	if personNumID := extractCLPersonID(trade.PersonURL); personNumID != "" {
+		slug := "judge-cl-" + personNumID
+		if p, err := r.store.GetPersonBySlug(ctx, slug); err == nil {
+			personID = &p.ID
+		}
+	}
+
+	var tradedAt *time.Time
+	if trade.TransactionDate != "" {
+		if t, err := time.Parse("2006-01-02", trade.TransactionDate); err == nil {
+			tt := t.UTC()
+			tradedAt = &tt
+		}
+	}
+
+	// Prefer the transaction value code; fall back to gross value code.
+	valueCode := trade.TransactionValueCode
+	if valueCode == "" {
+		valueCode = trade.GrossValueCode
+	}
+	amtLow, amtHigh := clValueRange(valueCode)
+
+	eventID := evt.ID
+	ct := db.CongressionalTrade{
+		EventID:         &eventID,
+		PersonID:        personID,
+		CompanyID:       companyIDPtr,
+		Ticker:          strPtr(ticker),
+		TradeType:       strPtr(trade.TransactionType),
+		AmountRangeLow:  intPtrOrNil(amtLow),
+		AmountRangeHigh: intPtrOrNil(amtHigh),
+		TradedAt:        tradedAt,
+	}
+
+	if err := r.store.InsertCongressionalTrade(ctx, ct); err != nil {
+		if !isDuplicateError(err) {
+			log.Printf("[resolver] courtlistener congressional_trade insert: %v", err)
+		}
+	}
+
+	return companyID, nil
 }
 
 // isDuplicateError checks if the error is a unique constraint violation
