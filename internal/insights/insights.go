@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math"
 	"sort"
 	"time"
 
@@ -71,24 +70,26 @@ func Detect(ctx context.Context, store *db.Store) ([]Finding, error) {
 		all = append(all, findings...)
 	}
 
-	// Sort by blended score (rarity + recency) descending, keep top 20.
-	// Recency uses a 7-day half-life so recent findings compete with old high-rarity ones.
-	now := time.Now()
-	blendedScore := func(f Finding) float64 {
-		daysOld := now.Sub(f.Timestamp).Hours() / 24
-		if daysOld < 0 {
-			daysOld = 0
+	// Filter to last 12 months — stale findings are not actionable.
+	cutoff := time.Now().AddDate(0, -12, 0)
+	recent := make([]Finding, 0, len(all))
+	for _, f := range all {
+		if f.Timestamp.After(cutoff) {
+			recent = append(recent, f)
 		}
-		recency := 100.0 * math.Pow(0.5, daysOld/7.0)
-		return 0.6*float64(f.RarityScore) + 0.4*recency
 	}
-	sort.Slice(all, func(i, j int) bool {
-		return blendedScore(all[i]) > blendedScore(all[j])
+
+	// Sort by rarity descending, keep top 20.
+	sort.Slice(recent, func(i, j int) bool {
+		if recent[i].RarityScore != recent[j].RarityScore {
+			return recent[i].RarityScore > recent[j].RarityScore
+		}
+		return recent[i].Timestamp.After(recent[j].Timestamp)
 	})
-	if len(all) > 20 {
-		all = all[:20]
+	if len(recent) > 20 {
+		recent = recent[:20]
 	}
-	return all, nil
+	return recent, nil
 }
 
 // clampScore clamps a rarity score to 0-100.
