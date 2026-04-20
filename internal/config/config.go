@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
 // Config holds all runtime configuration for the mrdn application.
@@ -68,8 +69,8 @@ func Load() (*Config, error) {
 		FinnhubAPIKey:      os.Getenv("MRDN_FINNHUB_API_KEY"),
 		PolygonAPIKey:      os.Getenv("MRDN_POLYGON_API_KEY"),
 		FECAPIKey:          os.Getenv("MRDN_FEC_API_KEY"),
-		CourtListenerToken: os.Getenv("MRDN_COURTLISTENER_TOKEN"),
-		FMPAPIKey:          os.Getenv("MRDN_FMP_API_KEY"),
+		CourtListenerToken: strings.TrimSpace(os.Getenv("MRDN_COURTLISTENER_TOKEN")),
+		FMPAPIKey:          strings.TrimSpace(os.Getenv("MRDN_FMP_API_KEY")),
 		SSEMaxPerIP:   sseMaxPerIP,
 		SSEMaxPerKey:  sseMaxPerKey,
 		SSEMaxGlobal:  sseMaxGlobal,
