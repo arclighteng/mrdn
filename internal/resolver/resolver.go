@@ -170,6 +170,8 @@ func (r *Resolver) Resolve(ctx context.Context, evt db.Event) int {
 		companyID, err = r.resolveFedRegTariff(ctx, evt)
 	case "efds_senate":
 		companyID, err = r.resolveEFDSTrades(ctx, evt)
+	case "finnhub_congress":
+		companyID, err = r.resolveFinnhubCongress(ctx, evt)
 	case "finnhub":
 		companyID, err = r.resolveFinnhub(ctx, evt)
 	case "warn":
@@ -660,6 +662,108 @@ func (r *Resolver) resolveWarn(ctx context.Context, evt db.Event) (int, error) {
 	}); err != nil {
 		if !isDuplicateError(err) {
 			log.Printf("[resolver] warn filing insert for %s: %v", filing.Company, err)
+		}
+	}
+
+	return companyID, nil
+}
+
+// finnhubCongressEvent mirrors the JSON stored per-trade by the Finnhub
+// congressional-trading parser (one event per trade record).
+type finnhubCongressEvent struct {
+	AmountFrom      float64 `json:"amountFrom"`
+	AmountTo        float64 `json:"amountTo"`
+	AssetName       string  `json:"assetName"`
+	FilingDate      string  `json:"filingDate"`
+	Name            string  `json:"name"`
+	OwnerType       string  `json:"ownerType"`
+	Position        string  `json:"position"`
+	Symbol          string  `json:"symbol"`
+	TransactionDate string  `json:"transactionDate"`
+	TransactionType string  `json:"transactionType"`
+}
+
+// slugifyName converts a full name like "Nancy Pelosi" into a slug like
+// "nancy-pelosi", matching the format used in the persons table.
+func slugifyName(name string) string {
+	var b strings.Builder
+	prevHyphen := true // suppress leading hyphens
+	for _, r := range strings.ToLower(strings.TrimSpace(name)) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			prevHyphen = false
+		} else if !prevHyphen {
+			b.WriteByte('-')
+			prevHyphen = true
+		}
+	}
+	// Trim trailing hyphen.
+	s := b.String()
+	return strings.TrimRight(s, "-")
+}
+
+func (r *Resolver) resolveFinnhubCongress(ctx context.Context, evt db.Event) (int, error) {
+	var trade finnhubCongressEvent
+	if err := json.Unmarshal(evt.EventData, &trade); err != nil {
+		return 0, fmt.Errorf("unmarshal finnhub_congress trade: %w", err)
+	}
+
+	ticker := strings.ToUpper(strings.TrimSpace(trade.Symbol))
+	if ticker == "" || ticker == "--" || ticker == "N/A" {
+		return 0, nil
+	}
+
+	companyID, err := r.ensureCompany(ctx, ticker, trade.AssetName)
+	if err != nil {
+		return 0, err
+	}
+
+	var companyIDPtr *int
+	if companyID > 0 {
+		companyIDPtr = &companyID
+	}
+
+	var personID *int
+	if trade.Name != "" {
+		slug := slugifyName(trade.Name)
+		if p, err := r.store.GetPersonBySlug(ctx, slug); err == nil {
+			personID = &p.ID
+		}
+	}
+
+	var tradedAt *time.Time
+	if trade.TransactionDate != "" {
+		if t, err := time.Parse("2006-01-02", trade.TransactionDate); err == nil {
+			tt := t.UTC()
+			tradedAt = &tt
+		}
+	}
+
+	var filedAt *time.Time
+	if trade.FilingDate != "" {
+		if t, err := time.Parse("2006-01-02", trade.FilingDate); err == nil {
+			ft := t.UTC()
+			filedAt = &ft
+		}
+	}
+
+	eventID := evt.ID
+	ct := db.CongressionalTrade{
+		EventID:         &eventID,
+		PersonID:        personID,
+		CompanyID:       companyIDPtr,
+		OwnerType:       strPtr(trade.OwnerType),
+		Ticker:          strPtr(ticker),
+		TradeType:       strPtr(trade.TransactionType),
+		AmountRangeLow:  intPtr(int(trade.AmountFrom)),
+		AmountRangeHigh: intPtr(int(trade.AmountTo)),
+		FiledAt:         filedAt,
+		TradedAt:        tradedAt,
+	}
+
+	if err := r.store.InsertCongressionalTrade(ctx, ct); err != nil {
+		if !isDuplicateError(err) {
+			log.Printf("[resolver] finnhub_congress congressional_trade insert: %v", err)
 		}
 	}
 
