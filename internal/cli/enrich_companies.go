@@ -70,24 +70,27 @@ var enrichCompaniesCmd = &cobra.Command{
 		tickerMap := map[string]polygonTicker{}
 
 		bulkMarkets := []string{"stocks", "otc"}
+		activeStates := []string{"true", "false"}
 		for _, market := range bulkMarkets {
-			nextURL := fmt.Sprintf("https://api.polygon.io/v3/reference/tickers?market=%s&active=true&limit=1000&apiKey=%s", market, cfg.PolygonAPIKey)
-			for nextURL != "" {
-				if ctx.Err() != nil {
-					break
+			for _, active := range activeStates {
+				nextURL := fmt.Sprintf("https://api.polygon.io/v3/reference/tickers?market=%s&active=%s&limit=1000&apiKey=%s", market, active, cfg.PolygonAPIKey)
+				for nextURL != "" {
+					if ctx.Err() != nil {
+						break
+					}
+					page, next, ferr := fetchPolygonTickers(ctx, client, nextURL)
+					if ferr != nil {
+						log.Printf("enrich-companies: fetch %s active=%s error: %v (continuing)", market, active, ferr)
+						break
+					}
+					for _, t := range page {
+						tickerMap[t.Ticker] = t
+					}
+					nextURL = next
+					time.Sleep(250 * time.Millisecond)
 				}
-				page, next, ferr := fetchPolygonTickers(ctx, client, nextURL)
-				if ferr != nil {
-					log.Printf("enrich-companies: fetch %s error: %v (continuing)", market, ferr)
-					break
-				}
-				for _, t := range page {
-					tickerMap[t.Ticker] = t
-				}
-				nextURL = next
-				time.Sleep(250 * time.Millisecond)
+				log.Printf("enrich-companies: %d reference tickers after %s active=%s bulk", len(tickerMap), market, active)
 			}
-			log.Printf("enrich-companies: %d reference tickers after %s bulk", len(tickerMap), market)
 		}
 
 		// Pass 2: individual lookups for tickers still missing (ETFs, funds, delisted).

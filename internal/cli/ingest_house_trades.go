@@ -201,10 +201,16 @@ var ingestHouseTradesCmd = &cobra.Command{
 			var companyID *int
 			ticker := strings.ToUpper(strings.TrimSpace(r.Ticker))
 			if ticker != "" && ticker != "--" {
-				if c, cerr := store.GetCompanyByTicker(ctx, ticker); cerr == nil {
+				c, cerr := store.GetCompanyByTicker(ctx, ticker)
+				if cerr == nil {
 					id := c.ID
 					companyID = &id
 					stats.companyMatched++
+					// Backfill name from asset_description when current name is just the ticker
+					desc := strings.TrimSpace(r.AssetDescription)
+					if c.Name == c.Ticker && desc != "" && desc != ticker && desc != "--" {
+						store.DB().ExecContext(ctx, `UPDATE companies SET name = ? WHERE ticker = ? AND name = ticker`, desc, ticker)
+					}
 				}
 			} else {
 				stats.skippedNoTicker++
