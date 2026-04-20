@@ -327,7 +327,7 @@ WITH buys AS (
   FROM congressional_trades ct
   WHERE ct.trade_type = 'purchase'
     AND ct.ticker IS NOT NULL AND ct.ticker <> '' AND ct.ticker <> '--'
-    AND ct.traded_at >= date('now', '-12 months')
+    AND ct.traded_at >= '2000-01-01'
     AND ct.traded_at <  '2100-01-01'
 ),
 matched AS (

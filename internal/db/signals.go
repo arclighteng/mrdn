@@ -52,7 +52,7 @@ WITH t AS (
     AND ct.ticker <> ''
     AND ct.ticker <> '--'
     AND ct.traded_at IS NOT NULL
-    AND ct.traded_at >= date('now', '-12 months')
+    AND ct.traded_at >= '2000-01-01'
     AND ct.traded_at <  '2100-01-01'
 )
 SELECT
@@ -149,7 +149,7 @@ WITH t AS (
     AND ct.ticker <> '--'
     AND p.party IN ('R', 'D')
     AND ct.trade_type IS NOT NULL
-    AND ct.traded_at >= date('now', '-12 months')
+    AND ct.traded_at >= '2000-01-01'
 )
 SELECT
   ticker,
