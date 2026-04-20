@@ -30,6 +30,8 @@ jobs:
           DATABASE_URL: file:mrdn.db
           MRDN_POLYGON_API_KEY: ${{ secrets.MRDN_POLYGON_API_KEY }}
           MRDN_FEC_API_KEY: ${{ secrets.MRDN_FEC_API_KEY }}
+          MRDN_FINNHUB_API_KEY: ${{ secrets.MRDN_FINNHUB_API_KEY }}
+          MRDN_COURTLISTENER_TOKEN: ${{ secrets.MRDN_COURTLISTENER_TOKEN }}
 
       - name: Ingest House trades (historical)
         run: ./mrdn ingest-house-trades --file data/seed/house_trades.json
