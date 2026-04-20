@@ -97,11 +97,15 @@ jobs:
           # Clean slate: delete all data tables in D1 before re-inserting.
           # Each CI run re-exports the full dataset from scratch, so stale/colliding
           # AUTOINCREMENT IDs from previous uploads would cause INSERT OR IGNORE to
-          # silently drop new rows.
+          # silently drop new rows. Disable FK checks to avoid ordering issues.
           > d1-delete.sql
-          for TABLE in $TABLES; do
+          echo "PRAGMA foreign_keys = OFF;" >> d1-delete.sql
+          # Reverse table order so child tables are deleted before parents.
+          REVERSED=$(echo $TABLES | tr ' ' '\n' | tac | tr '\n' ' ')
+          for TABLE in $REVERSED; do
             echo "DELETE FROM $TABLE;" >> d1-delete.sql
           done
+          echo "PRAGMA foreign_keys = ON;" >> d1-delete.sql
           cd workers/query
           npx wrangler d1 execute mrdn-db --file=../../d1-delete.sql --remote || true
           cd ../..
