@@ -1,5 +1,5 @@
 {
-  "count": 1,
+  "count": "https://www.courtlistener.com/api/rest/v4/financial-disclosures/?count=on&page_size=1",
   "next": null,
   "previous": null,
   "results": [

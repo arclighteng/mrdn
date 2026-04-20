@@ -1,0 +1,337 @@
+- generic [active] [ref=e1]:
+  - navigation [ref=e2]:
+    - generic [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e6]: MRDN
+        - generic [ref=e7]: Meridian
+      - generic [ref=e8]:
+        - button "dashboard" [ref=e9] [cursor=pointer]
+        - button "rankings" [ref=e10] [cursor=pointer]
+        - button "companies" [ref=e11] [cursor=pointer]
+        - button "persons" [ref=e12] [cursor=pointer]
+        - button "tickers" [ref=e13] [cursor=pointer]
+        - button "signals" [ref=e14] [cursor=pointer]
+        - button "status" [ref=e15] [cursor=pointer]
+    - paragraph [ref=e19]: Trades that move with policy, people that move with both
+  - generic [ref=e22]:
+    - generic [ref=e23]: MQL
+    - combobox "MQL query" [ref=e24]
+  - generic [ref=e26]:
+    - generic [ref=e27]: Risk Scale
+    - generic [ref=e28]:
+      - generic [ref=e29]: 0–39 Low
+      - generic [ref=e31]: 40–69 Moderate
+      - generic [ref=e33]: 70–100 High
+    - generic [ref=e35]: "|"
+    - generic [ref=e36]: Scores measure political risk exposure from market signals, policy actions, and insider activity. Hover any ⓘ for details.
+    - button "×" [ref=e37] [cursor=pointer]
+  - main [ref=e38]:
+    - generic [ref=e39]:
+      - generic [ref=e41]:
+        - generic [ref=e42]: ⚠
+        - generic [ref=e43]:
+          - generic [ref=e44]: Some data sources are having trouble
+          - generic [ref=e45]: These feeds aren't updating right now. Everything else on the dashboard is still live.
+          - list [ref=e46]:
+            - listitem [ref=e47]:
+              - generic [ref=e48]: efds_senate
+              - generic [ref=e49]: Senate's disclosure portal is offline — they take it down for maintenance regularly. Waiting for them to bring it back.
+            - listitem [ref=e50]:
+              - generic [ref=e51]: warn
+              - generic [ref=e52]: Upstream provider is temporarily unavailable. Retrying automatically.
+      - generic [ref=e53]:
+        - generic [ref=e54]:
+          - generic [ref=e55]: Events / 24h
+          - generic [ref=e56]: 18,826
+          - generic [ref=e57]: 30,998 this week
+        - generic [ref=e58]:
+          - generic [ref=e59]: Companies Scored
+          - generic [ref=e60]:
+            - text: 8,772
+            - generic [ref=e61]: / 12,038
+          - generic [ref=e62]: tracked universe
+        - generic [ref=e63]:
+          - generic [ref=e64]: Activity Mix (24h)
+          - generic [ref=e65]: What kinds of events we ingested in the last 24 hours — a quick read on which signals are firing.
+          - generic [ref=e66]:
+            - generic [ref=e67]: Added to sanctions list 18,758
+            - generic [ref=e68]: Political Contribution 50
+            - generic [ref=e69]: Regulatory action 18
+      - generic [ref=e70]:
+        - generic [ref=e72]:
+          - generic [ref=e73]:
+            - heading "Party × Sector Trade Count" [level=2] [ref=e74]
+            - paragraph [ref=e75]: Congressional trade counts by party and GICS sector. Click a cell to drill into the underlying trades.
+          - generic [ref=e77]:
+            - button "Party × Sector" [ref=e78] [cursor=pointer]
+            - button "Reps × Months" [ref=e79] [cursor=pointer]
+        - generic [ref=e83]:
+          - heading "Top Movers (24h)" [level=2] [ref=e84]
+          - paragraph [ref=e85]: Companies whose risk score changed the most today. Red number = risk got worse. Green = risk improved.
+          - generic [ref=e87]: No score data yet — run ingestion first
+      - generic [ref=e90]:
+        - heading "Congress Trade Activity — Day × Month" [level=2] [ref=e91]
+        - paragraph [ref=e92]:
+          - text: When Congress actually trades. Rows = day of week, columns = calendar month. Darker = more trades. Pure count of
+          - code [ref=e93]: congressional_trades.traded_at
+          - text: .
+      - generic [ref=e97]:
+        - generic [ref=e98]:
+          - generic [ref=e99]:
+            - generic [ref=e100]:
+              - heading "Latest Events" [level=2] [ref=e101]
+              - paragraph [ref=e102]: "Live feed of things happening right now: politicians trading stocks, governments handing out contracts, sanctions, lawsuits, big stock moves. The colored dot shows the type."
+            - group "Time range" [ref=e103]:
+              - button "24h" [ref=e104] [cursor=pointer]
+              - button "7d" [pressed] [ref=e105] [cursor=pointer]
+              - button "30d" [ref=e106] [cursor=pointer]
+              - button "90d" [ref=e107] [cursor=pointer]
+              - button "All" [ref=e108] [cursor=pointer]
+          - generic [ref=e109]:
+            - generic [ref=e110]:
+              - generic [ref=e111]: Regulator
+              - generic [ref=e112]:
+                - generic [ref=e113]: Regulatory action
+                - generic [ref=e114]: Changes Related to Insurance Requirements in Multi-Family Housing (MFH) Direct Loan and Grant Programs
+                - generic [ref=e115]: federal_register · just now
+            - generic [ref=e116]:
+              - generic [ref=e117]: Regulator
+              - generic [ref=e118]:
+                - generic [ref=e119]: Regulatory action
+                - generic [ref=e120]: Safety Standard for Infant and Cradle Swings
+                - generic [ref=e121]: federal_register · just now
+            - generic [ref=e122]:
+              - generic [ref=e123]: Regulator
+              - generic [ref=e124]:
+                - generic [ref=e125]: Regulatory action
+                - generic [ref=e126]: Order Providing Exemptive Relief To Facilitate Cross-Margining of Customer Positions Cleared at Chicago Mercantile Exchange, Inc. and Fixed Income Clearing Corporation
+                - generic [ref=e127]: federal_register · just now
+            - generic [ref=e128]:
+              - generic [ref=e129]: Regulator
+              - generic [ref=e130]:
+                - generic [ref=e131]: Regulatory action
+                - generic [ref=e132]: Enrolled Agent Special Enrollment Examination User Fee Update
+                - generic [ref=e133]: federal_register · just now
+            - generic [ref=e134]:
+              - generic [ref=e135]: Regulator
+              - generic [ref=e136]:
+                - generic [ref=e137]: Regulatory action
+                - generic [ref=e138]: Extension of Compliance Dates for Nondiscrimination on the Basis of Disability; Accessibility of Web Information and Services of State and Local Government Entities
+                - generic [ref=e139]: federal_register · just now
+            - generic [ref=e140]:
+              - generic [ref=e141]: Regulator
+              - generic [ref=e142]:
+                - generic [ref=e143]: Regulatory action
+                - generic [ref=e144]: Reducing Barriers to Network Improvements and Service Changes
+                - generic [ref=e145]: federal_register · just now
+            - generic [ref=e146]:
+              - generic [ref=e147]: Regulator
+              - generic [ref=e148]:
+                - generic [ref=e149]: Regulatory action
+                - generic [ref=e150]: Regulations Governing the Taking and Importing of Marine Mammals
+                - generic [ref=e151]: federal_register · just now
+            - generic [ref=e152]:
+              - generic [ref=e153]: Regulator
+              - generic [ref=e154]:
+                - generic [ref=e155]: Regulatory action
+                - generic [ref=e156]: Modification of Class E Airspace; Ralph Wien Memorial Airport, Kotzebue, AK
+                - generic [ref=e157]: federal_register · just now
+            - generic [ref=e158]:
+              - generic [ref=e159]: Regulator
+              - generic [ref=e160]:
+                - generic [ref=e161]: Regulatory action
+                - generic [ref=e162]: Concept Release on Consolidated Audit Trail and Other Audit Trails and Data Sources
+                - generic [ref=e163]: federal_register · just now
+            - generic [ref=e164]:
+              - generic [ref=e165]: Regulator
+              - generic [ref=e166]:
+                - generic [ref=e167]: Regulatory action
+                - generic [ref=e168]: Enrolled Agent Special Enrollment Examination User Fee Update
+                - generic [ref=e169]: federal_register · just now
+            - generic [ref=e170]:
+              - generic [ref=e171]: Regulator
+              - generic [ref=e172]:
+                - generic [ref=e173]: Regulatory action
+                - generic [ref=e174]: Petition for Reconsideration of Action in Rulemaking Proceeding
+                - generic [ref=e175]: federal_register · just now
+            - generic [ref=e176]:
+              - generic [ref=e177]: Regulator
+              - generic [ref=e178]:
+                - generic [ref=e179]: Regulatory action
+                - generic [ref=e180]: "Accountability in Higher Education and Access Through Demand-Driven Workforce Pell: Student Tuition and Transparency System (STATS) and Earnings Accountability"
+                - generic [ref=e181]: federal_register · just now
+            - generic [ref=e182]:
+              - generic [ref=e183]: Regulator
+              - generic [ref=e184]:
+                - generic [ref=e185]: Regulatory action
+                - generic [ref=e186]: Repeal of Fossil Fuel Restrictions for New Federal Buildings and Major Renovations of Federal Buildings
+                - generic [ref=e187]: federal_register · just now
+            - generic [ref=e188]:
+              - generic [ref=e189]: Regulator
+              - generic [ref=e190]:
+                - generic [ref=e191]: Regulatory action
+                - generic [ref=e192]: "Special Condition: Airworthy Inc., Airbus SAS, Model A330-300 Series Airplanes; Installation of a Crew Rest Module"
+                - generic [ref=e193]: federal_register · just now
+            - generic [ref=e194]:
+              - generic [ref=e195]: Regulator
+              - generic [ref=e196]:
+                - generic [ref=e197]: Regulatory action
+                - generic [ref=e198]: Amendment of Class D Airspace; Appleton, WI
+                - generic [ref=e199]: federal_register · just now
+            - generic [ref=e200]:
+              - generic [ref=e201]: Regulator
+              - generic [ref=e202]:
+                - generic [ref=e203]: Regulatory action
+                - generic [ref=e204]: Removal of Regulations for the Shelter Plus Care and the Supportive Housing Programs
+                - generic [ref=e205]: federal_register · just now
+            - generic [ref=e206]:
+              - generic [ref=e207]: Regulator
+              - generic [ref=e208]:
+                - generic [ref=e209]: Regulatory action
+                - generic [ref=e210]: Safety Zone; Cheboygan River, Black River, Cheboygan, MI
+                - generic [ref=e211]: federal_register · just now
+            - generic [ref=e212]:
+              - generic [ref=e213]: Regulator
+              - generic [ref=e214]:
+                - generic [ref=e215]: Regulatory action
+                - generic [ref=e216]: Single Family Housing Guaranteed Loan Program-Limited Party Concessions
+                - generic [ref=e217]: federal_register · just now
+            - generic [ref=e218] [cursor=pointer]:
+              - generic [ref=e219]: Event
+              - generic [ref=e220]:
+                - generic [ref=e221]: Political Contribution
+                - generic [ref=e222]: WERNER, JOSEPH · $38
+                - generic [ref=e223]: fec · 36m ago
+              - generic [ref=e224]: A
+            - generic [ref=e225] [cursor=pointer]:
+              - generic [ref=e226]: Event
+              - generic [ref=e227]:
+                - generic [ref=e228]: Political Contribution
+                - generic [ref=e229]: VISWANATHAN, RAMESH · $38
+                - generic [ref=e230]: fec · 36m ago
+              - generic [ref=e231]: A
+        - generic [ref=e232]:
+          - heading "Score Rankings" [level=2] [ref=e233]
+          - paragraph [ref=e234]: The most politically-exposed companies right now. Higher number = more risk. Click any row to drill in.
+          - generic [ref=e235]:
+            - generic [ref=e236] [cursor=pointer]:
+              - generic [ref=e237]: "1"
+              - generic [ref=e238]: BCPC BCPC
+              - generic [ref=e241]: "59"
+            - generic [ref=e242] [cursor=pointer]:
+              - generic [ref=e243]: "2"
+              - generic [ref=e244]: TPC TPC
+              - generic [ref=e247]: "59"
+            - generic [ref=e248] [cursor=pointer]:
+              - generic [ref=e249]: "3"
+              - generic [ref=e250]: ZCBB ZCBB
+              - generic [ref=e253]: "50"
+            - generic [ref=e254] [cursor=pointer]:
+              - generic [ref=e255]: "4"
+              - generic [ref=e256]: EPMV EPMV
+              - generic [ref=e259]: "50"
+            - generic [ref=e260] [cursor=pointer]:
+              - generic [ref=e261]: "5"
+              - generic [ref=e262]: AUGM AUGM
+              - generic [ref=e265]: "50"
+            - generic [ref=e266] [cursor=pointer]:
+              - generic [ref=e267]: "6"
+              - generic [ref=e268]: IFED IFED
+              - generic [ref=e271]: "50"
+            - generic [ref=e272] [cursor=pointer]:
+              - generic [ref=e273]: "7"
+              - generic [ref=e274]: LCO LCO
+              - generic [ref=e277]: "50"
+            - generic [ref=e278] [cursor=pointer]:
+              - generic [ref=e279]: "8"
+              - generic [ref=e280]: RCLY RCLY
+              - generic [ref=e283]: "50"
+            - generic [ref=e284] [cursor=pointer]:
+              - generic [ref=e285]: "9"
+              - generic [ref=e286]: GAUD GAUD
+              - generic [ref=e289]: "50"
+            - generic [ref=e290] [cursor=pointer]:
+              - generic [ref=e291]: "10"
+              - generic [ref=e292]: USML USML
+              - generic [ref=e295]: "50"
+            - generic [ref=e296] [cursor=pointer]:
+              - generic [ref=e297]: "11"
+              - generic [ref=e298]: USMD USMD
+              - generic [ref=e301]: "50"
+            - generic [ref=e302] [cursor=pointer]:
+              - generic [ref=e303]: "12"
+              - generic [ref=e304]: ZCBG ZCBG
+              - generic [ref=e307]: "50"
+            - generic [ref=e308] [cursor=pointer]:
+              - generic [ref=e309]: "13"
+              - generic [ref=e310]: TROT TROT
+              - generic [ref=e313]: "50"
+            - generic [ref=e314] [cursor=pointer]:
+              - generic [ref=e315]: "14"
+              - generic [ref=e316]: SHUS SHUS
+              - generic [ref=e319]: "50"
+            - generic [ref=e320] [cursor=pointer]:
+              - generic [ref=e321]: "15"
+              - generic [ref=e322]: RSMR RSMR
+              - generic [ref=e325]: "50"
+      - generic [ref=e326]:
+        - heading "Data Source Status" [level=2] [ref=e327]
+        - paragraph [ref=e328]: Where the data comes from. Green = working. Yellow = data is getting old. Red = something broke.
+        - generic [ref=e329]:
+          - generic [ref=e330]:
+            - generic [ref=e331]:
+              - generic [ref=e332]: edgar_form4
+              - generic [ref=e333]: healthy
+            - generic [ref=e334]: 36m ago
+          - generic [ref=e335]:
+            - generic [ref=e336]:
+              - generic [ref=e337]: efds_senate
+              - generic [ref=e338]: degraded
+            - generic [ref=e339]: never polled
+          - generic [ref=e340]:
+            - generic [ref=e341]:
+              - generic [ref=e342]: fec
+              - generic [ref=e343]: healthy
+            - generic [ref=e344]: 36m ago
+          - generic [ref=e345]:
+            - generic [ref=e346]:
+              - generic [ref=e347]: federal_register
+              - generic [ref=e348]: healthy
+            - generic [ref=e349]: 36m ago
+          - generic [ref=e350]:
+            - generic [ref=e351]:
+              - generic [ref=e352]: finnhub
+              - generic [ref=e353]: healthy
+            - generic [ref=e354]: never polled
+          - generic [ref=e355]:
+            - generic [ref=e356]:
+              - generic [ref=e357]: house_clerk_ptr
+              - generic [ref=e358]: healthy
+            - generic [ref=e359]: never polled
+          - generic [ref=e360]:
+            - generic [ref=e361]:
+              - generic [ref=e362]: ofac_sdn
+              - generic [ref=e363]: healthy
+            - generic [ref=e364]: 36m ago
+          - generic [ref=e365]:
+            - generic [ref=e366]:
+              - generic [ref=e367]: polygon
+              - generic [ref=e368]: healthy
+            - generic [ref=e369]: 36m ago
+          - generic [ref=e370]:
+            - generic [ref=e371]:
+              - generic [ref=e372]: score_engine
+              - generic [ref=e373]: healthy
+            - generic [ref=e374]: 35m ago
+          - generic [ref=e375]:
+            - generic [ref=e376]:
+              - generic [ref=e377]: usaspending
+              - generic [ref=e378]: healthy
+            - generic [ref=e379]: 36m ago
+          - generic [ref=e380]:
+            - generic [ref=e381]:
+              - generic [ref=e382]: warn
+              - generic [ref=e383]: degraded
+            - generic [ref=e384]: never polled
+    - text: Market risk signal from abnormal stock movements, volume spikes, and options activity around political events. Policy risk from government contracts, sanctions exposure, regulatory actions, and lobbying connections. Insider risk from congressional trading, executive financial disclosures, and related-party transactions. Weighted combination of Market, Policy, and Insider scores. 0-39 = low risk (green), 40-69 = moderate (yellow), 70-100 = high (red). Overall political risk — weighted blend of all sub-scores. The coloured bar shows how much each sub-score contributes to this total. Abnormal price/volume activity around political events. Weighted 35% of composite. Government contracts, sanctions, and regulatory exposure. Weighted 40% of composite. Congressional trades and executive financial disclosures. Weighted 25% of composite. 50th percentile of (filed_at − traded_at) 90th percentile — the long tail -1 = all D activity, +1 = all R activity, 0 = perfectly split -1 = all D activity, +1 = all R activity, 0 = perfectly split Distinct representatives who bought or sold this ticker
+    - paragraph [ref=e386]: "Disclaimer: mrdn is provided for informational and educational purposes only. Nothing on this site constitutes financial, investment, legal, tax, or trading advice, nor a recommendation or solicitation to buy, sell, or hold any security. Data is sourced from public filings and third-party providers and may be incomplete, delayed, or inaccurate. Past activity is not indicative of future results. Do your own research and consult a licensed professional before making any investment decision."

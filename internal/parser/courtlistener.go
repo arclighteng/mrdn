@@ -16,7 +16,7 @@ import (
 const (
 	courtListenerSourceName = "courtlistener"
 	courtListenerBaseURL    = "https://www.courtlistener.com/api/rest/v4/financial-disclosures/"
-	courtListenerPollQuery  = "?ordering=-date_created&has_been_extracted=true&limit=20"
+	courtListenerPollQuery  = "?has_been_extracted=true&page_size=20"
 )
 
 // clTickerRe extracts a ticker symbol from parentheses in an investment description,
@@ -48,7 +48,8 @@ func (c *CourtListenerSource) Poll(ctx context.Context) ([]db.Event, error) {
 	url := courtListenerBaseURL + courtListenerPollQuery
 
 	var all []db.Event
-	for url != "" {
+	const maxPages = 5 // Cap at 5 pages (100 disclosures) per poll cycle.
+	for page := 0; url != "" && page < maxPages; page++ {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
 			return nil, fmt.Errorf("courtlistener: building request: %w", err)
@@ -92,9 +93,9 @@ func (c *CourtListenerSource) Poll(ctx context.Context) ([]db.Event, error) {
 // clResponse is the top-level paginated envelope from the CourtListener
 // financial-disclosures endpoint.
 type clResponse struct {
-	Count   int          `json:"count"`
-	Next    *string      `json:"next"`
-	Results []clDisclosure `json:"results"`
+	Count   json.RawMessage `json:"count"` // v4 returns a URL string, not an int
+	Next    *string         `json:"next"`
+	Results []clDisclosure  `json:"results"`
 }
 
 // clDisclosure is a single financial disclosure record.

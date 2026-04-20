@@ -1,0 +1,119 @@
+<h2>Insights Card Layout</h2>
+<p class="subtitle">This replaces the Risk Scale legend at the top of the dashboard. Pick the layout that feels right.</p>
+
+<div class="cards">
+  <!-- Option A: Horizontal strip -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding: 16px;">
+      <div style="background:#1c1c1c; border:1px solid rgba(255,255,255,0.15); border-radius:12px; padding:20px; display:flex; gap:20px; align-items:stretch;">
+        <!-- Hero -->
+        <div style="flex:1.5; background:#262626; border-radius:8px; padding:16px; border-left:3px solid #818cf8;">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+            <span style="font-size:10px; text-transform:uppercase; letter-spacing:0.1em; color:#818cf8; font-weight:600;">Insights</span>
+            <span style="font-size:10px; color:#737373;">·</span>
+            <span style="font-size:10px; color:#737373;">Updated 2h ago</span>
+          </div>
+          <div style="font-size:14px; color:#e5e5e5; font-weight:500; margin-bottom:6px;">Unusual cluster: 4 Banking Committee members exited SIVB in 3 days</div>
+          <table style="width:100%; font-size:11px; color:#a3a3a3; border-collapse:collapse;">
+            <tr style="border-bottom:1px solid rgba(255,255,255,0.08);">
+              <td style="padding:4px 0;">Pelosi, N.</td><td>Sold $500K–$1M</td><td style="color:#737373;">Feb 12</td>
+            </tr>
+            <tr style="border-bottom:1px solid rgba(255,255,255,0.08);">
+              <td style="padding:4px 0;">Tuberville, T.</td><td>Sold $250K–$500K</td><td style="color:#737373;">Feb 13</td>
+            </tr>
+            <tr>
+              <td style="padding:4px 0; color:#737373;">+2 more</td><td></td><td></td>
+            </tr>
+          </table>
+        </div>
+        <!-- Secondaries -->
+        <div style="flex:1; display:flex; flex-direction:column; gap:12px;">
+          <div style="background:#262626; border-radius:8px; padding:12px; flex:1; cursor:pointer;">
+            <div style="font-size:11px; color:#818cf8; margin-bottom:4px;">Lone wolf</div>
+            <div style="font-size:12px; color:#d4d4d4;">Rep. X traded $2.1M in NVDA — 8× their typical size</div>
+            <div style="font-size:10px; color:#737373; margin-top:4px;">Rarity: 94 · 3 days ago</div>
+          </div>
+          <div style="background:#262626; border-radius:8px; padding:12px; flex:1; cursor:pointer;">
+            <div style="font-size:11px; color:#818cf8; margin-bottom:4px;">Pre-event timing</div>
+            <div style="font-size:12px; color:#d4d4d4;">3 trades in LMT within 48h before $2B DoD contract</div>
+            <div style="font-size:10px; color:#737373; margin-top:4px;">Rarity: 87 · 1 week ago</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A: Horizontal — Hero left, secondaries stacked right</h3>
+      <p>Hero gets ~60% width with data table. Secondaries are compact cards stacked vertically. Full-width strip below nav.</p>
+    </div>
+  </div>
+
+  <!-- Option B: Vertical hero with secondaries below -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding: 16px;">
+      <div style="background:#1c1c1c; border:1px solid rgba(255,255,255,0.15); border-radius:12px; padding:20px;">
+        <!-- Hero -->
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+          <span style="font-size:10px; text-transform:uppercase; letter-spacing:0.1em; color:#818cf8; font-weight:600;">Insights</span>
+          <span style="font-size:10px; color:#737373;">·</span>
+          <span style="font-size:10px; color:#737373;">Updated 2h ago</span>
+        </div>
+        <div style="background:#262626; border-radius:8px; padding:16px; border-left:3px solid #818cf8; margin-bottom:14px;">
+          <div style="font-size:14px; color:#e5e5e5; font-weight:500; margin-bottom:6px;">Unusual cluster: 4 Banking Committee members exited SIVB in 3 days</div>
+          <div style="display:flex; gap:16px; font-size:11px; color:#a3a3a3; flex-wrap:wrap;">
+            <span>Pelosi — Sold $500K–$1M (Feb 12)</span>
+            <span>Tuberville — Sold $250K–$500K (Feb 13)</span>
+            <span style="color:#737373;">+2 more</span>
+          </div>
+        </div>
+        <!-- Secondaries inline -->
+        <div style="display:flex; gap:12px;">
+          <div style="background:#262626; border-radius:8px; padding:12px; flex:1; cursor:pointer;">
+            <div style="font-size:11px; color:#818cf8; margin-bottom:4px;">Lone wolf</div>
+            <div style="font-size:12px; color:#d4d4d4;">Rep. X traded $2.1M in NVDA — 8× their typical size</div>
+          </div>
+          <div style="background:#262626; border-radius:8px; padding:12px; flex:1; cursor:pointer;">
+            <div style="font-size:11px; color:#818cf8; margin-bottom:4px;">Pre-event timing</div>
+            <div style="font-size:12px; color:#d4d4d4;">3 trades in LMT within 48h before $2B DoD contract</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B: Vertical — Hero on top, secondaries side-by-side below</h3>
+      <p>Hero spans full width with inline data. Secondaries share a row underneath. More vertical space but cleaner hierarchy.</p>
+    </div>
+  </div>
+
+  <!-- Option C: Compact ticker-style -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding: 16px;">
+      <div style="background:#1c1c1c; border:1px solid rgba(255,255,255,0.15); border-radius:12px; padding:16px;">
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+          <span style="font-size:10px; text-transform:uppercase; letter-spacing:0.1em; color:#818cf8; font-weight:600;">Insights</span>
+          <span style="font-size:10px; color:#737373;">· 3 patterns detected</span>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <div style="display:flex; align-items:center; gap:12px; background:#262626; border-radius:8px; padding:10px 14px; border-left:3px solid #818cf8; cursor:pointer;">
+            <span style="font-size:10px; text-transform:uppercase; color:#818cf8; width:90px; flex-shrink:0; font-weight:500;">Coordinated</span>
+            <span style="font-size:12px; color:#e5e5e5; flex:1;">4 Banking Committee members exited SIVB in 3 days</span>
+            <span style="font-size:10px; color:#737373; flex-shrink:0;">Rarity 96</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:12px; background:#262626; border-radius:8px; padding:10px 14px; cursor:pointer;">
+            <span style="font-size:10px; text-transform:uppercase; color:#818cf8; width:90px; flex-shrink:0; font-weight:500;">Lone wolf</span>
+            <span style="font-size:12px; color:#d4d4d4; flex:1;">Rep. X traded $2.1M in NVDA — 8× their typical size</span>
+            <span style="font-size:10px; color:#737373; flex-shrink:0;">Rarity 94</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:12px; background:#262626; border-radius:8px; padding:10px 14px; cursor:pointer;">
+            <span style="font-size:10px; text-transform:uppercase; color:#818cf8; width:90px; flex-shrink:0; font-weight:500;">Pre-event</span>
+            <span style="font-size:12px; color:#d4d4d4; flex:1;">3 trades in LMT within 48h before $2B DoD contract</span>
+            <span style="font-size:10px; color:#737373; flex-shrink:0;">Rarity 87</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C: Compact list — All 3 findings as equal rows</h3>
+      <p>No hero/secondary distinction. Clean horizontal rows with type badge, headline, and rarity. Most information-dense, least editorial.</p>
+    </div>
+  </div>
+</div>
