@@ -1,0 +1,34 @@
+[
+  {
+    "symbol": "MSFT",
+    "disclosureDate": "2026-04-14",
+    "transactionDate": "2026-03-05",
+    "firstName": "John",
+    "lastName": "Boozman",
+    "office": "John Boozman",
+    "district": "AR",
+    "owner": "Joint",
+    "assetDescription": "Microsoft Corp",
+    "assetType": "Stock",
+    "type": "Purchase",
+    "amount": "$1,001 - $15,000",
+    "comment": "",
+    "link": "https://efdsearch.senate.gov/search/view/ptr/test123/"
+  },
+  {
+    "symbol": "GOOGL",
+    "disclosureDate": "2026-04-03",
+    "transactionDate": "2026-03-30",
+    "firstName": "John",
+    "lastName": "Fetterman",
+    "office": "John Fetterman",
+    "district": "PA",
+    "owner": "",
+    "assetDescription": "Alphabet Inc",
+    "assetType": "Stock",
+    "type": "Purchase",
+    "amount": "$1,001 - $15,000",
+    "comment": "",
+    "link": "https://efdsearch.senate.gov/search/view/ptr/test456/"
+  }
+]

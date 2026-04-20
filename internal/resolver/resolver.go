@@ -173,6 +173,8 @@ func (r *Resolver) Resolve(ctx context.Context, evt db.Event) int {
 		companyID, err = r.resolveEFDSTrades(ctx, evt)
 	case "finnhub_congress":
 		companyID, err = r.resolveFinnhubCongress(ctx, evt)
+	case "fmp_congress":
+		companyID, err = r.resolveFMPCongress(ctx, evt)
 	case "courtlistener":
 		companyID, err = r.resolveCourtListener(ctx, evt)
 	case "finnhub":
@@ -767,6 +769,103 @@ func (r *Resolver) resolveFinnhubCongress(ctx context.Context, evt db.Event) (in
 	if err := r.store.InsertCongressionalTrade(ctx, ct); err != nil {
 		if !isDuplicateError(err) {
 			log.Printf("[resolver] finnhub_congress congressional_trade insert: %v", err)
+		}
+	}
+
+	return companyID, nil
+}
+
+// fmpCongressEvent mirrors the JSON stored per-trade by the FMP congressional
+// trading parser (one event per trade record).
+type fmpCongressEvent struct {
+	Symbol           string `json:"symbol"`
+	DisclosureDate   string `json:"disclosure_date"`
+	TransactionDate  string `json:"transaction_date"`
+	FirstName        string `json:"first_name"`
+	LastName         string `json:"last_name"`
+	Office           string `json:"office"`
+	District         string `json:"district"`
+	Owner            string `json:"owner"`
+	AssetDescription string `json:"asset_description"`
+	AssetType        string `json:"asset_type"`
+	TradeType        string `json:"trade_type"`
+	Amount           string `json:"amount"`
+	AmountLow        int    `json:"amount_low"`
+	AmountHigh       int    `json:"amount_high"`
+	Chamber          string `json:"chamber"` // "senate" or "house"
+	Link             string `json:"link"`
+}
+
+func (r *Resolver) resolveFMPCongress(ctx context.Context, evt db.Event) (int, error) {
+	var trade fmpCongressEvent
+	if err := json.Unmarshal(evt.EventData, &trade); err != nil {
+		return 0, fmt.Errorf("unmarshal fmp_congress trade: %w", err)
+	}
+
+	ticker := strings.ToUpper(strings.TrimSpace(trade.Symbol))
+	if ticker == "" || ticker == "--" || ticker == "N/A" {
+		return 0, nil
+	}
+
+	companyID, err := r.ensureCompany(ctx, ticker, trade.AssetDescription)
+	if err != nil {
+		return 0, err
+	}
+
+	var companyIDPtr *int
+	if companyID > 0 {
+		companyIDPtr = &companyID
+	}
+
+	// Determine role from chamber.
+	role := "senator"
+	if trade.Chamber == "house" {
+		role = "representative"
+	}
+	_ = role // used when person is created in future enrichment; slug lookup is the primary path
+
+	var personID *int
+	fullName := strings.TrimSpace(trade.FirstName + " " + trade.LastName)
+	if fullName != "" && fullName != " " {
+		slug := slugifyName(fullName)
+		if p, err := r.store.GetPersonBySlug(ctx, slug); err == nil {
+			personID = &p.ID
+		}
+	}
+
+	var tradedAt *time.Time
+	if trade.TransactionDate != "" {
+		if t, err := time.Parse("2006-01-02", trade.TransactionDate); err == nil {
+			tt := t.UTC()
+			tradedAt = &tt
+		}
+	}
+
+	var filedAt *time.Time
+	if trade.DisclosureDate != "" {
+		if t, err := time.Parse("2006-01-02", trade.DisclosureDate); err == nil {
+			ft := t.UTC()
+			filedAt = &ft
+		}
+	}
+
+	eventID := evt.ID
+	ct := db.CongressionalTrade{
+		EventID:         &eventID,
+		PersonID:        personID,
+		CompanyID:       companyIDPtr,
+		OwnerType:       strPtr(trade.Owner),
+		Ticker:          strPtr(ticker),
+		TradeType:       strPtr(trade.TradeType),
+		AmountRangeLow:  intPtrOrNil(trade.AmountLow),
+		AmountRangeHigh: intPtrOrNil(trade.AmountHigh),
+		FiledAt:         filedAt,
+		TradedAt:        tradedAt,
+	}
+
+	if err := r.store.InsertCongressionalTrade(ctx, ct); err != nil {
+		if !isDuplicateError(err) {
+			log.Printf("[resolver] fmp_congress congressional_trade insert: %v", err)
 		}
 	}
 

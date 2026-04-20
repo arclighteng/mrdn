@@ -17,6 +17,7 @@ type Config struct {
 	PolygonAPIKey        string
 	FECAPIKey            string
 	CourtListenerToken   string
+	FMPAPIKey            string
 
 	// SSE connection limits.
 	SSEMaxPerIP  int
@@ -68,6 +69,7 @@ func Load() (*Config, error) {
 		PolygonAPIKey:      os.Getenv("MRDN_POLYGON_API_KEY"),
 		FECAPIKey:          os.Getenv("MRDN_FEC_API_KEY"),
 		CourtListenerToken: os.Getenv("MRDN_COURTLISTENER_TOKEN"),
+		FMPAPIKey:          os.Getenv("MRDN_FMP_API_KEY"),
 		SSEMaxPerIP:   sseMaxPerIP,
 		SSEMaxPerKey:  sseMaxPerKey,
 		SSEMaxGlobal:  sseMaxGlobal,
