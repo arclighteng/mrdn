@@ -10,6 +10,9 @@ import (
 //go:embed migrations/001_sqlite_initial.sql
 var sqliteSchema string
 
+//go:embed migrations/002_composite_indexes.sql
+var compositeIndexesSQL string
+
 func Migrate(ctx context.Context, d *sql.DB) error {
 	var exists int
 	err := d.QueryRowContext(ctx,
@@ -37,6 +40,20 @@ func Migrate(ctx context.Context, d *sql.DB) error {
 					"INSERT OR IGNORE INTO schema_migrations (version) VALUES (2)",
 				); err != nil {
 					return fmt.Errorf("recording v2 migration: %w", err)
+				}
+			}
+
+			// Version 3: composite indexes for congressional_trades self-join queries.
+			var v3Applied int
+			d.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations WHERE version = 3").Scan(&v3Applied)
+			if v3Applied == 0 {
+				if _, err := d.ExecContext(ctx, compositeIndexesSQL); err != nil {
+					return fmt.Errorf("running v3 migration: %w", err)
+				}
+				if _, err := d.ExecContext(ctx,
+					"INSERT OR IGNORE INTO schema_migrations (version) VALUES (3)",
+				); err != nil {
+					return fmt.Errorf("recording v3 migration: %w", err)
 				}
 			}
 			return nil
