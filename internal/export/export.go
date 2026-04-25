@@ -544,28 +544,27 @@ func exportDataMeta(outDir string) error {
 	return writeJSON(filepath.Join(outDir, "meta.json"), meta)
 }
 
-func exportScoreboard(ctx context.Context, store *db.Store, outDir string) error {
-	accRows, err := store.AccountabilityInputs(ctx, 5)
-	if err != nil {
-		log.Printf("export: accountability inputs: %v", err)
-		return nil // non-fatal
-	}
-	type ScoreboardEntry struct {
-		PersonID            int     `json:"person_id"`
-		Slug                string  `json:"slug"`
-		Name                string  `json:"name"`
-		Party               *string `json:"party,omitempty"`
-		State               *string `json:"state,omitempty"`
-		Score               int     `json:"score"`
-		TradeCount          int     `json:"trade_count"`
-		MedianLatencyDays   int     `json:"median_latency_days"`
-		LatePct             float64 `json:"late_pct"`
-		CommitteeTradeCount int     `json:"committee_trades"`
-		RoundTripCount      int     `json:"round_trips"`
-		PreEventCount       int     `json:"pre_event_trades"`
-	}
-	entries := make([]ScoreboardEntry, 0, len(accRows))
-	for _, r := range accRows {
+// ScoreboardEntry is one politician's row in the accountability scoreboard JSON.
+type ScoreboardEntry struct {
+	PersonID            int     `json:"person_id"`
+	Slug                string  `json:"slug"`
+	Name                string  `json:"name"`
+	Party               *string `json:"party,omitempty"`
+	State               *string `json:"state,omitempty"`
+	Score               int     `json:"score"`
+	TradeCount          int     `json:"trade_count"`
+	MedianLatencyDays   int     `json:"median_latency_days"`
+	LatePct             float64 `json:"late_pct"`
+	CommitteeTradeCount int     `json:"committee_trades"`
+	RoundTripCount      int     `json:"round_trips"`
+	PreEventCount       int     `json:"pre_event_trades"`
+}
+
+// buildScoreboardEntries converts raw accountability rows into scored, sorted
+// scoreboard entries. It is a pure function with no I/O side-effects.
+func buildScoreboardEntries(rows []db.AccountabilityRow) []ScoreboardEntry {
+	entries := make([]ScoreboardEntry, 0, len(rows))
+	for _, r := range rows {
 		ratio := 0.0
 		if r.TradeCount > 0 {
 			ratio = float64(r.CommitteeTradeCount) / float64(r.TradeCount)
@@ -594,6 +593,16 @@ func exportScoreboard(ctx context.Context, store *db.Store, outDir string) error
 		})
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Score > entries[j].Score })
+	return entries
+}
+
+func exportScoreboard(ctx context.Context, store *db.Store, outDir string) error {
+	accRows, err := store.AccountabilityInputs(ctx, 5)
+	if err != nil {
+		log.Printf("export: accountability inputs: %v", err)
+		return nil // non-fatal
+	}
+	entries := buildScoreboardEntries(accRows)
 	return writeJSON(filepath.Join(outDir, "scoreboard.json"), entries)
 }
 
