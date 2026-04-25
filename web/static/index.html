@@ -1669,6 +1669,7 @@ tailwind.config = {
       </div>
       <svg id="network-svg" width="100%" height="600" x-show="networkData && !networkLoading" role="img" aria-label="Co-Trader Network graph showing relationships between congressional traders"></svg>
     </div>
+    <p class="text-xs text-neutral-500 mt-2">Drag nodes to reposition. Scroll to zoom.</p>
   </div>
 
   <!-- Tickers (most-traded leaderboard) -->
@@ -2831,14 +2832,21 @@ function app() {
         .force('collision', d3.forceCollide(30))
         .alphaDecay(0.05);
 
-      const link = svg.append('g')
+      const g = svg.append('g');
+
+      const zoom = d3.zoom().scaleExtent([0.3, 3]).on('zoom', (e) => {
+        g.attr('transform', e.transform);
+      });
+      svg.call(zoom);
+
+      const link = g.append('g')
         .selectAll('line')
         .data(links)
         .enter().append('line')
         .attr('stroke', 'rgba(99,102,241,0.3)')
         .attr('stroke-width', 1.5);
 
-      const node = svg.append('g')
+      const node = g.append('g')
         .selectAll('g')
         .data(nodes)
         .enter().append('g')
