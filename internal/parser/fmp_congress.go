@@ -62,12 +62,12 @@ func (f *FMPCongressSource) Poll(ctx context.Context) ([]db.Event, error) {
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
-			return nil, fmt.Errorf("fmp_congress: building request for %s: %w", ch.chamber, err)
+			return nil, fmt.Errorf("fmp_congress: building request for %s (%s): %w", ch.chamber, redactKey(url, f.apiKey), err)
 		}
 
 		resp, err := f.client.Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("fmp_congress: executing request for %s: %w", ch.chamber, err)
+			return nil, fmt.Errorf("fmp_congress: executing request for %s (%s): %w", ch.chamber, redactKey(url, f.apiKey), err)
 		}
 
 		if resp.StatusCode != http.StatusOK {
@@ -189,7 +189,7 @@ func ParseFMPCongress(data []byte, chamber string) ([]db.Event, error) {
 			Source: fmpCongressSourceName,
 			SourceID: sourceID(
 				fmpCongressSourceName,
-				rec.FirstName+rec.LastName,
+				rec.FirstName+"|"+rec.LastName,
 				rec.Symbol,
 				rec.TransactionDate,
 				rec.Type,

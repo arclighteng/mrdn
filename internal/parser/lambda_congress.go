@@ -44,12 +44,12 @@ func (l *LambdaCongressSource) Poll(ctx context.Context) ([]db.Event, error) {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("lambda_congress: building request: %w", err)
+		return nil, fmt.Errorf("lambda_congress: building request for %s: %w", redactKey(url, l.apiKey), err)
 	}
 
 	resp, err := l.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("lambda_congress: executing request: %w", err)
+		return nil, fmt.Errorf("lambda_congress: executing request for %s: %w", redactKey(url, l.apiKey), err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -161,7 +161,7 @@ func ParseLambdaCongress(data []byte) ([]db.Event, error) {
 			Source: lambdaCongressSourceName,
 			SourceID: sourceID(
 				lambdaCongressSourceName,
-				rec.FirstName+rec.LastName,
+				rec.FirstName+"|"+rec.LastName,
 				rec.Symbol,
 				rec.TransactionDate,
 				rec.Type,
