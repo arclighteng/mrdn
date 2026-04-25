@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"time"
 )
 
 // LatencyRow is one row of the STOCK Act disclosure-latency leaderboard.
@@ -261,6 +262,9 @@ type AccountabilityRow struct {
 // AccountabilityInputs returns raw accountability metrics for all persons
 // with at least minTrades congressional trades.
 func (s *Store) AccountabilityInputs(ctx context.Context, minTrades int) ([]AccountabilityRow, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
 	rows, err := s.db.QueryContext(ctx, `
 		WITH trade_counts AS (
 			SELECT person_id, COUNT(*) as cnt
@@ -349,7 +353,7 @@ func (s *Store) AccountabilityInputs(ctx context.Context, minTrades int) ([]Acco
 			&r.TradeCount, &scoreable, &lateCount,
 			&r.CommitteeTradeCount, &r.RoundTripCount, &r.PreEventCount,
 		); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("scanning accountability row: %w", err)
 		}
 		if scoreable > 0 {
 			r.LatePct = float64(lateCount) / float64(scoreable)
