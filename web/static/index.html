@@ -117,6 +117,7 @@ tailwind.config = {
   html:not(.dark) .text-blue-300\/60 { color: rgba(29,78,216,0.6); }
   html:not(.dark) .bg-red-500\/10 { background-color: rgba(239,68,68,0.08); }
   html:not(.dark) .border-red-500\/30 { border-color: rgba(239,68,68,0.3); }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
 </style>
 </head>
 <body x-data="app()" x-cloak>
@@ -385,13 +386,14 @@ tailwind.config = {
           <div x-show="insightHero?.timeline?.length" class="flex items-center gap-0 mt-1 mb-2 overflow-x-auto pb-1">
             <template x-for="(step, i) in (insightHero?.timeline || [])" :key="i">
               <div class="flex items-center shrink-0">
-                <div x-show="i > 0" class="w-8 h-0.5 bg-accent/30"></div>
+                <div x-show="i > 0" class="w-8 h-0.5 bg-accent/30" aria-hidden="true"></div>
                 <div class="flex flex-col items-center gap-1 px-2">
                   <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm"
                     :class="step.kind === 'trade' ? 'bg-accent/20' : step.kind === 'event' ? 'bg-red-500/20' : 'bg-yellow-500/10'"
+                    role="img" :aria-label="step.kind + ' indicator'"
                     x-text="step.icon"></div>
                   <div class="text-[10px] text-neutral-400 whitespace-nowrap" x-text="step.date"></div>
-                  <div class="text-[10px] text-neutral-300 whitespace-nowrap max-w-[140px] truncate" x-text="step.label"></div>
+                  <div class="text-[10px] text-neutral-300 whitespace-nowrap max-w-[140px] truncate" :title="step.label" x-text="step.label"></div>
                 </div>
               </div>
             </template>
@@ -909,22 +911,23 @@ tailwind.config = {
       <div x-show="scoreboardLoading" class="text-neutral-400 text-sm text-center py-12">Loading scoreboard...</div>
       <div x-show="!scoreboardLoading && scoreboard.length === 0" class="text-neutral-400 text-sm text-center py-12">No scoreboard data — run export with trade data ingested</div>
       <table x-show="!scoreboardLoading && scoreboard.length > 0" class="w-full text-sm">
+        <caption class="sr-only">Congressional Trading Accountability Scoreboard - click column headers to sort</caption>
         <thead>
           <tr class="border-b border-white/10 text-neutral-400 text-xs uppercase tracking-wider">
             <th scope="col" class="text-left py-3 px-4">#</th>
             <th scope="col" class="text-left py-3 px-4">Name</th>
             <th scope="col" class="text-center py-3 px-2">Party</th>
-            <th scope="col" class="text-right py-3 px-4 cursor-pointer hover:text-white" @click="scoreboard.sort((a,b)=>b.score-a.score)">Score</th>
-            <th scope="col" class="text-right py-3 px-4 cursor-pointer hover:text-white" @click="scoreboard.sort((a,b)=>b.trade_count-a.trade_count)">Trades</th>
-            <th scope="col" class="text-right py-3 px-4 cursor-pointer hover:text-white" @click="scoreboard.sort((a,b)=>b.median_latency_days-a.median_latency_days)">Filing Lag</th>
-            <th scope="col" class="text-right py-3 px-4 cursor-pointer hover:text-white" @click="scoreboard.sort((a,b)=>b.committee_trades-a.committee_trades)">Committee</th>
-            <th scope="col" class="text-right py-3 px-4 cursor-pointer hover:text-white" @click="scoreboard.sort((a,b)=>b.round_trips-a.round_trips)">Round-trips</th>
-            <th scope="col" class="text-right py-3 px-4 cursor-pointer hover:text-white" @click="scoreboard.sort((a,b)=>b.pre_event_trades-a.pre_event_trades)">Pre-event</th>
+            <th scope="col" class="text-right py-3 px-4 cursor-pointer hover:text-white focus-visible:ring-2 focus-visible:ring-accent" tabindex="0" :aria-sort="scoreboardSortCol === 'score' ? 'descending' : 'none'" @click="scoreboardSortCol='score'; scoreboard.sort((a,b)=>b.score-a.score)" @keydown.enter="scoreboardSortCol='score'; scoreboard.sort((a,b)=>b.score-a.score)" @keydown.space.prevent="scoreboardSortCol='score'; scoreboard.sort((a,b)=>b.score-a.score)">Score<span x-show="scoreboardSortCol === 'score'" class="ml-1">&#9660;</span></th>
+            <th scope="col" class="text-right py-3 px-4 cursor-pointer hover:text-white focus-visible:ring-2 focus-visible:ring-accent" tabindex="0" :aria-sort="scoreboardSortCol === 'trade_count' ? 'descending' : 'none'" @click="scoreboardSortCol='trade_count'; scoreboard.sort((a,b)=>b.trade_count-a.trade_count)" @keydown.enter="scoreboardSortCol='trade_count'; scoreboard.sort((a,b)=>b.trade_count-a.trade_count)" @keydown.space.prevent="scoreboardSortCol='trade_count'; scoreboard.sort((a,b)=>b.trade_count-a.trade_count)">Trades<span x-show="scoreboardSortCol === 'trade_count'" class="ml-1">&#9660;</span></th>
+            <th scope="col" class="text-right py-3 px-4 cursor-pointer hover:text-white focus-visible:ring-2 focus-visible:ring-accent" tabindex="0" :aria-sort="scoreboardSortCol === 'median_latency_days' ? 'descending' : 'none'" @click="scoreboardSortCol='median_latency_days'; scoreboard.sort((a,b)=>b.median_latency_days-a.median_latency_days)" @keydown.enter="scoreboardSortCol='median_latency_days'; scoreboard.sort((a,b)=>b.median_latency_days-a.median_latency_days)" @keydown.space.prevent="scoreboardSortCol='median_latency_days'; scoreboard.sort((a,b)=>b.median_latency_days-a.median_latency_days)">Filing Lag<span x-show="scoreboardSortCol === 'median_latency_days'" class="ml-1">&#9660;</span></th>
+            <th scope="col" class="text-right py-3 px-4 cursor-pointer hover:text-white focus-visible:ring-2 focus-visible:ring-accent" tabindex="0" :aria-sort="scoreboardSortCol === 'committee_trades' ? 'descending' : 'none'" @click="scoreboardSortCol='committee_trades'; scoreboard.sort((a,b)=>b.committee_trades-a.committee_trades)" @keydown.enter="scoreboardSortCol='committee_trades'; scoreboard.sort((a,b)=>b.committee_trades-a.committee_trades)" @keydown.space.prevent="scoreboardSortCol='committee_trades'; scoreboard.sort((a,b)=>b.committee_trades-a.committee_trades)">Committee<span x-show="scoreboardSortCol === 'committee_trades'" class="ml-1">&#9660;</span></th>
+            <th scope="col" class="text-right py-3 px-4 cursor-pointer hover:text-white focus-visible:ring-2 focus-visible:ring-accent" tabindex="0" :aria-sort="scoreboardSortCol === 'round_trips' ? 'descending' : 'none'" @click="scoreboardSortCol='round_trips'; scoreboard.sort((a,b)=>b.round_trips-a.round_trips)" @keydown.enter="scoreboardSortCol='round_trips'; scoreboard.sort((a,b)=>b.round_trips-a.round_trips)" @keydown.space.prevent="scoreboardSortCol='round_trips'; scoreboard.sort((a,b)=>b.round_trips-a.round_trips)">Round-trips<span x-show="scoreboardSortCol === 'round_trips'" class="ml-1">&#9660;</span></th>
+            <th scope="col" class="text-right py-3 px-4 cursor-pointer hover:text-white focus-visible:ring-2 focus-visible:ring-accent" tabindex="0" :aria-sort="scoreboardSortCol === 'pre_event_trades' ? 'descending' : 'none'" @click="scoreboardSortCol='pre_event_trades'; scoreboard.sort((a,b)=>b.pre_event_trades-a.pre_event_trades)" @keydown.enter="scoreboardSortCol='pre_event_trades'; scoreboard.sort((a,b)=>b.pre_event_trades-a.pre_event_trades)" @keydown.space.prevent="scoreboardSortCol='pre_event_trades'; scoreboard.sort((a,b)=>b.pre_event_trades-a.pre_event_trades)">Pre-event<span x-show="scoreboardSortCol === 'pre_event_trades'" class="ml-1">&#9660;</span></th>
           </tr>
         </thead>
         <tbody>
           <template x-for="(r, i) in scoreboard.slice(0, 50)" :key="r.slug">
-            <tr class="border-b border-white/5 hover:bg-surface-2 cursor-pointer" @click="openPerson(r.slug)">
+            <tr class="border-b border-white/5 hover:bg-surface-2 cursor-pointer" tabindex="0" @click="openPerson(r.slug)" @keydown.enter="openPerson(r.slug)">
               <td class="py-2 px-4 text-neutral-500 tabular-nums" x-text="i + 1"></td>
               <td class="py-2 px-4">
                 <span class="text-neutral-200 font-medium" x-text="r.name"></span>
@@ -937,6 +940,7 @@ tailwind.config = {
               </td>
               <td class="py-2 px-4 text-right tabular-nums">
                 <span class="font-bold" :class="r.score >= 70 ? 'text-red-400' : r.score >= 40 ? 'text-yellow-400' : 'text-green-400'" x-text="r.score"></span>
+                <span class="sr-only" x-text="r.score >= 70 ? 'high risk' : r.score >= 40 ? 'moderate risk' : 'low risk'"></span>
               </td>
               <td class="py-2 px-4 text-right tabular-nums text-neutral-300" x-text="r.trade_count"></td>
               <td class="py-2 px-4 text-right tabular-nums" :class="r.median_latency_days > 45 ? 'text-red-400' : 'text-neutral-300'" x-text="r.median_latency_days + 'd'"></td>
@@ -1663,7 +1667,7 @@ tailwind.config = {
         class="absolute inset-0 flex items-center justify-center">
         <span class="text-neutral-400 text-sm">No co-trading relationships found. Ingest trade data to populate the network.</span>
       </div>
-      <svg id="network-svg" width="100%" height="600" x-show="networkData && !networkLoading"></svg>
+      <svg id="network-svg" width="100%" height="600" x-show="networkData && !networkLoading" role="img" aria-label="Co-Trader Network graph showing relationships between congressional traders"></svg>
     </div>
   </div>
 
@@ -2052,6 +2056,7 @@ function app() {
     personsMode: 'roster',
     scoreboard: [],
     scoreboardLoading: false,
+    scoreboardSortCol: 'score',
 
     // Signals — STOCK Act latency, swarms, partisan tickers, first movers
     signalsTab: 'compliance',
@@ -2802,6 +2807,7 @@ function app() {
 
       const svg = d3.select('#network-svg');
       svg.selectAll('*').remove();
+      svg.append('title').text('Co-Trader Network: ' + data.nodes.length + ' representatives, ' + data.edges.length + ' connections');
 
       const width = svg.node().getBoundingClientRect().width || 800;
       const height = 600;
@@ -2822,7 +2828,8 @@ function app() {
         .force('link', d3.forceLink(links).distance(100))
         .force('charge', d3.forceManyBody().strength(-200))
         .force('center', d3.forceCenter(width / 2, height / 2))
-        .force('collision', d3.forceCollide(30));
+        .force('collision', d3.forceCollide(30))
+        .alphaDecay(0.05);
 
       const link = svg.append('g')
         .selectAll('line')
@@ -2850,6 +2857,19 @@ function app() {
         .attr('dx', 10).attr('dy', 4)
         .attr('font-size', '10px')
         .attr('fill', '#9ca3af');
+
+      node.attr('tabindex', 0)
+          .attr('role', 'button')
+          .attr('aria-label', d => d.label || 'Unknown');
+
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        for (let i = 0; i < 300; i++) sim.tick();
+        sim.stop();
+        link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+            .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+        node.attr('transform', d => `translate(${d.x},${d.y})`);
+        return;
+      }
 
       sim.on('tick', () => {
         link
