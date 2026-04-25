@@ -10,6 +10,11 @@ import (
 const (
 	maxBFSDepth  = 4
 	maxBFSBudget = 500
+
+	// CoTraderMonthWindow is the rolling look-back period (in months) used when
+	// detecting co-trading pairs. A 24-month window captures two full congressional
+	// sessions, balancing recency against sample size.
+	CoTraderMonthWindow = 24
 )
 
 // GraphNode is a single vertex in the entity relationship graph.
@@ -274,22 +279,22 @@ func (s *Store) CoTraderNetwork(ctx context.Context, minOverlaps int) (*GraphRes
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT a.person_id, b.person_id, COUNT(DISTINCT a.ticker) AS shared_tickers
 		FROM congressional_trades a
 		JOIN congressional_trades b
 		    ON a.ticker = b.ticker
 		   AND a.person_id < b.person_id
 		   AND ABS(julianday(a.traded_at) - julianday(b.traded_at)) <= 14
-		WHERE a.traded_at >= date('now', '-24 months')
-		  AND b.traded_at >= date('now', '-24 months')
+		WHERE a.traded_at >= date('now', '-%d months')
+		  AND b.traded_at >= date('now', '-%d months')
 		  AND a.traded_at IS NOT NULL
 		  AND b.traded_at IS NOT NULL
 		GROUP BY a.person_id, b.person_id
 		HAVING shared_tickers >= ?
 		ORDER BY shared_tickers DESC
 		LIMIT 500
-	`, minOverlaps)
+	`, CoTraderMonthWindow, CoTraderMonthWindow), minOverlaps)
 	if err != nil {
 		return nil, fmt.Errorf("co-trader network query: %w", err)
 	}

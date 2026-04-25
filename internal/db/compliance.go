@@ -9,6 +9,24 @@ import (
 	"time"
 )
 
+const (
+	// StockActDeadlineDays is the maximum number of days after a transaction
+	// that a member of Congress may wait before filing a STOCK Act disclosure.
+	// Defined by the Stop Trading on Congressional Knowledge Act (2012).
+	StockActDeadlineDays = 45
+
+	// RoundTripWindowDays is the maximum calendar-day spread between a purchase
+	// and a subsequent sale of the same ticker that qualifies as a "round trip"
+	// for conflict-of-interest analysis. A narrow window signals short-hold,
+	// potentially information-driven trading.
+	RoundTripWindowDays = 60
+
+	// PreEventWindowDays is the look-back window (in days) before a material
+	// corporate event (litigation, contract award, sanctions, etc.) within which
+	// a trade is flagged as potentially event-driven.
+	PreEventWindowDays = 14
+)
+
 // LatencyRow is one row of the STOCK Act disclosure-latency leaderboard.
 //
 // The federal STOCK Act requires members of Congress to disclose covered
@@ -67,7 +85,7 @@ func (s *Store) LatencyLeaderboard(ctx context.Context, minTrades, limit int) ([
 	// JSON array so percentiles can be computed in Go (SQLite lacks
 	// PERCENTILE_CONT).  The worst-ticker correlated subquery avoids
 	// DISTINCT ON, which SQLite does not support.
-	const q = `
+	q := fmt.Sprintf(`
 WITH scored AS (
   SELECT
     ct.person_id,
@@ -86,7 +104,7 @@ agg AS (
     person_id,
     COUNT(*)                                                          AS trades,
     MAX(days)                                                         AS worst_days,
-    SUM(CASE WHEN days > 45 THEN 1 ELSE 0 END)                        AS late_count,
+    SUM(CASE WHEN days > %d THEN 1 ELSE 0 END)                        AS late_count,
     COALESCE('[' || GROUP_CONCAT(CAST(ROUND(days) AS INTEGER)) || ']', '[]') AS days_json
   FROM scored
   GROUP BY person_id
@@ -105,7 +123,7 @@ SELECT
 FROM agg a
 JOIN persons p ON p.id = a.person_id
 WHERE a.trades >= ?
-`
+`, StockActDeadlineDays)
 
 	rows, err := s.db.QueryContext(ctx, q, minTrades)
 	if err != nil {
@@ -191,10 +209,10 @@ type LatencySummary struct {
 func (s *Store) LatencySummaryAll(ctx context.Context) (LatencySummary, error) {
 	// Collect every scoreable latency value as a JSON array so the median can
 	// be computed in Go (SQLite lacks PERCENTILE_CONT).
-	const q = `
+	q := fmt.Sprintf(`
 SELECT
   COUNT(*),
-  COALESCE(SUM(CASE WHEN days > 45 THEN 1 ELSE 0 END), 0),
+  COALESCE(SUM(CASE WHEN days > %d THEN 1 ELSE 0 END), 0),
   COALESCE(CAST(ROUND(MAX(days)) AS INTEGER), 0),
   COALESCE('[' || GROUP_CONCAT(CAST(ROUND(days) AS INTEGER)) || ']', '[]')
 FROM (
@@ -207,7 +225,7 @@ FROM (
     AND traded_at >= '2000-01-01'
     AND filed_at  <  '2100-01-01'
 )
-`
+`, StockActDeadlineDays)
 	var (
 		total     int
 		lateCount int
@@ -265,7 +283,7 @@ func (s *Store) AccountabilityInputs(ctx context.Context, minTrades int) ([]Acco
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
 		WITH trade_counts AS (
 			SELECT person_id, COUNT(*) as cnt
 			FROM congressional_trades
@@ -282,7 +300,7 @@ func (s *Store) AccountabilityInputs(ctx context.Context, minTrades int) ([]Acco
 		latency_agg AS (
 			SELECT l.person_id,
 				COUNT(*) as scoreable,
-				SUM(CASE WHEN l.days > 45 THEN 1 ELSE 0 END) as late_count
+				SUM(CASE WHEN l.days > %d THEN 1 ELSE 0 END) as late_count
 			FROM latency l
 			JOIN trade_counts tc ON tc.person_id = l.person_id
 			GROUP BY l.person_id
@@ -294,11 +312,11 @@ func (s *Store) AccountabilityInputs(ctx context.Context, minTrades int) ([]Acco
 			JOIN companies c ON c.ticker = ct.ticker
 			WHERE ct.person_id IS NOT NULL
 			AND (
-				(pc.committee_name LIKE '%Armed%' AND c.sector IN ('Industrials', 'Defense'))
-				OR (pc.committee_name LIKE '%Banking%' AND c.sector = 'Financials')
-				OR (pc.committee_name LIKE '%Energy%' AND c.sector IN ('Energy', 'Utilities'))
-				OR (pc.committee_name LIKE '%Health%' AND c.sector = 'Health Care')
-				OR (pc.committee_name LIKE '%Commerce%' AND c.sector IN ('Technology', 'Communication Services'))
+				(pc.committee_name LIKE '%%Armed%%' AND c.sector IN ('Industrials', 'Defense'))
+				OR (pc.committee_name LIKE '%%Banking%%' AND c.sector = 'Financials')
+				OR (pc.committee_name LIKE '%%Energy%%' AND c.sector IN ('Energy', 'Utilities'))
+				OR (pc.committee_name LIKE '%%Health%%' AND c.sector = 'Health Care')
+				OR (pc.committee_name LIKE '%%Commerce%%' AND c.sector IN ('Technology', 'Communication Services'))
 			)
 			GROUP BY ct.person_id
 		),
@@ -310,7 +328,7 @@ func (s *Store) AccountabilityInputs(ctx context.Context, minTrades int) ([]Acco
 				AND buy.ticker = sell.ticker
 				AND buy.trade_type IN ('Purchase', 'purchase')
 				AND sell.trade_type IN ('Sale (Full)', 'Sale (Partial)', 'sale_full', 'sale_partial', 'Sale')
-				AND julianday(sell.traded_at) - julianday(buy.traded_at) BETWEEN 1 AND 60
+				AND julianday(sell.traded_at) - julianday(buy.traded_at) BETWEEN 1 AND %d
 			WHERE buy.person_id IS NOT NULL
 			GROUP BY buy.person_id
 		),
@@ -322,7 +340,7 @@ func (s *Store) AccountabilityInputs(ctx context.Context, minTrades int) ([]Acco
 			WHERE ct.traded_at IS NOT NULL
 				AND ct.person_id IS NOT NULL
 				AND e.event_type IN ('sec_litigation', 'government_contract', 'sanctions', 'regulatory_action', 'tariff_action')
-				AND julianday(e.occurred_at) - julianday(ct.traded_at) BETWEEN 1 AND 14
+				AND julianday(e.occurred_at) - julianday(ct.traded_at) BETWEEN 1 AND %d
 			GROUP BY ct.person_id
 		)
 		SELECT p.id, p.slug, p.name, p.party, p.state,
@@ -339,7 +357,7 @@ func (s *Store) AccountabilityInputs(ctx context.Context, minTrades int) ([]Acco
 		LEFT JOIN round_trips rt ON rt.person_id = p.id
 		LEFT JOIN pre_events pe ON pe.person_id = p.id
 		ORDER BY tc.cnt DESC
-	`, minTrades)
+	`, StockActDeadlineDays, RoundTripWindowDays, PreEventWindowDays), minTrades)
 	if err != nil {
 		return nil, fmt.Errorf("accountability inputs: %w", err)
 	}

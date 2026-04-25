@@ -2,6 +2,20 @@ package score
 
 import "math"
 
+const (
+	// latencyFloorDays is the number of days below which disclosure latency is
+	// considered acceptable and contributes zero to the latency sub-score.
+	// Trades filed within this window are effectively on-time for scoring
+	// purposes, providing a small grace margin above the 45-day STOCK Act limit.
+	latencyFloorDays = 20
+
+	// committeeRatioSaturation is the committee-trade ratio at which the
+	// committee sub-score reaches its maximum (100). A politician whose trades
+	// are concentrated 50 % or more in sectors overseen by their own committees
+	// receives the full committee penalty.
+	committeeRatioSaturation = 0.5
+)
+
 // AccountabilityInput holds the behavioral signals used to rate a politician's
 // accountability on financial disclosure and potential conflict-of-interest.
 type AccountabilityInput struct {
@@ -27,9 +41,9 @@ func AccountabilityScore(in AccountabilityInput) float64 {
 		return 0
 	}
 
-	latency := clamp100(float64(in.MedianLatencyDays-20))
+	latency := clamp100(float64(in.MedianLatencyDays - latencyFloorDays))
 	late := clamp100(in.LatePct * 100)
-	committee := clamp100(in.CommitteeTradeRatio / 0.5 * 100)
+	committee := clamp100(in.CommitteeTradeRatio / committeeRatioSaturation * 100)
 
 	var roundTrip float64
 	if in.RoundTripCount > 0 {
