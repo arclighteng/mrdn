@@ -92,6 +92,9 @@ var ingestLambdaCongressCmd = &cobra.Command{
 				failed++
 				continue
 			}
+			if id == 0 {
+				continue // duplicate
+			}
 			inserted++
 			evt.ID = id
 			if cid := res.Resolve(ctx, evt); cid > 0 {
