@@ -8,10 +8,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"time"
 
 	"github.com/arclighteng/mrdn/internal/db"
 	"github.com/arclighteng/mrdn/internal/insights"
+	"github.com/arclighteng/mrdn/internal/score"
 )
 
 var safeFilename = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
@@ -61,6 +63,21 @@ func Run(ctx context.Context, store *db.Store, outDir string) error {
 	// --- Tickers ---
 	if err := exportTickers(ctx, store, outDir); err != nil {
 		return fmt.Errorf("tickers: %w", err)
+	}
+
+	// --- Co-trader network graph ---
+	network, err := store.CoTraderNetwork(ctx, 2)
+	if err != nil {
+		log.Printf("export: co-trader network: %v", err)
+	} else {
+		if err := writeJSON(filepath.Join(outDir, "network.json"), network); err != nil {
+			return fmt.Errorf("writing network.json: %w", err)
+		}
+	}
+
+	// --- Accountability scoreboard ---
+	if err := exportScoreboard(ctx, store, outDir); err != nil {
+		return fmt.Errorf("scoreboard: %w", err)
 	}
 
 	// --- Per-entity detail pages ---
@@ -244,12 +261,22 @@ func exportInsights(ctx context.Context, store *db.Store, outDir string) error {
 	if err != nil {
 		return fmt.Errorf("insights: %w", err)
 	}
-	out := insights.InsightsOutput{
-		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-		Findings:    findings,
+	if findings == nil {
+		findings = []insights.Finding{}
 	}
-	if out.Findings == nil {
-		out.Findings = []insights.Finding{}
+	enriched := make([]insights.EnrichedFinding, len(findings))
+	for i, f := range findings {
+		enriched[i] = insights.EnrichedFinding{
+			Finding:  f,
+			Timeline: insights.BuildTimeline(f),
+		}
+	}
+	out := struct {
+		GeneratedAt string                     `json:"generated_at"`
+		Findings    []insights.EnrichedFinding `json:"findings"`
+	}{
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		Findings:    enriched,
 	}
 	return writeJSON(filepath.Join(outDir, "insights.json"), out)
 }
@@ -515,6 +542,59 @@ func exportDataMeta(outDir string) error {
 		"exported_at": time.Now().UTC().Format(time.RFC3339),
 	}
 	return writeJSON(filepath.Join(outDir, "meta.json"), meta)
+}
+
+func exportScoreboard(ctx context.Context, store *db.Store, outDir string) error {
+	accRows, err := store.AccountabilityInputs(ctx, 5)
+	if err != nil {
+		log.Printf("export: accountability inputs: %v", err)
+		return nil // non-fatal
+	}
+	type ScoreboardEntry struct {
+		PersonID            int     `json:"person_id"`
+		Slug                string  `json:"slug"`
+		Name                string  `json:"name"`
+		Party               *string `json:"party,omitempty"`
+		State               *string `json:"state,omitempty"`
+		Score               int     `json:"score"`
+		TradeCount          int     `json:"trade_count"`
+		MedianLatencyDays   int     `json:"median_latency_days"`
+		LatePct             float64 `json:"late_pct"`
+		CommitteeTradeCount int     `json:"committee_trades"`
+		RoundTripCount      int     `json:"round_trips"`
+		PreEventCount       int     `json:"pre_event_trades"`
+	}
+	entries := make([]ScoreboardEntry, 0, len(accRows))
+	for _, r := range accRows {
+		ratio := 0.0
+		if r.TradeCount > 0 {
+			ratio = float64(r.CommitteeTradeCount) / float64(r.TradeCount)
+		}
+		s := score.AccountabilityScore(score.AccountabilityInput{
+			MedianLatencyDays:   r.MedianLatencyDays,
+			LatePct:             r.LatePct,
+			CommitteeTradeRatio: ratio,
+			RoundTripCount:      r.RoundTripCount,
+			PreEventCount:       r.PreEventCount,
+			TradeCount:          r.TradeCount,
+		})
+		entries = append(entries, ScoreboardEntry{
+			PersonID:            r.PersonID,
+			Slug:                r.Slug,
+			Name:                r.Name,
+			Party:               r.Party,
+			State:               r.State,
+			Score:               int(s),
+			TradeCount:          r.TradeCount,
+			MedianLatencyDays:   r.MedianLatencyDays,
+			LatePct:             r.LatePct,
+			CommitteeTradeCount: r.CommitteeTradeCount,
+			RoundTripCount:      r.RoundTripCount,
+			PreEventCount:       r.PreEventCount,
+		})
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Score > entries[j].Score })
+	return writeJSON(filepath.Join(outDir, "scoreboard.json"), entries)
 }
 
 // writeJSON marshals data to a JSON file, creating parent directories as needed.

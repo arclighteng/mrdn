@@ -242,3 +242,119 @@ FROM (
 		WorstDays:      worstDays,
 	}, nil
 }
+
+// AccountabilityRow holds the raw inputs for one person's accountability score.
+type AccountabilityRow struct {
+	PersonID            int     `json:"person_id"`
+	Slug                string  `json:"slug"`
+	Name                string  `json:"name"`
+	Party               *string `json:"party,omitempty"`
+	State               *string `json:"state,omitempty"`
+	TradeCount          int     `json:"trade_count"`
+	MedianLatencyDays   int     `json:"median_latency_days"`
+	LatePct             float64 `json:"late_pct"`
+	CommitteeTradeCount int     `json:"committee_trade_count"`
+	RoundTripCount      int     `json:"round_trip_count"`
+	PreEventCount       int     `json:"pre_event_count"`
+}
+
+// AccountabilityInputs returns raw accountability metrics for all persons
+// with at least minTrades congressional trades.
+func (s *Store) AccountabilityInputs(ctx context.Context, minTrades int) ([]AccountabilityRow, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		WITH trade_counts AS (
+			SELECT person_id, COUNT(*) as cnt
+			FROM congressional_trades
+			WHERE person_id IS NOT NULL
+			GROUP BY person_id
+			HAVING cnt >= ?
+		),
+		latency AS (
+			SELECT person_id,
+				CAST(julianday(filed_at) - julianday(traded_at) AS INTEGER) AS days
+			FROM congressional_trades
+			WHERE filed_at IS NOT NULL AND traded_at IS NOT NULL AND person_id IS NOT NULL
+		),
+		latency_agg AS (
+			SELECT l.person_id,
+				COUNT(*) as scoreable,
+				SUM(CASE WHEN l.days > 45 THEN 1 ELSE 0 END) as late_count
+			FROM latency l
+			JOIN trade_counts tc ON tc.person_id = l.person_id
+			GROUP BY l.person_id
+		),
+		committee_trades AS (
+			SELECT ct.person_id, COUNT(*) as cnt
+			FROM congressional_trades ct
+			JOIN person_committees pc ON pc.person_id = ct.person_id
+			JOIN companies c ON c.ticker = ct.ticker
+			WHERE ct.person_id IS NOT NULL
+			AND (
+				(pc.committee_name LIKE '%Armed%' AND c.sector IN ('Industrials', 'Defense'))
+				OR (pc.committee_name LIKE '%Banking%' AND c.sector = 'Financials')
+				OR (pc.committee_name LIKE '%Energy%' AND c.sector IN ('Energy', 'Utilities'))
+				OR (pc.committee_name LIKE '%Health%' AND c.sector = 'Health Care')
+				OR (pc.committee_name LIKE '%Commerce%' AND c.sector IN ('Technology', 'Communication Services'))
+			)
+			GROUP BY ct.person_id
+		),
+		round_trips AS (
+			SELECT buy.person_id, COUNT(*) as cnt
+			FROM congressional_trades buy
+			JOIN congressional_trades sell
+				ON buy.person_id = sell.person_id
+				AND buy.ticker = sell.ticker
+				AND buy.trade_type IN ('Purchase', 'purchase')
+				AND sell.trade_type IN ('Sale (Full)', 'Sale (Partial)', 'sale_full', 'sale_partial', 'Sale')
+				AND julianday(sell.traded_at) - julianday(buy.traded_at) BETWEEN 1 AND 60
+			WHERE buy.person_id IS NOT NULL
+			GROUP BY buy.person_id
+		),
+		pre_events AS (
+			SELECT ct.person_id, COUNT(DISTINCT ct.id) as cnt
+			FROM congressional_trades ct
+			JOIN companies c ON c.ticker = ct.ticker
+			JOIN events e ON e.company_id = c.id
+			WHERE ct.traded_at IS NOT NULL
+				AND ct.person_id IS NOT NULL
+				AND e.event_type IN ('sec_litigation', 'government_contract', 'sanctions', 'regulatory_action', 'tariff_action')
+				AND julianday(e.occurred_at) - julianday(ct.traded_at) BETWEEN 1 AND 14
+			GROUP BY ct.person_id
+		)
+		SELECT p.id, p.slug, p.name, p.party, p.state,
+			tc.cnt,
+			COALESCE(la.scoreable, 0),
+			COALESCE(la.late_count, 0),
+			COALESCE(cmt.cnt, 0),
+			COALESCE(rt.cnt, 0),
+			COALESCE(pe.cnt, 0)
+		FROM persons p
+		JOIN trade_counts tc ON tc.person_id = p.id
+		LEFT JOIN latency_agg la ON la.person_id = p.id
+		LEFT JOIN committee_trades cmt ON cmt.person_id = p.id
+		LEFT JOIN round_trips rt ON rt.person_id = p.id
+		LEFT JOIN pre_events pe ON pe.person_id = p.id
+		ORDER BY tc.cnt DESC
+	`, minTrades)
+	if err != nil {
+		return nil, fmt.Errorf("accountability inputs: %w", err)
+	}
+	defer rows.Close()
+
+	var result []AccountabilityRow
+	for rows.Next() {
+		var r AccountabilityRow
+		var scoreable, lateCount int
+		if err := rows.Scan(&r.PersonID, &r.Slug, &r.Name, &r.Party, &r.State,
+			&r.TradeCount, &scoreable, &lateCount,
+			&r.CommitteeTradeCount, &r.RoundTripCount, &r.PreEventCount,
+		); err != nil {
+			return nil, err
+		}
+		if scoreable > 0 {
+			r.LatePct = float64(lateCount) / float64(scoreable)
+		}
+		result = append(result, r)
+	}
+	return result, rows.Err()
+}

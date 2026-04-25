@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -260,4 +261,132 @@ func edgeKey(fromID int, fromType string, toID int, toType string, relationship 
 		a, b = b, a
 	}
 	return fmt.Sprintf("%s<->%s:%s", a, b, relationship)
+}
+
+// CoTraderNetwork finds pairs of persons who traded the same ticker within 14
+// days of each other over the past 24 months, groups them by person pair, and
+// counts the number of distinct shared tickers as edge weight. Only pairs with
+// at least minOverlaps shared tickers are included.
+//
+// Node hydration uses a single batched IN query rather than per-node lookups.
+// A 10-second context timeout is applied as a guard against slow self-joins.
+func (s *Store) CoTraderNetwork(ctx context.Context, minOverlaps int) (*GraphResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT a.person_id, b.person_id, COUNT(DISTINCT a.ticker) AS shared_tickers
+		FROM congressional_trades a
+		JOIN congressional_trades b
+		    ON a.ticker = b.ticker
+		   AND a.person_id < b.person_id
+		   AND ABS(julianday(a.traded_at) - julianday(b.traded_at)) <= 14
+		WHERE a.traded_at >= date('now', '-24 months')
+		  AND b.traded_at >= date('now', '-24 months')
+		  AND a.traded_at IS NOT NULL
+		  AND b.traded_at IS NOT NULL
+		GROUP BY a.person_id, b.person_id
+		HAVING shared_tickers >= ?
+		ORDER BY shared_tickers DESC
+		LIMIT 500
+	`, minOverlaps)
+	if err != nil {
+		return nil, fmt.Errorf("co-trader network query: %w", err)
+	}
+	defer rows.Close()
+
+	type rawEdge struct {
+		fromID int
+		toID   int
+		weight int
+	}
+	var rawEdges []rawEdge
+	idSet := make(map[int]bool)
+
+	for rows.Next() {
+		var e rawEdge
+		if err := rows.Scan(&e.fromID, &e.toID, &e.weight); err != nil {
+			return nil, fmt.Errorf("co-trader network scan: %w", err)
+		}
+		rawEdges = append(rawEdges, e)
+		idSet[e.fromID] = true
+		idSet[e.toID] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("co-trader network rows: %w", err)
+	}
+
+	if len(idSet) == 0 {
+		return &GraphResult{
+			Nodes: []GraphNode{},
+			Edges: []GraphEdge{},
+		}, nil
+	}
+
+	// Batch-hydrate all person nodes in a single query.
+	ids := make([]int, 0, len(idSet))
+	for id := range idSet {
+		ids = append(ids, id)
+	}
+
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	inClause := strings.Join(placeholders, ", ")
+
+	pRows, err := s.db.QueryContext(ctx,
+		`SELECT id, name, slug, party FROM persons WHERE id IN (`+inClause+`)`,
+		args...,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("co-trader network person hydration: %w", err)
+	}
+	defer pRows.Close()
+
+	nodeByID := make(map[int]GraphNode, len(ids))
+	for pRows.Next() {
+		var (
+			id    int
+			name  string
+			slug  string
+			party *string
+		)
+		if err := pRows.Scan(&id, &name, &slug, &party); err != nil {
+			return nil, fmt.Errorf("co-trader network person scan: %w", err)
+		}
+		label := name
+		if party != nil && *party != "" {
+			label = name + " (" + *party + ")"
+		}
+		nodeByID[id] = GraphNode{
+			ID:    id,
+			Type:  "person",
+			Label: label,
+			Slug:  slug,
+		}
+	}
+	if err := pRows.Err(); err != nil {
+		return nil, fmt.Errorf("co-trader network person rows: %w", err)
+	}
+
+	nodes := make([]GraphNode, 0, len(nodeByID))
+	for _, n := range nodeByID {
+		nodes = append(nodes, n)
+	}
+
+	edges := make([]GraphEdge, 0, len(rawEdges))
+	for _, e := range rawEdges {
+		edges = append(edges, GraphEdge{
+			From:         e.fromID,
+			FromType:     "person",
+			To:           e.toID,
+			ToType:       "person",
+			Relationship: fmt.Sprintf("co_trader:%d", e.weight),
+		})
+	}
+
+	return &GraphResult{Nodes: nodes, Edges: edges}, nil
 }

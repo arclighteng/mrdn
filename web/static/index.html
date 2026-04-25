@@ -13,6 +13,7 @@ if (localStorage.getItem('mrdn_theme') === 'light') {
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
 <script>
 tailwind.config = {
   darkMode: 'class',
@@ -105,6 +106,17 @@ tailwind.config = {
   html:not(.dark) .bg-yellow-500\/15 { background-color: rgba(234,179,8,0.08); }
   html:not(.dark) .bg-orange-500\/15 { background-color: rgba(249,115,22,0.08); }
   html:not(.dark) .bg-orange-500\/20 { background-color: rgba(249,115,22,0.1); }
+  /* Light-mode: additional color overrides for readability */
+  html:not(.dark) .text-yellow-200 { color: #92400e; }
+  html:not(.dark) .text-yellow-200\/70 { color: rgba(146,64,14,0.7); }
+  html:not(.dark) .text-red-300 { color: #b91c1c; }
+  html:not(.dark) .text-red-300\/60 { color: rgba(185,28,28,0.6); }
+  html:not(.dark) .text-red-400 { color: #dc2626; }
+  html:not(.dark) .text-green-400 { color: #15803d; }
+  html:not(.dark) .text-blue-300 { color: #1d4ed8; }
+  html:not(.dark) .text-blue-300\/60 { color: rgba(29,78,216,0.6); }
+  html:not(.dark) .bg-red-500\/10 { background-color: rgba(239,68,68,0.08); }
+  html:not(.dark) .border-red-500\/30 { border-color: rgba(239,68,68,0.3); }
 </style>
 </head>
 <body x-data="app()" x-cloak>
@@ -119,7 +131,7 @@ tailwind.config = {
       </div>
       <!-- Desktop tabs -->
       <div class="hidden md:flex gap-1">
-        <template x-for="tab in ['dashboard','rankings','companies','persons','tickers','signals','status']" :key="tab">
+        <template x-for="tab in ['dashboard','rankings','companies','persons','network','tickers','signals','status']" :key="tab">
           <button @click="navigate(tab)"
             :class="(view === tab || (tab === 'companies' && view === 'company') || (tab === 'persons' && view === 'person') || (tab === 'tickers' && view === 'ticker')) ? 'bg-surface-3 text-white' : 'text-neutral-400 hover:text-white hover:bg-surface-2'"
             class="px-3 py-1.5 rounded-md text-sm font-medium transition-colors capitalize"
@@ -129,7 +141,7 @@ tailwind.config = {
       <!-- Mobile select -->
       <select class="md:hidden bg-surface-2 border border-white/15 rounded px-2 py-1 text-sm text-neutral-200 capitalize"
         @change="navigate($event.target.value)">
-        <template x-for="tab in ['dashboard','rankings','companies','persons','tickers','signals','status']" :key="tab">
+        <template x-for="tab in ['dashboard','rankings','companies','persons','network','tickers','signals','status']" :key="tab">
           <option :value="tab" :selected="view === tab || (tab === 'companies' && view === 'company') || (tab === 'persons' && view === 'person') || (tab === 'tickers' && view === 'ticker')" x-text="tab"></option>
         </template>
       </select>
@@ -369,7 +381,22 @@ tailwind.config = {
         <!-- Hero -->
         <div @click="insightClick(insightHero)" class="flex-[1.5] bg-surface-2 rounded-lg p-4 border-l-[3px] border-accent cursor-pointer hover:bg-surface-3 transition-colors">
           <div class="text-sm text-neutral-200 font-medium mb-2" x-text="insightHero?.headline"></div>
-          <div class="space-y-1">
+          <!-- Timeline proof strip -->
+          <div x-show="insightHero?.timeline?.length" class="flex items-center gap-0 mt-1 mb-2 overflow-x-auto pb-1">
+            <template x-for="(step, i) in (insightHero?.timeline || [])" :key="i">
+              <div class="flex items-center shrink-0">
+                <div x-show="i > 0" class="w-8 h-0.5 bg-accent/30"></div>
+                <div class="flex flex-col items-center gap-1 px-2">
+                  <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm"
+                    :class="step.kind === 'trade' ? 'bg-accent/20' : step.kind === 'event' ? 'bg-red-500/20' : 'bg-yellow-500/10'"
+                    x-text="step.icon"></div>
+                  <div class="text-[10px] text-neutral-400 whitespace-nowrap" x-text="step.date"></div>
+                  <div class="text-[10px] text-neutral-300 whitespace-nowrap max-w-[140px] truncate" x-text="step.label"></div>
+                </div>
+              </div>
+            </template>
+          </div>
+          <div x-show="!insightHero?.timeline?.length" class="space-y-1">
             <template x-if="Array.isArray(insightHero?.data)">
               <div>
                 <template x-for="(row, i) in (insightHero?.data || []).slice(0, 4)" :key="i">
@@ -871,7 +898,58 @@ tailwind.config = {
       </div>
     </div>
 
-    <div class="bg-surface-1 rounded-xl border border-white/15 p-5">
+    <!-- Roster / Scoreboard toggle -->
+    <div class="flex gap-2 mb-2">
+      <button @click="personsMode='roster'" :class="personsMode==='roster' ? 'bg-surface-3 text-white' : 'text-neutral-400 hover:text-white'" class="px-3 py-1 rounded-md text-sm transition-colors">Roster</button>
+      <button @click="personsMode='scoreboard'; fetchScoreboard()" :class="personsMode==='scoreboard' ? 'bg-surface-3 text-white' : 'text-neutral-400 hover:text-white'" class="px-3 py-1 rounded-md text-sm transition-colors">Scoreboard</button>
+    </div>
+
+    <!-- Scoreboard view -->
+    <div x-show="personsMode==='scoreboard'" class="bg-surface-1 rounded-xl border border-white/15 overflow-hidden">
+      <div x-show="scoreboardLoading" class="text-neutral-400 text-sm text-center py-12">Loading scoreboard...</div>
+      <div x-show="!scoreboardLoading && scoreboard.length === 0" class="text-neutral-400 text-sm text-center py-12">No scoreboard data — run export with trade data ingested</div>
+      <table x-show="!scoreboardLoading && scoreboard.length > 0" class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-white/10 text-neutral-400 text-xs uppercase tracking-wider">
+            <th class="text-left py-3 px-4">#</th>
+            <th class="text-left py-3 px-4">Name</th>
+            <th class="text-center py-3 px-2">Party</th>
+            <th class="text-right py-3 px-4 cursor-pointer hover:text-white" @click="scoreboard.sort((a,b)=>b.score-a.score)">Score</th>
+            <th class="text-right py-3 px-4 cursor-pointer hover:text-white" @click="scoreboard.sort((a,b)=>b.trade_count-a.trade_count)">Trades</th>
+            <th class="text-right py-3 px-4 cursor-pointer hover:text-white" @click="scoreboard.sort((a,b)=>b.median_latency_days-a.median_latency_days)">Filing Lag</th>
+            <th class="text-right py-3 px-4 cursor-pointer hover:text-white" @click="scoreboard.sort((a,b)=>b.committee_trades-a.committee_trades)">Committee</th>
+            <th class="text-right py-3 px-4 cursor-pointer hover:text-white" @click="scoreboard.sort((a,b)=>b.round_trips-a.round_trips)">Round-trips</th>
+            <th class="text-right py-3 px-4 cursor-pointer hover:text-white" @click="scoreboard.sort((a,b)=>b.pre_event_trades-a.pre_event_trades)">Pre-event</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="(r, i) in scoreboard.slice(0, 50)" :key="r.slug">
+            <tr class="border-b border-white/5 hover:bg-surface-2 cursor-pointer" @click="openPerson(r.slug)">
+              <td class="py-2 px-4 text-neutral-500 tabular-nums" x-text="i + 1"></td>
+              <td class="py-2 px-4">
+                <span class="text-neutral-200 font-medium" x-text="r.name"></span>
+                <span class="text-neutral-500 text-xs ml-1" x-text="r.state || ''"></span>
+              </td>
+              <td class="py-2 px-2 text-center">
+                <span class="text-xs px-1.5 py-0.5 rounded"
+                  :class="r.party === 'R' ? 'bg-red-500/20 text-red-400' : r.party === 'D' ? 'bg-blue-500/20 text-blue-400' : 'bg-neutral-500/20 text-neutral-400'"
+                  x-text="r.party || '?'"></span>
+              </td>
+              <td class="py-2 px-4 text-right tabular-nums">
+                <span class="font-bold" :class="r.score >= 70 ? 'text-red-400' : r.score >= 40 ? 'text-yellow-400' : 'text-green-400'" x-text="r.score"></span>
+              </td>
+              <td class="py-2 px-4 text-right tabular-nums text-neutral-300" x-text="r.trade_count"></td>
+              <td class="py-2 px-4 text-right tabular-nums" :class="r.median_latency_days > 45 ? 'text-red-400' : 'text-neutral-300'" x-text="r.median_latency_days + 'd'"></td>
+              <td class="py-2 px-4 text-right tabular-nums" :class="r.committee_trades > 5 ? 'text-yellow-400' : 'text-neutral-400'" x-text="r.committee_trades"></td>
+              <td class="py-2 px-4 text-right tabular-nums" :class="r.round_trips > 3 ? 'text-red-300' : 'text-neutral-400'" x-text="r.round_trips"></td>
+              <td class="py-2 px-4 text-right tabular-nums" :class="r.pre_event_trades > 2 ? 'text-red-300' : 'text-neutral-400'" x-text="r.pre_event_trades"></td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+
+    <div x-show="personsMode==='roster'" class="bg-surface-1 rounded-xl border border-white/15 p-5">
       <div class="flex items-center gap-4 mb-4">
         <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Political Figures</h2>
         <input type="text" x-model="personSearch" @input.debounce.300ms="personPage=0; fetchPersons()" placeholder="Filter by name, state, party..."
@@ -1569,6 +1647,22 @@ tailwind.config = {
     </template>
   </div>
 
+  <!-- Network View -->
+  <div x-show="view === 'network'" x-cloak class="space-y-4">
+    <div class="flex items-center justify-between">
+      <div>
+        <h2 class="text-xl font-bold text-white">Co-Trader Network</h2>
+        <p class="text-sm text-neutral-400 mt-1">Representatives connected by shared trading activity within 14-day windows. Thicker lines = more tickers traded in common.</p>
+      </div>
+    </div>
+    <div class="bg-surface-1 rounded-xl border border-white/15 p-4 relative" style="min-height:600px">
+      <div x-show="networkLoading" class="absolute inset-0 flex items-center justify-center">
+        <span class="text-neutral-400 text-sm">Loading network...</span>
+      </div>
+      <svg id="network-svg" width="100%" height="600" x-show="networkData && !networkLoading"></svg>
+    </div>
+  </div>
+
   <!-- Tickers (most-traded leaderboard) -->
   <div x-show="view === 'tickers'" x-transition class="space-y-4 fade-in">
     <div class="border-l-2 border-accent pl-4 py-1">
@@ -1951,6 +2045,9 @@ function app() {
     personSearch: '',
     personPage: 0,
     personTotal: 0,
+    personsMode: 'roster',
+    scoreboard: [],
+    scoreboardLoading: false,
 
     // Signals — STOCK Act latency, swarms, partisan tickers, first movers
     signalsTab: 'compliance',
@@ -1975,6 +2072,10 @@ function app() {
     partisanTotal: 0,
     firstMovers: [],
     _allFirstMovers: null,
+
+    // Network view
+    networkData: null,
+    networkLoading: false,
 
     // Person profile (deep view)
     personProfile: null,
@@ -2069,7 +2170,7 @@ function app() {
       if (page === 'person' && id) { this.openPerson(id); return; }
       if (page === 'ticker' && id) { this.openTicker(id); return; }
 
-      const views = ['dashboard','rankings','companies','persons','tickers','signals','status'];
+      const views = ['dashboard','rankings','companies','persons','network','tickers','signals','status'];
       if (views.includes(page)) {
         this.navigate(page, true);
       } else {
@@ -2111,6 +2212,8 @@ function app() {
         'signals/round-trips': 'signals/round-trips.json',
         'tickers/top': 'tickers/_top.json',
         'insights': 'insights.json',
+        'network': 'network.json',
+        'scoreboard': 'scoreboard.json',
       };
 
       // Strip query params for mapping
@@ -2384,6 +2487,14 @@ function app() {
       this.personTotal = list.length;
       const start = this.personPage * 30;
       this.persons = list.slice(start, start + 30);
+    },
+
+    async fetchScoreboard() {
+      if (this.scoreboard.length) return;
+      this.scoreboardLoading = true;
+      const res = await this.api('/scoreboard');
+      this.scoreboard = res || [];
+      this.scoreboardLoading = false;
     },
 
     async fetchCompliance() {
@@ -2669,16 +2780,89 @@ function app() {
       }
     },
 
+    async fetchNetwork() {
+      if (this.networkData) { this.$nextTick(() => this.renderNetwork()); return; }
+      this.networkLoading = true;
+      const res = await this.api('/network');
+      this.networkData = res?.data || res || null;
+      this.networkLoading = false;
+      this.$nextTick(() => this.renderNetwork());
+    },
+
+    renderNetwork() {
+      const data = this.networkData;
+      if (!data || !data.nodes?.length) return;
+
+      const svg = d3.select('#network-svg');
+      svg.selectAll('*').remove();
+
+      const width = svg.node().getBoundingClientRect().width || 800;
+      const height = 600;
+
+      const nodeMap = new Map(data.nodes.map((n, i) => [n.id, i]));
+
+      const links = data.edges
+        .filter(e => nodeMap.has(e.from) && nodeMap.has(e.to))
+        .map(e => ({
+          source: nodeMap.get(e.from),
+          target: nodeMap.get(e.to),
+          label: e.relationship
+        }));
+
+      const nodes = data.nodes.map(n => ({...n}));
+
+      const sim = d3.forceSimulation(nodes)
+        .force('link', d3.forceLink(links).distance(100))
+        .force('charge', d3.forceManyBody().strength(-200))
+        .force('center', d3.forceCenter(width / 2, height / 2))
+        .force('collision', d3.forceCollide(30));
+
+      const link = svg.append('g')
+        .selectAll('line')
+        .data(links)
+        .enter().append('line')
+        .attr('stroke', 'rgba(99,102,241,0.3)')
+        .attr('stroke-width', 1.5);
+
+      const node = svg.append('g')
+        .selectAll('g')
+        .data(nodes)
+        .enter().append('g')
+        .call(d3.drag()
+          .on('start', (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+          .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y; })
+          .on('end', (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; })
+        );
+
+      node.append('circle')
+        .attr('r', 6)
+        .attr('fill', d => d.label?.includes('(R)') ? '#f87171' : d.label?.includes('(D)') ? '#60a5fa' : '#a78bfa');
+
+      node.append('text')
+        .text(d => d.label?.replace(/ \([RDI]\)$/, '') || '')
+        .attr('dx', 10).attr('dy', 4)
+        .attr('font-size', '10px')
+        .attr('fill', '#9ca3af');
+
+      sim.on('tick', () => {
+        link
+          .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+          .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+        node.attr('transform', d => `translate(${d.x},${d.y})`);
+      });
+    },
+
     navigate(to, fromHash) {
       this.view = to;
       document.title = 'MRDN — ' + to.charAt(0).toUpperCase() + to.slice(1);
       if (!fromHash) window.location.hash = '#/' + to;
       if (to === 'dashboard') this.loadDashboard();
       if (to === 'companies') this.fetchCompanies();
-      if (to === 'persons') this.fetchPersons();
+      if (to === 'persons') { this.fetchPersons(); this.fetchScoreboard(); }
       if (to === 'rankings') this.fetchRankings();
       if (to === 'signals') this.selectSignalsTab(this.signalsTab);
       if (to === 'tickers') this.fetchTopTickers();
+      if (to === 'network') this.fetchNetwork();
       if (to === 'status' && !this.sources.length) { this.api('/sources').then(r => { this.sources = r?.data || []; }); }
     },
 
