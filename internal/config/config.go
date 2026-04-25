@@ -19,6 +19,7 @@ type Config struct {
 	FECAPIKey            string
 	CourtListenerToken   string
 	FMPAPIKey            string
+	LambdaAPIKey         string
 
 	// SSE connection limits.
 	SSEMaxPerIP  int
@@ -71,6 +72,7 @@ func Load() (*Config, error) {
 		FECAPIKey:          os.Getenv("MRDN_FEC_API_KEY"),
 		CourtListenerToken: strings.TrimSpace(os.Getenv("MRDN_COURTLISTENER_TOKEN")),
 		FMPAPIKey:          strings.TrimSpace(os.Getenv("MRDN_FMP_API_KEY")),
+		LambdaAPIKey:       strings.TrimSpace(os.Getenv("MRDN_LAMBDA_API_KEY")),
 		SSEMaxPerIP:   sseMaxPerIP,
 		SSEMaxPerKey:  sseMaxPerKey,
 		SSEMaxGlobal:  sseMaxGlobal,

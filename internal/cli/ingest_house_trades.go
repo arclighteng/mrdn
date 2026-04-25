@@ -38,7 +38,7 @@ import (
 // Existing high-tier seed persons are NOT downgraded — if Pelosi is tier 1,
 // she stays tier 1.
 
-const defaultHouseTradesURL = "http://web.archive.org/web/20241129040416/https://house-stock-watcher-data.s3-us-west-2.amazonaws.com/data/all_transactions.json"
+const defaultHouseTradesURL = "http://web.archive.org/web/20241129040416id_/https://house-stock-watcher-data.s3-us-west-2.amazonaws.com/data/all_transactions.json"
 
 var (
 	houseTradesFile  string
