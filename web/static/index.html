@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en" class="dark">
+<!-- SECTION: Head/Meta/Styles -->
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -119,10 +120,11 @@ tailwind.config = {
   html:not(.dark) .border-red-500\/30 { border-color: rgba(239,68,68,0.3); }
   .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
 </style>
+<!-- /SECTION: Head/Meta/Styles -->
 </head>
 <body x-data="app()" x-cloak>
 
-<!-- Nav -->
+<!-- SECTION: Navigation/Header -->
 <nav class="sticky top-0 z-50 bg-surface-1/80 backdrop-blur border-b border-white/15">
   <div class="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
     <div class="flex items-center gap-4 md:gap-6 min-w-0">
@@ -159,7 +161,9 @@ tailwind.config = {
     <p class="text-xs uppercase tracking-wider text-neutral-400">Trades that move with policy, people that move with both</p>
   </div>
 </nav>
+<!-- /SECTION: Navigation/Header -->
 
+<!-- SECTION: MQL Query Bar -->
 <!-- MQL Query Bar -->
 <div class="max-w-7xl mx-auto px-4 mt-3 relative" x-data>
   <div class="relative">
@@ -228,8 +232,9 @@ tailwind.config = {
     </div>
   </template>
 </div>
+<!-- /SECTION: MQL Query Bar -->
 
-<!-- MQL Results -->
+<!-- SECTION: MQL Results -->
 <template x-if="mqlResults !== null">
   <div class="max-w-7xl mx-auto px-4 mt-4 mb-8">
     <!-- Results header -->
@@ -347,12 +352,13 @@ tailwind.config = {
     </template>
   </div>
 </template>
+<!-- /SECTION: MQL Results -->
 
 
 <!-- Main -->
 <main class="max-w-7xl mx-auto px-4 py-6" :class="mqlResults !== null ? 'opacity-30' : ''">
 
-  <!-- Dashboard -->
+<!-- SECTION: Dashboard -->
   <div x-show="view === 'dashboard'" x-transition class="space-y-6 fade-in">
     <!-- Source status banner -->
     <div x-show="sourceIssues().length > 0" class="rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-4">
@@ -372,7 +378,7 @@ tailwind.config = {
         </div>
       </div>
     </div>
-    <!-- Insights Card -->
+    <!-- SECTION: Insights Card -->
     <div x-show="insightHero" class="bg-surface-1 rounded-xl border border-white/15 p-5">
       <div class="flex items-center gap-2 mb-3">
         <span class="text-xs uppercase tracking-widest text-accent font-semibold">Insights</span>
@@ -382,7 +388,7 @@ tailwind.config = {
         <!-- Hero -->
         <div @click="insightClick(insightHero)" class="flex-[1.5] bg-surface-2 rounded-lg p-4 border-l-[3px] border-accent cursor-pointer hover:bg-surface-3 transition-colors">
           <div class="text-sm text-neutral-200 font-medium mb-2" x-text="insightHero?.headline"></div>
-          <!-- Timeline proof strip -->
+          <!-- SECTION: Timeline Proof Strip -->
           <div x-show="insightHero?.timeline?.length" class="flex items-center gap-0 mt-1 mb-2 overflow-x-auto pb-1">
             <template x-for="(step, i) in (insightHero?.timeline || [])" :key="i">
               <div class="flex items-center shrink-0">
@@ -428,6 +434,7 @@ tailwind.config = {
             <span x-text="insightAge(insightHero)"></span>
           </div>
         </div>
+          <!-- /SECTION: Timeline Proof Strip -->
         <!-- Secondaries -->
         <div class="flex-1 flex flex-col gap-3">
           <template x-for="sec in insightSecondaries" :key="sec.id">
@@ -444,7 +451,8 @@ tailwind.config = {
         </div>
       </div>
     </div>
-    <!-- Activity Strip -->
+    <!-- /SECTION: Insights Card -->
+    <!-- SECTION: Activity Strip -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3" x-show="stats">
       <div class="bg-surface-1 border border-white/15 rounded-xl px-4 py-3">
         <div class="text-xs uppercase tracking-wider text-neutral-400">Events / 24h</div>
@@ -473,6 +481,7 @@ tailwind.config = {
         </div>
       </div>
     </div>
+    <!-- /SECTION: Activity Strip -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <!-- Heatmap -->
       <div class="lg:col-span-2 bg-surface-1 rounded-xl border border-white/15 p-5 flex flex-col">
@@ -619,7 +628,9 @@ tailwind.config = {
       <button @click="navigate('status')" class="w-full text-center text-sm text-accent hover:text-accent-light mt-3 py-2 border-t border-white/15">Full source details →</button>
     </div>
   </div>
+<!-- /SECTION: Dashboard -->
 
+<!-- SECTION: Rankings -->
   <!-- Rankings View -->
   <div x-show="view === 'rankings'" x-transition class="fade-in space-y-4">
     <div class="border-l-2 border-accent pl-4 py-1">
@@ -680,7 +691,9 @@ tailwind.config = {
       </div>
     </div>
   </div>
+<!-- /SECTION: Rankings -->
 
+<!-- SECTION: Companies List -->
   <!-- Companies List -->
   <div x-show="view === 'companies'" x-transition class="fade-in space-y-4">
     <div class="border-l-2 border-accent pl-4 py-1">
@@ -723,7 +736,9 @@ tailwind.config = {
       </div>
     </div>
   </div>
+<!-- /SECTION: Companies List -->
 
+<!-- SECTION: Company Detail -->
   <!-- Company Detail -->
   <div x-show="view === 'company'" x-transition class="space-y-6 fade-in">
     <div class="flex items-center gap-3 mb-2">
@@ -882,7 +897,9 @@ tailwind.config = {
       <div id="connections-chart" class="w-full" style="height:400px"></div>
     </div>
   </div>
+<!-- /SECTION: Company Detail -->
 
+<!-- SECTION: Persons -->
   <!-- Persons -->
   <div x-show="view === 'persons'" x-transition class="fade-in space-y-4">
     <div class="border-l-2 border-accent pl-4 py-1">
@@ -900,13 +917,14 @@ tailwind.config = {
       </div>
     </div>
 
-    <!-- Roster / Scoreboard toggle -->
+    <!-- SECTION: Roster/Scoreboard Toggle -->
     <div class="flex gap-2 mb-2">
       <button @click="personsMode='roster'" :aria-pressed="personsMode==='roster'" :class="personsMode==='roster' ? 'bg-surface-3 text-white' : 'text-neutral-400 hover:text-white'" class="px-3 py-1 rounded-md text-sm transition-colors">Roster</button>
       <button @click="personsMode='scoreboard'; fetchScoreboard()" :aria-pressed="personsMode==='scoreboard'" :class="personsMode==='scoreboard' ? 'bg-surface-3 text-white' : 'text-neutral-400 hover:text-white'" class="px-3 py-1 rounded-md text-sm transition-colors">Scoreboard</button>
     </div>
 
-    <!-- Scoreboard view -->
+    <!-- /SECTION: Roster/Scoreboard Toggle -->
+    <!-- SECTION: Scoreboard -->
     <div x-show="personsMode==='scoreboard'" class="bg-surface-1 rounded-xl border border-white/15 overflow-x-auto">
       <div x-show="scoreboardLoading" class="text-neutral-400 text-sm text-center py-12">Loading scoreboard...</div>
       <div x-show="!scoreboardLoading && scoreboard.length === 0" class="text-neutral-400 text-sm text-center py-12">No scoreboard data — run export with trade data ingested</div>
@@ -953,6 +971,8 @@ tailwind.config = {
       </table>
     </div>
 
+    <!-- /SECTION: Scoreboard -->
+    <!-- SECTION: Roster -->
     <div x-show="personsMode==='roster'" class="bg-surface-1 rounded-xl border border-white/15 p-5">
       <div class="flex items-center gap-4 mb-4">
         <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Political Figures</h2>
@@ -1021,8 +1041,11 @@ tailwind.config = {
       </div>
       <div x-show="persons.length === 0" class="text-neutral-400 text-sm text-center py-12">No persons data — run EFDS ingestion</div>
     </div>
+    <!-- /SECTION: Roster -->
   </div>
+<!-- /SECTION: Persons -->
 
+<!-- SECTION: Signals -->
   <!-- Signals: derived intelligence from real congressional trades -->
   <div x-show="view === 'signals'" x-transition class="fade-in space-y-4">
     <div class="border-l-2 border-accent pl-4 py-1">
@@ -1050,6 +1073,7 @@ tailwind.config = {
       </template>
     </div>
 
+    <!-- SECTION: Compliance/Latency -->
     <!-- ============ STOCK Act compliance ============ -->
     <div x-show="signalsTab === 'compliance'" class="space-y-4">
     <div class="text-sm text-neutral-400">
@@ -1155,8 +1179,9 @@ tailwind.config = {
       </div>
     </div>
     </div>
-    <!-- /compliance -->
+    <!-- /SECTION: Compliance/Latency -->
 
+    <!-- SECTION: Swarm Clusters -->
     <!-- ============ Swarm clusters ============ -->
     <div x-show="signalsTab === 'swarms'" class="space-y-4">
       <div class="text-sm text-neutral-400">
@@ -1224,7 +1249,9 @@ tailwind.config = {
         </div>
       </div>
     </div>
+    <!-- /SECTION: Swarm Clusters -->
 
+    <!-- SECTION: First Movers -->
     <!-- ============ First movers ============ -->
     <div x-show="signalsTab === 'first-movers'" class="space-y-4">
       <div class="text-sm text-neutral-400">
@@ -1284,7 +1311,9 @@ tailwind.config = {
         </div>
       </div>
     </div>
+    <!-- /SECTION: First Movers -->
 
+    <!-- SECTION: Round Trips -->
     <!-- ============ Round trips ============ -->
     <div x-show="signalsTab === 'round-trips'" class="space-y-4">
       <div class="text-sm text-neutral-400">
@@ -1357,7 +1386,9 @@ tailwind.config = {
         </div>
       </div>
     </div>
+    <!-- /SECTION: Round Trips -->
 
+    <!-- SECTION: Partisan Consensus/Contrarian -->
     <!-- ============ Partisan: consensus + contrarian ============ -->
     <template x-for="m in ['consensus','contrarian']" :key="m">
       <div x-show="signalsTab === m" class="space-y-4">
@@ -1427,8 +1458,11 @@ tailwind.config = {
         </div>
       </div>
     </template>
+    <!-- /SECTION: Partisan Consensus/Contrarian -->
   </div>
+<!-- /SECTION: Signals -->
 
+<!-- SECTION: Person Detail -->
   <!-- Person detail (deep profile) -->
   <div x-show="view === 'person'" x-transition class="space-y-4 fade-in">
     <button @click="navigate('persons')" class="text-neutral-400 hover:text-white text-sm">&larr; Back to persons</button>
@@ -1650,7 +1684,9 @@ tailwind.config = {
       </div>
     </template>
   </div>
+<!-- /SECTION: Person Detail -->
 
+<!-- SECTION: Network View -->
   <!-- Network View -->
   <div x-show="view === 'network'" x-cloak class="space-y-4">
     <div class="flex items-center justify-between">
@@ -1671,7 +1707,9 @@ tailwind.config = {
     </div>
     <p class="text-xs text-neutral-500 mt-2">Drag nodes to reposition. Scroll to zoom.</p>
   </div>
+<!-- /SECTION: Network View -->
 
+<!-- SECTION: Tickers Leaderboard -->
   <!-- Tickers (most-traded leaderboard) -->
   <div x-show="view === 'tickers'" x-transition class="space-y-4 fade-in">
     <div class="border-l-2 border-accent pl-4 py-1">
@@ -1741,7 +1779,9 @@ tailwind.config = {
       </div>
     </div>
   </div>
+<!-- /SECTION: Tickers Leaderboard -->
 
+<!-- SECTION: Ticker Detail -->
   <!-- Ticker detail (drilldown) -->
   <div x-show="view === 'ticker'" x-transition class="space-y-4 fade-in">
     <button @click="navigate('tickers')" class="text-neutral-400 hover:text-white text-sm">&larr; Back to tickers</button>
@@ -1858,7 +1898,9 @@ tailwind.config = {
       </div>
     </template>
   </div>
+<!-- /SECTION: Ticker Detail -->
 
+<!-- SECTION: Status/Sources -->
   <!-- Sources -->
   <div x-show="view === 'status'" x-transition class="fade-in space-y-4">
     <div class="border-l-2 border-accent pl-4 py-1">
@@ -1910,7 +1952,9 @@ tailwind.config = {
       </div>
     </div>
   </div>
+<!-- /SECTION: Status/Sources -->
 
+<!-- SECTION: Drill-down Modal -->
   <!-- Drill-down modal -->
   <div x-show="drillOpen" x-cloak @keydown.escape.window="closeDrill()"
        class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
@@ -1985,17 +2029,21 @@ tailwind.config = {
       </div>
     </div>
   </div>
+<!-- /SECTION: Drill-down Modal -->
 
+<!-- SECTION: Footer -->
   <footer class="mt-12 border-t border-neutral-800 px-6 py-6 text-xs text-neutral-500 leading-relaxed">
     <p class="max-w-4xl mx-auto">
       <span class="text-neutral-400 font-medium">Disclaimer:</span>
       mrdn is provided for informational and educational purposes only. Nothing on this site constitutes financial, investment, legal, tax, or trading advice, nor a recommendation or solicitation to buy, sell, or hold any security. Data is sourced from public filings and third-party providers and may be incomplete, delayed, or inaccurate. Past activity is not indicative of future results. Do your own research and consult a licensed professional before making any investment decision.
     </p>
   </footer>
+<!-- /SECTION: Footer -->
 
 </main>
 
 <script>
+<!-- SECTION: Alpine.js App Data/Init -->
 function app() {
   return {
     view: 'dashboard',
@@ -2113,7 +2161,7 @@ function app() {
     rankTotal: 0,
     rankingsLoaded: false,
 
-    // MQL query state
+    // MQL query state — see MQL logic section below for methods
     mqlQuery: '',
     mqlResults: null,
     mqlMeta: null,
@@ -2126,7 +2174,9 @@ function app() {
     mqlShowSuggestions: false,
     mqlRecent: JSON.parse(localStorage.getItem('mrdn_mql_recent') || '[]'),
     mqlWorkerUrl: document.querySelector('meta[name="mql-worker-url"]')?.content || 'https://mrdn-query.mrdn.workers.dev',
+    // /SECTION: Alpine.js App Data/Init
 
+    // SECTION: Theme Helpers
     toggleTheme() {
       this.darkMode = !this.darkMode;
       localStorage.setItem('mrdn_theme', this.darkMode ? 'dark' : 'light');
@@ -2156,7 +2206,9 @@ function app() {
     _echartsTooltipBg() { return this.darkMode ? '#1f1f1f' : '#ffffff'; },
     _echartsTooltipBorder() { return this.darkMode ? '#292929' : '#d1d5db'; },
     _echartsTooltipText() { return this.darkMode ? '#e5e5e5' : '#111827'; },
+    // /SECTION: Theme Helpers
 
+    // SECTION: Init/Routing
     init() {
       // Apply theme class on load
       document.documentElement.classList.toggle('dark', this.darkMode);
@@ -2187,7 +2239,9 @@ function app() {
         this.navigate('dashboard', true);
       }
     },
+    // /SECTION: Init/Routing
 
+    // SECTION: API/Fetch Functions
     async api(path) {
       try {
         const file = this.apiPathToFile(path);
@@ -2253,7 +2307,9 @@ function app() {
       // Fallback: try the path as-is
       return bare.replace(/\//g, '-') + '.json';
     },
+    // /SECTION: API/Fetch Functions
 
+    // SECTION: Dashboard Data Loading
     async loadDashboard() {
       const [moversRes, rankRes, eventsRes, sourcesRes, statsRes, activityHeatRes, partySectorRes, repMonthRes] = await Promise.all([
         this.api('/scores/movers?hours=24&limit=10'),
@@ -2341,7 +2397,9 @@ function app() {
       if (days < 30) return Math.floor(days / 7) + 'w ago';
       return Math.floor(days / 30) + 'mo ago';
     },
+    // /SECTION: Dashboard Data Loading
 
+    // SECTION: Dashboard Helpers
     latestRangeQuery() {
       const opt = this.timeRangeOptions.find(o => o.key === this.latestRange);
       if (!opt || opt.hours === 0) return '';
@@ -2400,7 +2458,9 @@ function app() {
     },
 
     closeDrill() { this.drillOpen = false; this.drillRows = []; },
+    // /SECTION: Dashboard Helpers
 
+    // SECTION: Utility Functions
     fmtAmount(r) {
       if (r.amount_low && r.amount_high) return '$' + this.fmtNum(r.amount_low) + '–' + this.fmtNum(r.amount_high);
       if (r.amount_mid) return '$' + this.fmtNum(r.amount_mid);
@@ -2421,7 +2481,9 @@ function app() {
       list.sort(fn);
       return list;
     },
+    // /SECTION: Utility Functions
 
+    // SECTION: Data Fetch Functions
     async fetchRankings() {
       if (!this._allRankings || this._rankSortCache !== this.rankSort) {
         this.rankingsLoaded = false;
@@ -2663,7 +2725,9 @@ function app() {
       this.roundTrips = sorted.slice(start, start + 30);
     },
     sortRoundTrips() { if (this._allRoundTrips) this.fetchRoundTrips(); },
+    // /SECTION: Data Fetch Functions
 
+    // SECTION: Entity Openers/Navigation
     async openTicker(symbol) {
       if (!symbol) return;
       this.view = 'ticker';
@@ -2900,6 +2964,7 @@ function app() {
       if (to === 'network') this.fetchNetwork();
       if (to === 'status' && !this.sources.length) { this.api('/sources').then(r => { this.sources = r?.data || []; }); }
     },
+    // /SECTION: Entity Openers/Navigation
 
     // --- Chart resize helper ---
     _bindResize(key, chart) {
@@ -2912,6 +2977,7 @@ function app() {
       window.addEventListener('resize', handler);
     },
 
+    // SECTION: ECharts/D3 Rendering
     // --- Charts ---
     renderHeatmap() {
       const el = document.getElementById('heatmap-chart');
@@ -3149,7 +3215,9 @@ function app() {
       });
       this._bindResize('connections-chart', chart);
     },
+    // /SECTION: ECharts/D3 Rendering
 
+    // SECTION: Helper Functions
     // --- Helpers ---
     partyBadge(p) {
       if (p === 'R') return 'bg-red-500/15 text-red-300';
@@ -3389,6 +3457,7 @@ function app() {
       return Math.floor(secs / 86400) + ' day';
     },
 
+    // SECTION: MQL Logic
     async loadQueryIndex() {
       try {
         const resp = await fetch('/data/query-index.json');
@@ -3566,6 +3635,7 @@ function app() {
       this.mqlShowSuggestions = false;
       this.$refs.mqlInput?.focus();
     },
+    // /SECTION: MQL Logic
 
     formatAmount(n) {
       if (n == null) return '—';
@@ -3576,8 +3646,10 @@ function app() {
       if (!d) return '';
       return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     },
+    // /SECTION: Helper Functions
   }
 }
+// /SECTION: Alpine.js App (script block ends)
 </script>
 </body>
 </html>
