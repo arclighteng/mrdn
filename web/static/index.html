@@ -386,7 +386,7 @@ tailwind.config = {
       </div>
       <div class="flex gap-5" style="align-items:stretch">
         <!-- Hero -->
-        <div @click="insightClick(insightHero)" class="flex-[1.5] bg-surface-2 rounded-lg p-4 border-l-[3px] border-accent cursor-pointer hover:bg-surface-3 transition-colors">
+        <div @click="insightClick(insightHero)" class="flex-[1.5] bg-surface-2 rounded-lg p-4 border-l-[3px] cursor-pointer hover:bg-surface-3 transition-colors" :class="insightBorder(insightHero?.type)">
           <div class="text-sm text-neutral-200 font-medium mb-2" x-text="insightHero?.headline"></div>
           <!-- SECTION: Timeline Proof Strip -->
           <div x-show="insightHero?.timeline?.length" class="flex items-center gap-0 mt-1 mb-2 overflow-x-auto pb-1">
@@ -427,7 +427,7 @@ tailwind.config = {
             </template>
           </div>
           <div class="text-xs text-neutral-500 mt-2">
-            <span x-text="insightHero?.type?.replace(/_/g, ' ')"></span>
+            <span :class="insightColor(insightHero?.type)" x-text="insightLabel(insightHero?.type)"></span>
             <span class="mx-1">·</span>
             <span>rarity <span class="text-accent" x-text="insightHero?.rarity_score"></span></span>
             <span class="mx-1">·</span>
@@ -439,7 +439,7 @@ tailwind.config = {
         <div class="flex-1 flex flex-col gap-3">
           <template x-for="sec in insightSecondaries" :key="sec.id">
             <div @click="insightClick(sec)" class="bg-surface-2 rounded-lg p-3 cursor-pointer hover:bg-surface-3 transition-colors flex-1">
-              <div class="text-xs text-accent mb-1" x-text="sec.type?.replace(/_/g, ' ')"></div>
+              <div class="text-xs mb-1" :class="insightColor(sec.type)" x-text="insightLabel(sec.type)"></div>
               <div class="text-xs text-neutral-300" x-text="sec.headline"></div>
               <div class="text-xs text-neutral-500 mt-1.5">
                 <span>rarity <span class="text-accent" x-text="sec.rarity_score"></span></span>
@@ -450,6 +450,24 @@ tailwind.config = {
           </template>
         </div>
       </div>
+      <!-- Expanded insights grid -->
+      <div x-show="insightsExpanded && insights.length > 3" class="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        <template x-for="f in insights.filter((_, i) => i !== insights.indexOf(insightHero) && !insightSecondaries.includes(insights[i])).slice(0, 15)" :key="f.id">
+          <div @click="insightClick(f)" class="bg-surface-2 rounded-lg p-3 cursor-pointer hover:bg-surface-3 transition-colors border-l-2" :class="insightBorder(f.type)">
+            <div class="text-xs mb-1" :class="insightColor(f.type)" x-text="insightLabel(f.type)"></div>
+            <div class="text-xs text-neutral-300" x-text="f.headline"></div>
+            <div class="text-xs text-neutral-500 mt-1.5">
+              <span>rarity <span class="text-accent" x-text="f.rarity_score"></span></span>
+              <span class="mx-1">·</span>
+              <span x-text="insightAge(f)"></span>
+            </div>
+          </div>
+        </template>
+      </div>
+      <button x-show="insights.length > 3" @click="insightsExpanded = !insightsExpanded"
+        class="mt-3 text-xs text-neutral-400 hover:text-accent transition-colors">
+        <span x-text="insightsExpanded ? '↑ Show fewer' : '↓ Show all ' + insights.length + ' insights'"></span>
+      </button>
     </div>
     <!-- /SECTION: Insights Card -->
     <!-- SECTION: Activity Strip -->
@@ -2054,6 +2072,7 @@ function app() {
     movers: [],
     insights: [],
     insightHero: null,
+    insightsExpanded: false,
     insightSecondaries: [],
     rankings: [],
     latestEvents: [],
@@ -2396,6 +2415,45 @@ function app() {
       if (days < 7) return days + 'd ago';
       if (days < 30) return Math.floor(days / 7) + 'w ago';
       return Math.floor(days / 30) + 'mo ago';
+    },
+
+    insightLabel(type) {
+      const map = {
+        coordinated_trades: 'Coordinated', committee_relevant: 'Committee',
+        pre_event: 'Pre-Event', round_trip: 'Round Trip',
+        swarm_outlier: 'Swarm', lone_wolf: 'Lone Wolf',
+        copy_trader: 'Copy Trader', court_trade: 'Court',
+        sector_rotation: 'Sector Shift', late_profitable: 'Late Filing',
+        quiet_accumulation: 'Accumulation', committee_insider: 'Committee Insider',
+        bipartisan_convergence: 'Bipartisan', insider_echo: 'Insider Echo',
+      };
+      return map[type] || type?.replace(/_/g, ' ') || '';
+    },
+
+    insightColor(type) {
+      const map = {
+        coordinated_trades: 'text-blue-400', committee_relevant: 'text-orange-400',
+        pre_event: 'text-red-400', round_trip: 'text-yellow-400',
+        swarm_outlier: 'text-cyan-400', lone_wolf: 'text-purple-400',
+        copy_trader: 'text-green-400', court_trade: 'text-amber-400',
+        sector_rotation: 'text-teal-400', late_profitable: 'text-rose-400',
+        quiet_accumulation: 'text-indigo-400', committee_insider: 'text-orange-300',
+        bipartisan_convergence: 'text-pink-400', insider_echo: 'text-violet-400',
+      };
+      return map[type] || 'text-accent';
+    },
+
+    insightBorder(type) {
+      const map = {
+        coordinated_trades: 'border-blue-500', committee_relevant: 'border-orange-500',
+        pre_event: 'border-red-500', round_trip: 'border-yellow-500',
+        swarm_outlier: 'border-cyan-500', lone_wolf: 'border-purple-500',
+        copy_trader: 'border-green-500', court_trade: 'border-amber-500',
+        sector_rotation: 'border-teal-500', late_profitable: 'border-rose-500',
+        quiet_accumulation: 'border-indigo-500', committee_insider: 'border-orange-400',
+        bipartisan_convergence: 'border-pink-500', insider_echo: 'border-violet-500',
+      };
+      return map[type] || 'border-accent';
     },
     // /SECTION: Dashboard Data Loading
 
