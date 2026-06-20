@@ -10,30 +10,20 @@ import (
 // InsiderWindow is the lookback period used for all insider sub-score inputs.
 const InsiderWindow = 90 * 24 * time.Hour
 
-// Insider trade score thresholds (SEC Form 4 filing count within the insider window).
+// Sub-score component weights within the insider scorer.
+// These are the "ideal" weights when all three data sources have data.
+// When a source is empty, its weight is redistributed proportionally.
 const (
-	insiderTradesNeutral = 0  // 0 filings → 50 (neutral)
-	insiderTradesLow     = 3  // 1–3 filings → 65
-	insiderTradesMid     = 10 // 4–10 filings → 80
-	// 11+ filings → 90
-)
-
-// Donation amount score thresholds (total donation amount in cents within the insider window).
-const (
-	// insiderDonationThresholdLow is $10K in cents; amounts below this score 60.
-	insiderDonationThresholdLow int64 = 10_000 * 100 // $10K in cents
-	// insiderDonationThresholdHigh is $100K in cents; amounts at or above this score 90.
-	insiderDonationThresholdHigh int64 = 100_000 * 100 // $100K in cents
-)
-
-// Sub-score component weights within the insider scorer (must sum to 1.0).
-const (
-	insiderWeightTrades    = 0.50
-	insiderWeightDonations = 0.50
+	insiderWeightSECTrades          = 0.30 // SEC Form 4 insider filings
+	insiderWeightCongressionalTrades = 0.50 // Congressional trades on this company
+	insiderWeightDonations          = 0.20 // Political donations
 )
 
 // InsiderScorer computes the insider sub-score (0–100) for a company using
-// SEC Form 4 insider trade filings and political donation amounts.
+// SEC Form 4 insider trade filings, congressional trading activity, and
+// political donation amounts. When a data source has no data, its weight
+// is redistributed to sources that do, so the score reflects available
+// information rather than defaulting to neutral.
 type InsiderScorer struct {
 	store ScoreStore
 }
@@ -44,11 +34,15 @@ func NewInsiderScorer(store ScoreStore) *InsiderScorer {
 }
 
 // Score returns an insider sub-score in [0, 100] for the given company at now.
-// Returns 50.0 (neutral) when no data is available in either category.
+// Returns 50.0 (neutral) only when no data is available in any category.
 func (is *InsiderScorer) Score(ctx context.Context, companyID int, now time.Time) (float64, error) {
 	since := now.Add(-InsiderWindow)
 
 	trades, err := is.store.GetInsiderTradesRange(ctx, companyID, since, now)
+	if err != nil {
+		return 0, err
+	}
+	congTrades, err := is.store.GetCongressionalTradesForCompany(ctx, companyID, since, now)
 	if err != nil {
 		return 0, err
 	}
@@ -57,33 +51,81 @@ func (is *InsiderScorer) Score(ctx context.Context, companyID int, now time.Time
 		return 0, err
 	}
 
-	tradeScore := insiderTradesScore(len(trades))
-	donationScore := insiderDonationsScore(donations)
+	// Compute raw scores for each component.
+	secScore := secTradesScore(len(trades))
+	congScore := congressionalTradesScore(len(congTrades))
+	donScore := donationAmountScore(donations)
 
-	return clamp(
-		insiderWeightTrades*tradeScore +
-			insiderWeightDonations*donationScore,
-	), nil
+	// Determine which components have data and redistribute weights.
+	type component struct {
+		score  float64
+		weight float64
+		has    bool
+	}
+	components := []component{
+		{secScore, insiderWeightSECTrades, len(trades) > 0},
+		{congScore, insiderWeightCongressionalTrades, len(congTrades) > 0},
+		{donScore, insiderWeightDonations, len(donations) > 0},
+	}
+
+	// Count how many have data.
+	var activeWeight float64
+	for _, c := range components {
+		if c.has {
+			activeWeight += c.weight
+		}
+	}
+
+	// If nothing has data, return neutral.
+	if activeWeight == 0 {
+		return 50.0, nil
+	}
+
+	// Weighted sum, redistributing empty-source weight to active sources.
+	var total float64
+	for _, c := range components {
+		if c.has {
+			total += (c.weight / activeWeight) * c.score
+		}
+	}
+
+	return clamp(total), nil
 }
 
-// insiderTradesScore maps a Form 4 filing count to a component score.
+// secTradesScore maps a SEC Form 4 filing count to a component score.
 // 0 filings → 50 (neutral); higher counts indicate elevated insider activity.
-func insiderTradesScore(count int) float64 {
+func secTradesScore(count int) float64 {
 	switch {
-	case count == insiderTradesNeutral:
+	case count == 0:
 		return 50.0
-	case count <= insiderTradesLow:
+	case count <= 3:
 		return 65.0
-	case count <= insiderTradesMid:
+	case count <= 10:
 		return 80.0
 	default:
 		return 90.0
 	}
 }
 
-// insiderDonationsScore maps total donation amount (in cents) to a component score.
-// $0 → 50 (neutral), $1–$10K → 60, $10K–$100K → 75, $100K+ → 90.
-func insiderDonationsScore(donations []db.Donation) float64 {
+// congressionalTradesScore maps a congressional trade count to a component score.
+// More congressional attention to a company → higher score.
+func congressionalTradesScore(count int) float64 {
+	switch {
+	case count == 0:
+		return 50.0
+	case count <= 2:
+		return 60.0
+	case count <= 5:
+		return 70.0
+	case count <= 10:
+		return 80.0
+	default:
+		return 90.0
+	}
+}
+
+// donationAmountScore maps total donation amount (in cents) to a component score.
+func donationAmountScore(donations []db.Donation) float64 {
 	var totalCents int64
 	for _, d := range donations {
 		if d.AmountCents != nil {
@@ -93,9 +135,9 @@ func insiderDonationsScore(donations []db.Donation) float64 {
 	switch {
 	case totalCents == 0:
 		return 50.0
-	case totalCents < insiderDonationThresholdLow:
+	case totalCents < 10_000*100: // < $10K
 		return 60.0
-	case totalCents < insiderDonationThresholdHigh:
+	case totalCents < 100_000*100: // < $100K
 		return 75.0
 	default:
 		return 90.0

@@ -47,6 +47,7 @@ func DefaultWeights() Weights {
 type ScoreStore interface {
 	GetMarketDataRange(ctx context.Context, companyID int, since, until time.Time) ([]db.MarketDataRow, error)
 	GetInsiderTradesRange(ctx context.Context, companyID int, since, until time.Time) ([]db.InsiderTrade, error)
+	GetCongressionalTradesForCompany(ctx context.Context, companyID int, since, until time.Time) ([]db.CongressionalTrade, error)
 	GetSanctionsRange(ctx context.Context, companyID int, since, until time.Time) ([]db.Sanction, error)
 	GetContractsRange(ctx context.Context, companyID int, since, until time.Time) ([]db.Contract, error)
 	GetDonationsRange(ctx context.Context, companyID int, since, until time.Time) ([]db.Donation, error)

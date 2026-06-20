@@ -74,6 +74,43 @@ func (s *Store) GetInsiderTradesRange(ctx context.Context, companyID int, since,
 	return result, nil
 }
 
+// GetCongressionalTradesForCompany returns congressional_trades rows for a company
+// within [since, until]. Matches by company_id. Results ordered by traded_at ascending.
+func (s *Store) GetCongressionalTradesForCompany(ctx context.Context, companyID int, since, until time.Time) ([]CongressionalTrade, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, event_id, person_id, company_id, owner_type, ticker, trade_type,
+		       amount_range_low, amount_range_high, filed_at, traded_at
+		FROM congressional_trades
+		WHERE company_id = ?
+		  AND traded_at IS NOT NULL
+		  AND traded_at >= ?
+		  AND traded_at <= ?
+		ORDER BY traded_at
+	`, companyID, formatTime(since), formatTime(until))
+	if err != nil {
+		return nil, fmt.Errorf("querying congressional trades for company %d: %w", companyID, err)
+	}
+	defer rows.Close()
+
+	result := make([]CongressionalTrade, 0)
+	for rows.Next() {
+		var t CongressionalTrade
+		var filedAt, tradedAt *string
+		if err := rows.Scan(&t.ID, &t.EventID, &t.PersonID, &t.CompanyID, &t.OwnerType,
+			&t.Ticker, &t.TradeType, &t.AmountRangeLow, &t.AmountRangeHigh,
+			&filedAt, &tradedAt); err != nil {
+			return nil, fmt.Errorf("scanning congressional trade row: %w", err)
+		}
+		t.FiledAt = scanTimePtr(filedAt)
+		t.TradedAt = scanTimePtr(tradedAt)
+		result = append(result, t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating congressional trade rows: %w", err)
+	}
+	return result, nil
+}
+
 // GetSanctionsRange returns sanctions rows for a company within [since, until].
 // Rows with a NULL added_at are excluded. Results are ordered by added_at ascending.
 func (s *Store) GetSanctionsRange(ctx context.Context, companyID int, since, until time.Time) ([]Sanction, error) {

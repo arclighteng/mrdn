@@ -15,12 +15,13 @@ import (
 // ---------------------------------------------------------------------------
 
 type mockScoreStore struct {
-	marketData    []db.MarketDataRow
-	insiderTrades []db.InsiderTrade
-	sanctions     []db.Sanction
-	contracts     []db.Contract
-	donations     []db.Donation
-	insertedScore *db.Score
+	marketData         []db.MarketDataRow
+	insiderTrades      []db.InsiderTrade
+	congressionalTrades []db.CongressionalTrade
+	sanctions          []db.Sanction
+	contracts          []db.Contract
+	donations          []db.Donation
+	insertedScore      *db.Score
 }
 
 func (m *mockScoreStore) GetMarketDataRange(_ context.Context, _ int, _, _ time.Time) ([]db.MarketDataRow, error) {
@@ -34,6 +35,9 @@ func (m *mockScoreStore) GetSanctionsRange(_ context.Context, _ int, _, _ time.T
 }
 func (m *mockScoreStore) GetContractsRange(_ context.Context, _ int, _, _ time.Time) ([]db.Contract, error) {
 	return m.contracts, nil
+}
+func (m *mockScoreStore) GetCongressionalTradesForCompany(_ context.Context, _ int, _, _ time.Time) ([]db.CongressionalTrade, error) {
+	return m.congressionalTrades, nil
 }
 func (m *mockScoreStore) GetDonationsRange(_ context.Context, _ int, _, _ time.Time) ([]db.Donation, error) {
 	return m.donations, nil
@@ -138,8 +142,7 @@ func TestCompute_Integration(t *testing.T) {
 	//   sanctions: 70, contracts: 50, donations: 50
 	//   policy = 0.40*70 + 0.35*50 + 0.25*50 = 28 + 17.5 + 12.5 = 58
 	//
-	// Insider: 0 trades, 0 donations → 50
-	//   insider = 0.50*50 + 0.50*50 = 50
+	// Insider: 0 SEC trades, 0 congressional trades, 0 donations → 50 (neutral)
 	//
 	// composite = 0.35*65 + 0.40*58 + 0.25*50 = 22.75 + 23.2 + 12.5 = 58.45
 
@@ -324,26 +327,49 @@ func TestInsiderScorer_NoData(t *testing.T) {
 	assert.Equal(t, 50.0, score)
 }
 
-func TestInsiderScorer_WithTrades(t *testing.T) {
-	// 5 trades → insiderTradesScore=80; no donations → donationsScore=50.
-	// insider = 0.50*80 + 0.50*50 = 40 + 25 = 65
+func TestInsiderScorer_WithSECTrades(t *testing.T) {
+	// 5 SEC trades only → secTradesScore=80, no other data.
+	// Only SEC has data, so it gets 100% weight → score = 80.
 	store := &mockScoreStore{insiderTrades: makeInsiderTrades(5)}
 	is := NewInsiderScorer(store)
 	score, err := is.Score(context.Background(), 1, testNow)
 	require.NoError(t, err)
-	// insiderTradesScore(5)=80, insiderDonationsScore([])=50
-	// insider = 0.50*80 + 0.50*50 = 40+25 = 65
-	assert.InDelta(t, 65.0, score, 0.01, "5 insider trades with no donations should score 65")
-	assert.GreaterOrEqual(t, score, 65.0)
+	assert.InDelta(t, 80.0, score, 0.01, "5 SEC trades with no other data should score 80")
 }
 
-func TestInsiderScorer_ExactCalculation(t *testing.T) {
-	// 2 insider trades → insiderTradesScore=65; $50K donation → donationsScore=75.
-	// insider = 0.50*65 + 0.50*75 = 32.5 + 37.5 = 70
+func TestInsiderScorer_WithCongressionalTrades(t *testing.T) {
+	// 3 congressional trades only → congressionalTradesScore=70, no other data.
+	// Only congressional has data, so it gets 100% weight → score = 70.
+	tradedAt := testNow.Add(-time.Hour)
+	store := &mockScoreStore{
+		congressionalTrades: []db.CongressionalTrade{
+			{ID: 1, TradedAt: &tradedAt},
+			{ID: 2, TradedAt: &tradedAt},
+			{ID: 3, TradedAt: &tradedAt},
+		},
+	}
+	is := NewInsiderScorer(store)
+	score, err := is.Score(context.Background(), 1, testNow)
+	require.NoError(t, err)
+	assert.InDelta(t, 70.0, score, 0.01, "3 congressional trades should score 70")
+}
+
+func TestInsiderScorer_AllThreeSources(t *testing.T) {
+	// 2 SEC trades → secTradesScore=65 (weight 0.30)
+	// 3 congressional → congressionalTradesScore=70 (weight 0.50)
+	// $50K donation → donationsScore=75 (weight 0.20)
+	// All have data, so use ideal weights:
+	// insider = 0.30*65 + 0.50*70 + 0.20*75 = 19.5 + 35 + 15 = 69.5
 	donatedAt := testNow.Add(-time.Hour)
+	tradedAt := testNow.Add(-time.Hour)
 	amountCents := int64(50_000 * 100) // $50K in cents
 	store := &mockScoreStore{
 		insiderTrades: makeInsiderTrades(2),
+		congressionalTrades: []db.CongressionalTrade{
+			{ID: 1, TradedAt: &tradedAt},
+			{ID: 2, TradedAt: &tradedAt},
+			{ID: 3, TradedAt: &tradedAt},
+		},
 		donations: []db.Donation{
 			{ID: 1, DonatedAt: &donatedAt, AmountCents: &amountCents},
 		},
@@ -351,7 +377,28 @@ func TestInsiderScorer_ExactCalculation(t *testing.T) {
 	is := NewInsiderScorer(store)
 	score, err := is.Score(context.Background(), 1, testNow)
 	require.NoError(t, err)
-	assert.InDelta(t, 70.0, score, 0.01)
+	assert.InDelta(t, 69.5, score, 0.01)
+}
+
+func TestInsiderScorer_TwoSources(t *testing.T) {
+	// 5 SEC trades → secTradesScore=80 (weight 0.30)
+	// 8 congressional → congressionalTradesScore=80 (weight 0.50)
+	// No donations → weight redistributed.
+	// activeWeight = 0.30 + 0.50 = 0.80
+	// insider = (0.30/0.80)*80 + (0.50/0.80)*80 = 0.375*80 + 0.625*80 = 80
+	tradedAt := testNow.Add(-time.Hour)
+	congTrades := make([]db.CongressionalTrade, 8)
+	for i := range congTrades {
+		congTrades[i] = db.CongressionalTrade{ID: i + 1, TradedAt: &tradedAt}
+	}
+	store := &mockScoreStore{
+		insiderTrades:       makeInsiderTrades(5),
+		congressionalTrades: congTrades,
+	}
+	is := NewInsiderScorer(store)
+	score, err := is.Score(context.Background(), 1, testNow)
+	require.NoError(t, err)
+	assert.InDelta(t, 80.0, score, 0.01)
 }
 
 // ---------------------------------------------------------------------------

@@ -57,6 +57,14 @@ func Detect(ctx context.Context, store *db.Store) ([]Finding, error) {
 		{"round-trips", detectRoundTrips},
 		{"swarm-outliers", detectSwarmOutliers},
 		{"lone-wolf", detectLoneWolf},
+		{"copy-trader", detectCopyTrader},
+		{"court-trade", detectCourtTrade},
+		{"sector-rotation", detectSectorRotation},
+		{"late-profitable", detectLateProfitable},
+		{"accumulation", detectAccumulation},
+		{"hearing-proximity", detectHearingProximity},
+		{"bipartisan", detectBipartisan},
+		{"insider-echo", detectInsiderEcho},
 	}
 
 	var all []Finding

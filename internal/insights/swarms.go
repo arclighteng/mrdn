@@ -8,7 +8,7 @@ import (
 )
 
 func detectSwarmOutliers(ctx context.Context, store *db.Store) ([]Finding, error) {
-	swarms, err := store.SwarmDetector(ctx, 3, 200)
+	swarms, err := store.SwarmDetector(ctx, 4, 200)
 	if err != nil {
 		return nil, fmt.Errorf("swarm outlier detector: %w", err)
 	}
