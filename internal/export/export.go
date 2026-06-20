@@ -219,8 +219,16 @@ func exportSignals(ctx context.Context, store *db.Store, outDir string) error {
 	if err != nil {
 		return err
 	}
-	if err := writeJSON(filepath.Join(dir, "swarms.json"), envelope(swarms)); err != nil {
-		return err
+	enrichedSwarms, err := store.EnrichSwarms(ctx, swarms)
+	if err != nil {
+		log.Printf("export: swarm enrichment failed, exporting raw: %v", err)
+		if err := writeJSON(filepath.Join(dir, "swarms.json"), envelope(swarms)); err != nil {
+			return err
+		}
+	} else {
+		if err := writeJSON(filepath.Join(dir, "swarms.json"), envelope(enrichedSwarms)); err != nil {
+			return err
+		}
 	}
 
 	consensus, err := store.PartisanTickers(ctx, "consensus", 4, 50)

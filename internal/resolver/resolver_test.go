@@ -47,6 +47,8 @@ type mockStore struct {
 	insertedCourtFilings []db.CourtFiling
 	insertedTariffs      []db.Tariff
 
+	insertedAliases []db.EntityAlias
+
 	aliasByName map[string]db.CompanyLookup
 	aliasErr    error
 
@@ -177,6 +179,14 @@ func (m *mockStore) GetCompanyByAlias(_ context.Context, alias string) (db.Compa
 		}
 	}
 	return db.CompanyLookup{}, fmt.Errorf("getting company by alias %q: %w", alias, sql.ErrNoRows)
+}
+
+func (m *mockStore) InsertEntityAlias(_ context.Context, a db.EntityAlias) (db.EntityAlias, error) {
+	m.mu.Lock()
+	m.insertedAliases = append(m.insertedAliases, a)
+	m.mu.Unlock()
+	a.ID = len(m.insertedAliases)
+	return a, nil
 }
 
 func (m *mockStore) GetPersonBySlug(_ context.Context, slug string) (db.Person, error) {
@@ -1424,6 +1434,9 @@ func (c *cancellingStore) InsertTariff(ctx context.Context, t db.Tariff) error {
 }
 func (c *cancellingStore) GetCompanyByAlias(ctx context.Context, alias string) (db.CompanyLookup, error) {
 	return c.inner.GetCompanyByAlias(ctx, alias)
+}
+func (c *cancellingStore) InsertEntityAlias(ctx context.Context, a db.EntityAlias) (db.EntityAlias, error) {
+	return c.inner.InsertEntityAlias(ctx, a)
 }
 func (c *cancellingStore) GetPersonBySlug(ctx context.Context, slug string) (db.Person, error) {
 	return c.inner.GetPersonBySlug(ctx, slug)

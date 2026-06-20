@@ -33,6 +33,7 @@ type ResolverStore interface {
 	InsertCourtFiling(ctx context.Context, cf db.CourtFiling) error
 	InsertTariff(ctx context.Context, t db.Tariff) error
 	GetCompanyByAlias(ctx context.Context, alias string) (db.CompanyLookup, error)
+	InsertEntityAlias(ctx context.Context, a db.EntityAlias) (db.EntityAlias, error)
 	GetPersonBySlug(ctx context.Context, slug string) (db.Person, error)
 	UpsertPerson(ctx context.Context, p db.Person) (db.Person, error)
 }
@@ -146,7 +147,43 @@ func (r *Resolver) ensureCompany(ctx context.Context, ticker, name string) (int,
 	r.byNameLower[strings.ToLower(company.Name)] = company.ID
 	r.mu.Unlock()
 
+	// If the caller provided a real name (not empty, not just the ticker),
+	// insert it as an entity alias so future name-based lookups can match.
+	r.maybeInsertAlias(ctx, company.ID, name)
+
 	return company.ID, nil
+}
+
+// maybeInsertAlias inserts a company name as an entity_alias if it is a
+// meaningful name (non-empty and different from the ticker). Errors are
+// logged but not propagated — alias insertion is best-effort.
+func (r *Resolver) maybeInsertAlias(ctx context.Context, companyID int, name string) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return
+	}
+	// Skip if the name is just the ticker symbol (case-insensitive).
+	r.mu.RLock()
+	// Check if any ticker in the cache matches the name.
+	_, isTicker := r.byTicker[strings.ToUpper(name)]
+	r.mu.RUnlock()
+	if isTicker {
+		return
+	}
+
+	if _, err := r.store.InsertEntityAlias(ctx, db.EntityAlias{
+		EntityID:   companyID,
+		EntityType: "company",
+		Alias:      name,
+		Source:     strPtr("resolver"),
+	}); err != nil {
+		log.Printf("[resolver] insert alias %q for company %d: %v", name, companyID, err)
+	}
+
+	// Also cache the alias in-memory for immediate use.
+	r.mu.Lock()
+	r.byNameLower[strings.ToLower(name)] = companyID
+	r.mu.Unlock()
 }
 
 // Resolve processes a single event: links it to a company (if possible) and
@@ -311,6 +348,13 @@ func (r *Resolver) resolveEdgar(ctx context.Context, evt db.Event) (int, error) 
 		}
 		if companyID == 0 {
 			companyID = r.lookupByAlias(ctx, companyName)
+		}
+		// Try the normalized (suffix-stripped) form against aliases too.
+		if companyID == 0 {
+			normalized := normalizeName(strings.ToLower(companyName))
+			if normalized != strings.ToLower(companyName) {
+				companyID = r.lookupByAlias(ctx, normalized)
+			}
 		}
 	}
 
@@ -815,6 +859,15 @@ func (r *Resolver) resolveFMPCongress(ctx context.Context, evt db.Event) (int, e
 		return 0, err
 	}
 
+	// If the asset description is a real name distinct from the ticker,
+	// ensure it's registered as an alias for future name-based lookups.
+	if companyID > 0 {
+		desc := strings.TrimSpace(trade.AssetDescription)
+		if desc != "" && !strings.EqualFold(desc, ticker) {
+			r.maybeInsertAlias(ctx, companyID, desc)
+		}
+	}
+
 	var companyIDPtr *int
 	if companyID > 0 {
 		companyIDPtr = &companyID
@@ -923,6 +976,15 @@ func (r *Resolver) resolveLambdaCongress(ctx context.Context, evt db.Event) (int
 	companyID, err := r.ensureCompany(ctx, ticker, trade.AssetDescription)
 	if err != nil {
 		return 0, err
+	}
+
+	// If the asset description is a real name distinct from the ticker,
+	// ensure it's registered as an alias for future name-based lookups.
+	if companyID > 0 {
+		desc := strings.TrimSpace(trade.AssetDescription)
+		if desc != "" && !strings.EqualFold(desc, ticker) {
+			r.maybeInsertAlias(ctx, companyID, desc)
+		}
 	}
 
 	var companyIDPtr *int
@@ -1297,13 +1359,22 @@ func (r *Resolver) Backfill(ctx context.Context, source string) (int, error) {
 	return totalResolved, nil
 }
 
-// normalizeName strips common corporate suffixes for fuzzy matching.
-// Input should already be lowercase.
+// normalizeName strips common corporate suffixes and state-of-incorporation
+// tags for fuzzy matching. Input should already be lowercase.
 func normalizeName(name string) string {
+	// Strip state-of-incorporation suffixes like "/de", "/md", "/nv".
+	if idx := strings.LastIndex(name, "/"); idx > 0 {
+		suffix := name[idx+1:]
+		if len(suffix) <= 3 {
+			name = strings.TrimSpace(name[:idx])
+		}
+	}
+
 	suffixes := []string{
 		" incorporated", " inc.", " inc", " corporation", " corp.", " corp",
 		" limited", " ltd.", " ltd", " company", " co.", " co",
 		" holdings", " holding", " group", " plc", " se", " sa", " nv",
+		" l.l.c.", " llc", " l.p.", " lp",
 		" class a", " class b", " class c",
 		",", ".", " ",
 	}
