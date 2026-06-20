@@ -3263,6 +3263,7 @@ function app() {
         market_data: 'Market', donation: 'Politics', fec_donation: 'Politics',
         score_change: 'Score', regulation: 'Regulator', regulatory_action: 'Regulator',
         sec_filing: 'Filing', edgar_filing: 'Filing', lobbying: 'Politics',
+        judicial_disclosure: 'Judicial', court_filing: 'Judicial',
       };
       return map[type] || 'Event';
     },
@@ -3277,6 +3278,7 @@ function app() {
         Market:    'bg-blue-500/15 text-blue-300',
         Regulator: 'bg-orange-500/15 text-orange-300',
         Filing:    'bg-cyan-500/15 text-cyan-300',
+        Judicial:  'bg-amber-500/15 text-amber-300',
         Score:     'bg-indigo-500/15 text-indigo-300',
         Event:     'bg-neutral-500/15 text-neutral-400',
       };
@@ -3292,6 +3294,7 @@ function app() {
         score_change: 'bg-accent', regulation: 'bg-orange-500',
         sec_filing: 'bg-purple-500', lobbying: 'bg-pink-500',
         edgar_filing: 'bg-purple-500', fec_donation: 'bg-pink-500',
+        judicial_disclosure: 'bg-amber-500', court_filing: 'bg-amber-500',
       };
       return map[type] || 'bg-neutral-500';
     },
@@ -3314,6 +3317,8 @@ function app() {
         edgar_filing: 'SEC filing',
         lobbying: 'Lobbying disclosure',
         spending: 'Federal spending',
+        judicial_disclosure: 'Judicial financial disclosure',
+        court_filing: 'Court filing',
       };
       return map[type] || type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     },
