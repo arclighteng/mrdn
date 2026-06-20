@@ -378,6 +378,27 @@ tailwind.config = {
         </div>
       </div>
     </div>
+    <!-- SECTION: Changelog Banner -->
+    <div x-show="!changelogDismissed" x-transition class="rounded-xl border border-accent/30 bg-accent/5 px-5 py-4 relative">
+      <button @click="changelogDismissed = true; localStorage.setItem('mrdn_changelog_v2', '1')"
+        class="absolute top-3 right-3 text-neutral-500 hover:text-neutral-300 text-sm leading-none">&times;</button>
+      <div class="text-xs uppercase tracking-widest text-accent font-semibold mb-2">What's new</div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-neutral-300">
+        <div>
+          <div class="font-semibold text-neutral-200 mb-1">All three branches</div>
+          Executive disclosures from OGE now live alongside congressional trades and judicial financial filings.
+        </div>
+        <div>
+          <div class="font-semibold text-neutral-200 mb-1">14 insight detectors</div>
+          New: copy-trader returns, bipartisan convergence, court-trade correlation, insider echo, quiet accumulation, and more.
+        </div>
+        <div>
+          <div class="font-semibold text-neutral-200 mb-1">Smarter scoring</div>
+          Insider scores now reflect actual congressional trading activity. Lobbying records and committee memberships surfaced.
+        </div>
+      </div>
+    </div>
+    <!-- /SECTION: Changelog Banner -->
     <!-- SECTION: Insights Card -->
     <div x-show="insightHero" class="bg-surface-1 rounded-xl border border-white/15 p-5">
       <div class="flex items-center gap-2 mb-3">
@@ -2085,6 +2106,7 @@ function app() {
     insights: [],
     insightHero: null,
     insightsExpanded: false,
+    changelogDismissed: localStorage.getItem('mrdn_changelog_v2') === '1',
     insightSecondaries: [],
     rankings: [],
     latestEvents: [],
