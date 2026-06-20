@@ -31,6 +31,7 @@ jobs:
           MRDN_FINNHUB_API_KEY: ${{ secrets.MRDN_FINNHUB_API_KEY }}
           MRDN_COURTLISTENER_TOKEN: ${{ secrets.MRDN_COURTLISTENER_TOKEN }}
           MRDN_FMP_API_KEY: ${{ secrets.MRDN_FMP_API_KEY }}
+          MRDN_LAMBDA_API_KEY: ${{ secrets.MRDN_LAMBDA_API_KEY }}
 
       - name: Ingest House trades (historical)
         run: ./mrdn ingest-house-trades --file data/seed/house_trades.json

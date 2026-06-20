@@ -13,7 +13,7 @@ import (
 
 const (
 	lambdaCongressSourceName = "lambda_congress"
-	lambdaRecentURL          = "https://api.lambdafin.com/api/congressional/recent"
+	lambdaRecentURL          = "https://www.lambdafin.com/api/congressional/recent"
 )
 
 // LambdaCongressSource polls the Lambda Finance congressional trades endpoint.
@@ -40,7 +40,7 @@ func (l *LambdaCongressSource) Name() string { return lambdaCongressSourceName }
 // Poll fetches recent congressional trades from Lambda Finance and returns
 // the parsed events.
 func (l *LambdaCongressSource) Poll(ctx context.Context) ([]db.Event, error) {
-	url := fmt.Sprintf("%s?apikey=%s", lambdaRecentURL, l.apiKey)
+	url := fmt.Sprintf("%s?apikey=%s&days=365", lambdaRecentURL, l.apiKey)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -66,32 +66,36 @@ func (l *LambdaCongressSource) Poll(ctx context.Context) ([]db.Event, error) {
 	return ParseLambdaCongress(body)
 }
 
-// lambdaCongressRecord is one trade record from the Lambda Finance
+// lambdaCongressResponse is the top-level envelope from the Lambda Finance
 // congressional/recent endpoint.
-//
-// NOTE: The field names below are based on the expected camelCase schema.
-// The exact API response schema should be verified against an actual API
-// response. If the API uses snake_case, add duplicate fields or adjust tags.
+type lambdaCongressResponse struct {
+	Trades []lambdaCongressRecord `json:"trades"`
+	Count  int                    `json:"count"`
+}
+
+// lambdaCongressRecord is one trade record from the Lambda Finance
+// congressional/recent endpoint. Field names match the actual API response
+// verified 2026-06-20.
 type lambdaCongressRecord struct {
-	Symbol          string `json:"symbol"`
-	FirstName       string `json:"firstName"`
-	LastName        string `json:"lastName"`
-	TransactionDate string `json:"transactionDate"`
-	DisclosureDate  string `json:"disclosureDate"`
-	Type            string `json:"type"`
-	Amount          string `json:"amount"`
-	Chamber         string `json:"chamber"`
-	Party           string `json:"party"`
-	State           string `json:"state"`
-	AssetDescription string `json:"assetDescription"`
-	Owner           string `json:"owner"`
+	Symbol           string  `json:"symbol"`
+	Representative   string  `json:"representative"`
+	TransactionDate  string  `json:"transactionDate"`
+	DisclosureDate   string  `json:"disclosureDate"`
+	Type             string  `json:"type"`
+	Amount           string  `json:"amount"`
+	Chamber          string  `json:"chamber"`
+	Party            *string `json:"party"`
+	State            string  `json:"state"`
+	District         string  `json:"district"`
+	AssetDescription string  `json:"assetDescription"`
+	Owner            string  `json:"owner"`
+	PtrLink          string  `json:"ptrLink"`
 }
 
 // lambdaCongressEventData is the event_data payload stored per trade.
 type lambdaCongressEventData struct {
 	Symbol           string `json:"symbol"`
-	FirstName        string `json:"first_name"`
-	LastName         string `json:"last_name"`
+	Representative   string `json:"representative"`
 	TransactionDate  string `json:"transaction_date"`
 	DisclosureDate   string `json:"disclosure_date"`
 	TradeType        string `json:"trade_type"`
@@ -101,27 +105,33 @@ type lambdaCongressEventData struct {
 	Chamber          string `json:"chamber"`
 	Party            string `json:"party"`
 	State            string `json:"state"`
+	District         string `json:"district"`
 	AssetDescription string `json:"asset_description"`
 	Owner            string `json:"owner"`
+	PtrLink          string `json:"ptr_link"`
 }
 
 // ParseLambdaCongress parses raw JSON from the Lambda Finance congressional
 // trades endpoint and returns one db.Event per trade. This function is pure
 // and safe to call independently of any HTTP transport.
 func ParseLambdaCongress(data []byte) ([]db.Event, error) {
-	var records []lambdaCongressRecord
-	if err := json.Unmarshal(data, &records); err != nil {
+	var resp lambdaCongressResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
 		return nil, fmt.Errorf("lambda_congress: unmarshal: %w", err)
 	}
 
-	events := make([]db.Event, 0, len(records))
-	for _, rec := range records {
+	events := make([]db.Event, 0, len(resp.Trades))
+	for _, rec := range resp.Trades {
 		low, high := ParseFMPAmountRange(rec.Amount)
+
+		party := ""
+		if rec.Party != nil {
+			party = *rec.Party
+		}
 
 		payload := lambdaCongressEventData{
 			Symbol:           rec.Symbol,
-			FirstName:        rec.FirstName,
-			LastName:         rec.LastName,
+			Representative:   rec.Representative,
 			TransactionDate:  rec.TransactionDate,
 			DisclosureDate:   rec.DisclosureDate,
 			TradeType:        rec.Type,
@@ -129,20 +139,22 @@ func ParseLambdaCongress(data []byte) ([]db.Event, error) {
 			AmountLow:        low,
 			AmountHigh:       high,
 			Chamber:          rec.Chamber,
-			Party:            rec.Party,
+			Party:            party,
 			State:            rec.State,
+			District:         rec.District,
 			AssetDescription: rec.AssetDescription,
 			Owner:            rec.Owner,
+			PtrLink:          rec.PtrLink,
 		}
 
 		raw, err := json.Marshal(payload)
 		if err != nil {
-			return nil, fmt.Errorf("lambda_congress: marshal trade %s %s %s: %w",
-				rec.FirstName, rec.LastName, rec.Symbol, err)
+			return nil, fmt.Errorf("lambda_congress: marshal trade %s %s: %w",
+				rec.Representative, rec.Symbol, err)
 		}
 		if err := ValidateEventData(raw); err != nil {
-			return nil, fmt.Errorf("lambda_congress: trade %s %s %s: %w",
-				rec.FirstName, rec.LastName, rec.Symbol, err)
+			return nil, fmt.Errorf("lambda_congress: trade %s %s: %w",
+				rec.Representative, rec.Symbol, err)
 		}
 
 		// OccurredAt: prefer transactionDate, fall back to disclosureDate.
@@ -161,7 +173,7 @@ func ParseLambdaCongress(data []byte) ([]db.Event, error) {
 			Source: lambdaCongressSourceName,
 			SourceID: sourceID(
 				lambdaCongressSourceName,
-				rec.FirstName+"|"+rec.LastName,
+				rec.Representative,
 				rec.Symbol,
 				rec.TransactionDate,
 				rec.Type,

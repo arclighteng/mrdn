@@ -87,6 +87,9 @@ func (s *Supervisor) RegisterSources() []Source {
 	if s.cfg.FMPAPIKey != "" {
 		sources = append(sources, parser.NewFMPCongressSource(client, s.cfg.FMPAPIKey))
 	}
+	if s.cfg.LambdaAPIKey != "" {
+		sources = append(sources, parser.NewLambdaCongressSource(client, s.cfg.LambdaAPIKey))
+	}
 	if s.cfg.CourtListenerToken != "" {
 		sources = append(sources, parser.NewCourtListenerSource(client, s.cfg.CourtListenerToken))
 	}

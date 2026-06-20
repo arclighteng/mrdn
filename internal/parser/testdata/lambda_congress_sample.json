@@ -1,30 +1,40 @@
-[
-  {
-    "symbol": "AAPL",
-    "firstName": "Nancy",
-    "lastName": "Pelosi",
-    "transactionDate": "2025-06-15",
-    "disclosureDate": "2025-07-01",
-    "type": "purchase",
-    "amount": "$1,001 - $15,000",
-    "chamber": "house",
-    "party": "D",
-    "state": "CA",
-    "assetDescription": "Apple Inc",
-    "owner": "Spouse"
-  },
-  {
-    "symbol": "NVDA",
-    "firstName": "Tommy",
-    "lastName": "Tuberville",
-    "transactionDate": "2025-06-20",
-    "disclosureDate": "2025-07-10",
-    "type": "sale_full",
-    "amount": "$100,001 - $250,000",
-    "chamber": "senate",
-    "party": "R",
-    "state": "AL",
-    "assetDescription": "NVIDIA Corporation",
-    "owner": "Self"
-  }
-]
+{
+  "trades": [
+    {
+      "symbol": "AAPL",
+      "representative": "Nancy Pelosi",
+      "transactionDate": "2025-06-15",
+      "disclosureDate": "2025-07-01",
+      "type": "purchase",
+      "amount": "$1,001 - $15,000",
+      "chamber": "house",
+      "party": "Democrat",
+      "state": "CA",
+      "district": "11",
+      "assetDescription": "Apple Inc",
+      "owner": "Spouse",
+      "ptrLink": "https://disclosures-clerk.house.gov/public_disc/ptr-pdfs/2025/example1.pdf",
+      "capGainsOver200": false,
+      "comment": null
+    },
+    {
+      "symbol": "NVDA",
+      "representative": "Tommy Tuberville",
+      "transactionDate": "2025-06-20",
+      "disclosureDate": "2025-07-10",
+      "type": "sale_full",
+      "amount": "$100,001 - $250,000",
+      "chamber": "senate",
+      "party": "Republican",
+      "state": "AL",
+      "district": null,
+      "assetDescription": "NVIDIA Corporation",
+      "owner": "Self",
+      "ptrLink": "https://efdsearch.senate.gov/search/view/ptr/example2/",
+      "capGainsOver200": false,
+      "comment": null
+    }
+  ],
+  "count": 2,
+  "days": 30
+}

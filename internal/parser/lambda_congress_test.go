@@ -31,6 +31,7 @@ func TestParseLambdaCongress(t *testing.T) {
 	assert.Contains(t, string(e0.EventData), `"purchase"`)
 	assert.Contains(t, string(e0.EventData), `"amount_low":1001`)
 	assert.Contains(t, string(e0.EventData), `"amount_high":15000`)
+	assert.Contains(t, string(e0.EventData), `"Nancy Pelosi"`)
 
 	// Second event — Tuberville / NVDA sale
 	e1 := events[1]
@@ -48,27 +49,29 @@ func TestParseLambdaCongress(t *testing.T) {
 }
 
 func TestParseLambdaCongressEmpty(t *testing.T) {
-	events, err := parser.ParseLambdaCongress([]byte(`[]`))
+	events, err := parser.ParseLambdaCongress([]byte(`{"trades":[],"count":0,"days":30}`))
 	require.NoError(t, err)
 	assert.Empty(t, events)
 }
 
 func TestParseLambdaCongressFallbackToDisclosureDate(t *testing.T) {
-	// transactionDate is empty — OccurredAt should fall back to disclosureDate.
-	data := []byte(`[{
+	data := []byte(`{"trades":[{
 		"symbol": "MSFT",
-		"firstName": "Jane",
-		"lastName": "Doe",
+		"representative": "Jane Doe",
 		"transactionDate": "",
 		"disclosureDate": "2025-08-01",
 		"type": "purchase",
 		"amount": "$15,001 - $50,000",
 		"chamber": "senate",
-		"party": "D",
+		"party": "Democrat",
 		"state": "NY",
+		"district": null,
 		"assetDescription": "Microsoft Corp",
-		"owner": "Self"
-	}]`)
+		"owner": "Self",
+		"ptrLink": "",
+		"capGainsOver200": false,
+		"comment": null
+	}],"count":1,"days":30}`)
 
 	events, err := parser.ParseLambdaCongress(data)
 	require.NoError(t, err)
@@ -78,20 +81,23 @@ func TestParseLambdaCongressFallbackToDisclosureDate(t *testing.T) {
 }
 
 func TestParseLambdaCongressAmountRange(t *testing.T) {
-	data := []byte(`[{
+	data := []byte(`{"trades":[{
 		"symbol": "TSLA",
-		"firstName": "Test",
-		"lastName": "User",
+		"representative": "Test User",
 		"transactionDate": "2025-05-01",
 		"disclosureDate": "2025-05-15",
 		"type": "purchase",
 		"amount": "$50,001 - $100,000",
 		"chamber": "house",
-		"party": "R",
+		"party": "Republican",
 		"state": "TX",
+		"district": "03",
 		"assetDescription": "Tesla Inc",
-		"owner": "Joint"
-	}]`)
+		"owner": "Joint",
+		"ptrLink": "",
+		"capGainsOver200": false,
+		"comment": null
+	}],"count":1,"days":30}`)
 
 	events, err := parser.ParseLambdaCongress(data)
 	require.NoError(t, err)
@@ -100,35 +106,35 @@ func TestParseLambdaCongressAmountRange(t *testing.T) {
 	assert.Contains(t, string(events[0].EventData), `"amount_high":100000`)
 }
 
-func TestParseLambdaCongressEmptyFields(t *testing.T) {
-	// All fields empty or missing — should not panic.
-	data := []byte(`[{
-		"symbol": "",
-		"firstName": "",
-		"lastName": "",
-		"transactionDate": "",
-		"disclosureDate": "",
-		"type": "",
-		"amount": "",
-		"chamber": "",
-		"party": "",
-		"state": "",
-		"assetDescription": "",
-		"owner": ""
-	}]`)
+func TestParseLambdaCongressNullParty(t *testing.T) {
+	// party can be null in the API response.
+	data := []byte(`{"trades":[{
+		"symbol": "GOOG",
+		"representative": "Someone",
+		"transactionDate": "2025-05-01",
+		"disclosureDate": "2025-05-15",
+		"type": "Purchase",
+		"amount": "$1,001 - $15,000",
+		"chamber": "house",
+		"party": null,
+		"state": "IN",
+		"district": "06",
+		"assetDescription": "Alphabet",
+		"owner": "Self",
+		"ptrLink": "",
+		"capGainsOver200": false,
+		"comment": null
+	}],"count":1,"days":30}`)
 
 	events, err := parser.ParseLambdaCongress(data)
 	require.NoError(t, err)
 	require.Len(t, events, 1)
-	assert.Equal(t, "lambda_congress", events[0].Source)
-	assert.Equal(t, "congressional_trade", events[0].EventType)
-	assert.Contains(t, string(events[0].EventData), `"amount_low":0`)
-	assert.Contains(t, string(events[0].EventData), `"amount_high":0`)
+	assert.Contains(t, string(events[0].EventData), `"party":""`)
 }
 
 func TestParseLambdaCongressNilFields(t *testing.T) {
 	// Fields entirely absent from JSON — should not panic.
-	data := []byte(`[{"symbol": "GOOG"}]`)
+	data := []byte(`{"trades":[{"symbol": "GOOG"}],"count":1,"days":30}`)
 
 	events, err := parser.ParseLambdaCongress(data)
 	require.NoError(t, err)
