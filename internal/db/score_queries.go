@@ -214,3 +214,64 @@ func (s *Store) GetDonationsRange(ctx context.Context, companyID int, since, unt
 	}
 	return result, nil
 }
+
+// LobbyingRow is one row of lobbying data exported for the frontend.
+type LobbyingRow struct {
+	ID             int     `json:"id"`
+	Registrant     *string `json:"registrant,omitempty"`
+	Client         *string `json:"client,omitempty"`
+	SpecificIssues *string `json:"specific_issues,omitempty"`
+	Amount         *string `json:"amount,omitempty"`
+	PeriodStart    *string `json:"period_start,omitempty"`
+	PeriodEnd      *string `json:"period_end,omitempty"`
+	FiledAt        *string `json:"filed_at,omitempty"`
+	Ticker         *string `json:"ticker,omitempty"`
+	CompanyName    *string `json:"company_name,omitempty"`
+}
+
+// ListLobbyingRecords returns lobbying records ordered by filed_at descending,
+// joined with companies to include ticker/name when a client_company_id is set.
+func (s *Store) ListLobbyingRecords(ctx context.Context, limit int) ([]LobbyingRow, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT
+			l.id,
+			l.registrant,
+			l.client,
+			l.specific_issues,
+			CASE WHEN l.amount_cents IS NOT NULL
+				THEN '$' || printf('%,d', l.amount_cents / 100)
+				ELSE NULL
+			END,
+			l.period_start,
+			l.period_end,
+			l.filed_at,
+			c.ticker,
+			c.name
+		FROM lobbying l
+		LEFT JOIN companies c ON c.id = l.client_company_id
+		ORDER BY l.filed_at DESC
+		LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("listing lobbying records: %w", err)
+	}
+	defer rows.Close()
+
+	result := make([]LobbyingRow, 0)
+	for rows.Next() {
+		var r LobbyingRow
+		if err := rows.Scan(&r.ID, &r.Registrant, &r.Client, &r.SpecificIssues,
+			&r.Amount, &r.PeriodStart, &r.PeriodEnd, &r.FiledAt,
+			&r.Ticker, &r.CompanyName); err != nil {
+			return nil, fmt.Errorf("scanning lobbying row: %w", err)
+		}
+		result = append(result, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating lobbying rows: %w", err)
+	}
+	return result, nil
+}

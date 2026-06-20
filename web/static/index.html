@@ -1521,6 +1521,18 @@ tailwind.config = {
                   </template>
                 </div>
               </div>
+              <!-- Committee memberships -->
+              <div x-show="personProfile.committees && personProfile.committees.length > 0"
+                   class="mt-3 pt-3 border-t border-white/15">
+                <div class="text-xs uppercase tracking-wider text-neutral-400 mb-1.5">Committee memberships</div>
+                <div class="flex flex-wrap gap-1.5">
+                  <template x-for="cm in (personProfile.committees || [])" :key="cm.name + (cm.code || '')">
+                    <span class="text-xs px-2 py-0.5 rounded-full bg-teal-500/15 text-teal-300 tip"
+                          :data-tip="(cm.start_date ? cm.start_date + ' → ' + (cm.end_date || 'present') : '') + (cm.code ? ' (' + cm.code + ')' : '')"
+                          x-text="cm.name"></span>
+                  </template>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -3320,8 +3332,10 @@ function app() {
         sanction: 'Sanction', sanction_designation: 'Sanction', sanction_removal: 'Sanction',
         market_data: 'Market', donation: 'Politics', fec_donation: 'Politics',
         score_change: 'Score', regulation: 'Regulator', regulatory_action: 'Regulator',
-        sec_filing: 'Filing', edgar_filing: 'Filing', lobbying: 'Politics',
+        sec_filing: 'Filing', edgar_filing: 'Filing',
+        lobbying: 'Lobbying', lobbying_disclosure: 'Lobbying',
         judicial_disclosure: 'Judicial', court_filing: 'Judicial',
+        executive_disclosure: 'Executive',
       };
       return map[type] || 'Event';
     },
@@ -3337,6 +3351,8 @@ function app() {
         Regulator: 'bg-orange-500/15 text-orange-300',
         Filing:    'bg-cyan-500/15 text-cyan-300',
         Judicial:  'bg-amber-500/15 text-amber-300',
+        Executive: 'bg-emerald-500/15 text-emerald-300',
+        Lobbying:  'bg-teal-500/15 text-teal-300',
         Score:     'bg-indigo-500/15 text-indigo-300',
         Event:     'bg-neutral-500/15 text-neutral-400',
       };
@@ -3350,9 +3366,11 @@ function app() {
         sanction_designation: 'bg-red-500', sanction_removal: 'bg-green-500',
         market_data: 'bg-green-500', donation: 'bg-pink-500',
         score_change: 'bg-accent', regulation: 'bg-orange-500',
-        sec_filing: 'bg-purple-500', lobbying: 'bg-pink-500',
+        sec_filing: 'bg-purple-500', lobbying: 'bg-teal-500',
+        lobbying_disclosure: 'bg-teal-500',
         edgar_filing: 'bg-purple-500', fec_donation: 'bg-pink-500',
         judicial_disclosure: 'bg-amber-500', court_filing: 'bg-amber-500',
+        executive_disclosure: 'bg-emerald-500',
       };
       return map[type] || 'bg-neutral-500';
     },
@@ -3374,9 +3392,11 @@ function app() {
         sec_filing: 'SEC filing',
         edgar_filing: 'SEC filing',
         lobbying: 'Lobbying disclosure',
+        lobbying_disclosure: 'Lobbying disclosure',
         spending: 'Federal spending',
         judicial_disclosure: 'Judicial financial disclosure',
         court_filing: 'Court filing',
+        executive_disclosure: 'Executive financial disclosure',
       };
       return map[type] || type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     },

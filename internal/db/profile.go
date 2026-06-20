@@ -46,6 +46,7 @@ type PersonProfile struct {
 	OwnerBreakdown   []OwnerSlice        `json:"owner_breakdown"`
 	ConcentrationHHI float64             `json:"concentration_hhi"` // 0..1 — closer to 1 = portfolio in one ticker
 	TopHoldingPct    float64             `json:"top_holding_pct"`   // share of $ volume in their #1 ticker
+	Committees       []CommitteeMembership `json:"committees,omitempty"`
 }
 
 // OwnerSlice is one row of (owner_type, count, $) — self vs joint vs spouse vs dependent.
@@ -366,7 +367,32 @@ func (s *Store) GetPersonProfile(ctx context.Context, slug string) (PersonProfil
 		}
 	}
 
+	// 9. Committee memberships.
+	cmRows, err := s.db.QueryContext(ctx, `
+		SELECT committee_name, committee_code, start_date, end_date
+		FROM person_committees
+		WHERE person_id = ?
+		ORDER BY start_date ASC
+	`, p.ID)
+	if err == nil {
+		defer cmRows.Close()
+		for cmRows.Next() {
+			var cm CommitteeMembership
+			if err := cmRows.Scan(&cm.Name, &cm.Code, &cm.StartDate, &cm.EndDate); err == nil {
+				prof.Committees = append(prof.Committees, cm)
+			}
+		}
+	}
+
 	return prof, nil
+}
+
+// CommitteeMembership represents one committee assignment for a person.
+type CommitteeMembership struct {
+	Name      string  `json:"name"`
+	Code      *string `json:"code,omitempty"`
+	StartDate *string `json:"start_date,omitempty"`
+	EndDate   *string `json:"end_date,omitempty"`
 }
 
 // FirstMoverRow is one ticker's chronological cascade: who got in first, then

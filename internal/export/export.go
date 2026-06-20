@@ -65,6 +65,11 @@ func Run(ctx context.Context, store *db.Store, outDir string) error {
 		return fmt.Errorf("tickers: %w", err)
 	}
 
+	// --- Lobbying ---
+	if err := exportLobbying(ctx, store, outDir); err != nil {
+		return fmt.Errorf("lobbying: %w", err)
+	}
+
 	// --- Co-trader network graph ---
 	network, err := store.CoTraderNetwork(ctx, 2)
 	if err != nil {
@@ -316,6 +321,15 @@ func exportTickers(ctx context.Context, store *db.Store, outDir string) error {
 		}
 	}
 	return nil
+}
+
+func exportLobbying(ctx context.Context, store *db.Store, outDir string) error {
+	data, err := store.ListLobbyingRecords(ctx, 500)
+	if err != nil {
+		log.Printf("[export] lobbying: %v", err)
+		return nil // non-fatal
+	}
+	return writeJSON(filepath.Join(outDir, "lobbying.json"), envelope(data))
 }
 
 func exportCompanyDetails(ctx context.Context, store *db.Store, outDir string) error {
